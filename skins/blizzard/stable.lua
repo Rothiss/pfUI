@@ -35,13 +35,14 @@ pfUI:RegisterSkin("Pet Stable Master", function ()
     StripTextures(button)
     SkinButton(button, nil, nil, nil, _G[button:GetName().."IconTexture"])
 
-    button.Enable = function()
-      button:SetBackdropColor()
-      button.locked = false
+    local b = button
+    b.Enable = function()
+      b:SetBackdropColor()
+      b.locked = false
     end
-    button.Disable = function()
-      button:SetBackdropColor(1, .1, .1, .3)
-      button.locked = true
+    b.Disable = function()
+      b:SetBackdropColor(1, .1, .1, .3)
+      b.locked = true
     end
   end
 

@@ -104,8 +104,10 @@ pfUI:RegisterModule("cooldown", function ()
       return
     end
 
-    -- realign cooldown frames
-    local parent = this.GetParent and this:GetParent()
+    -- realign the indicator Models that stock buttons build; the model is
+    -- drawn at 36px and needs scaling to its button. A Cooldown draws its
+    -- sweep to its own rect.
+    local parent = this.GetParent and not this:IsObjectType("Cooldown") and this:GetParent()
     if parent and parent:GetWidth() / 36 > 0 then
       this:SetScale(parent:GetWidth() / 36)
       this:SetPoint("TOPLEFT", parent, "TOPLEFT", -1, 1)
@@ -144,7 +146,7 @@ pfUI:RegisterModule("cooldown", function ()
     end
   end
 
-  -- vanilla does not have a cooldown frame type, so we hook the
-  -- regular SetTimer function that each one is calling.
+  -- hook the SetTimer function that every cooldown, Cooldown frame or
+  -- stock indicator Model, is driven through.
   hooksecurefunc("CooldownFrame_SetTimer", SetCooldown)
 end)

@@ -19,7 +19,7 @@ pfUI:RegisterModule("buff", function ()
   local function RefreshBuffButton(buff)
     if buff.btype == "HELPFUL" then
       if C.buffs.separateweapons == "1" then
-        buff.id = buff.gid - (buff.weapon ~= nill and buff.gid or 0)
+        buff.id = buff.gid - (buff.weapon ~= nil and buff.gid or 0)
       else
         buff.id = buff.gid - pfUI.buff.wepbuffs.count
       end

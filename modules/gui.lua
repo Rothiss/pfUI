@@ -58,10 +58,11 @@ pfUI:RegisterModule("gui", function ()
         return
       end
 
-      if MouseIsOver(this) and not this.over then
+      local over = MouseIsOverHitRect(this)
+      if over and not this.over then
         this.tex:Show()
         this.over = true
-      elseif not MouseIsOver(this) and this.over then
+      elseif not over and this.over then
         this.tex:Hide()
         this.over = nil
       end
@@ -2072,7 +2073,6 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(nil, T["Combopoint Width"], C.unitframes, "combowidth")
       CreateConfig(nil, T["Combopoint Height"], C.unitframes, "comboheight")
       CreateConfig(nil, T["Show Resting"], C.unitframes.player, "showRest", "checkbox")
-      CreateConfig(nil, T["Detect Enemy Buffs"], C.unitframes, "buffdetect", "checkbox", nil, nil, nil, nil)
       CreateConfig(nil, T["Raid Mark Icon Style"], C.unitframes, "blizzard_raidicons", "dropdown", function() return {"1:Original Blizzard", "0:pfUI Design"} end)
 
       CreateConfig(nil, T["Swing Timer"], nil, nil, "header")
@@ -2347,12 +2347,18 @@ pfUI:RegisterModule("gui", function ()
         CreateConfig(U[c], T["Buff Size"], C.unitframes[c], "buffsize")
         CreateConfig(U[c], T["Buff Limit"], C.unitframes[c], "bufflimit")
         CreateConfig(U[c], T["Buffs Per Row"], C.unitframes[c], "buffperrow")
+        CreateConfig(U[c], T["Own Buff Size"], C.unitframes[c], "ownbuffsize")
+        CreateConfig(U[c], T["Buff X-Spacing"], C.unitframes[c], "buffspacingx")
+        CreateConfig(U[c], T["Buff Y-Spacing"], C.unitframes[c], "buffspacingy")
 
         CreateConfig(U[c], T["Debuffs"], nil, nil, "header")
         CreateConfig(U[c], T["Debuff Position"], C.unitframes[c], "debuffs", "dropdown", pfUI.gui.dropdowns.uf_buff_position)
         CreateConfig(U[c], T["Debuff Size"], C.unitframes[c], "debuffsize")
         CreateConfig(U[c], T["Debuff Limit"], C.unitframes[c], "debufflimit")
         CreateConfig(U[c], T["Debuffs Per Row"], C.unitframes[c], "debuffperrow")
+        CreateConfig(U[c], T["Own Debuff Size"], C.unitframes[c], "owndebuffsize")
+        CreateConfig(U[c], T["Debuff X-Spacing"], C.unitframes[c], "debuffspacingx")
+        CreateConfig(U[c], T["Debuff Y-Spacing"], C.unitframes[c], "debuffspacingy")
 
         if c ~= "player" then
         end
@@ -2873,9 +2879,10 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(nil, T["Generate Playerlinks"], C.chat.text, "playerlinks", "checkbox")
       CreateConfig(nil, T["Enable URL Detection"], C.chat.text, "detecturl", "checkbox")
       CreateConfig(nil, T["Enable Class Colors"], C.chat.text, "classcolor", "checkbox")
-      CreateConfig(nil, T["Show Faction & Race Icons"] .. " " .. GetPlayerRaceIcons(), C.chat.text, "playericons", "checkbox")
+      local _, playerRace = UnitRace("player")
+      CreateConfig(nil, T["Show Faction Icons"] .. " " .. GetFactionIcon(playerRace), C.chat.text, "factionicons", "checkbox")
+      CreateConfig(nil, T["Show Race Icons"] .. " " .. GetRaceIcon(playerRace, UnitSex("player")), C.chat.text, "raceicons", "checkbox")
       CreateConfig(nil, T["Enable Player Levels"], C.chat.text, "playerlevel", "checkbox")
-      CreateConfig(nil, T["Who Search Unknown Classes (|cffffaaaaExperimental|r)"], C.chat.text, "whosearchunknown", "checkbox")
       CreateConfig(nil, T["Colorize Unknown Classes"], C.chat.text, "tintunknown", "checkbox")
       CreateConfig(nil, T["Unknown Class Color"], C.chat.text, "unknowncolor", "color")
       CreateConfig(nil, T["Left Chat Width"], C.chat.left, "width")

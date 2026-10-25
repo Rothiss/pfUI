@@ -128,6 +128,51 @@ pfUI:RegisterModule("panel", function()
         GameTooltip:AddLine(" ")
         GameTooltip:AddDoubleLine(T["Memory Usage"], "|cffffffff" .. memmb)
         GameTooltip:AddDoubleLine(T["Next Memory Cleanup"], "|cffffffff" .. gcmb)
+        -- AddOn memory usage (see MainMenuBarPerformanceBarFrame_OnEnter in MainMenuBar.lua)
+
+        local ADDON_MEM_KB_ABBR = _G.ADDON_MEM_KB_ABBR or "(%.0f KB) %s";
+        local ADDON_MEM_MB_ABBR = _G.ADDON_MEM_MB_ABBR or "(%.2f MB) %s";
+        local TOTAL_MEM_KB_ABBR = _G.TOTAL_MEM_KB_ABBR or "AddOn Memory: %.0f KB";
+        local TOTAL_MEM_MB_ABBR = _G.TOTAL_MEM_MB_ABBR or "AddOn Memory: %.2f MB";
+
+
+        UpdateAddOnMemoryUsage()
+        local totalMem = 0
+        local topAddOns = {}
+        for i = 1, GetNumAddOns() do
+          local mem = GetAddOnMemoryUsage(i)
+          if mem and mem > 0 then
+            totalMem = totalMem + mem
+            for j = 1, 3 do
+              if not topAddOns[j] or mem > topAddOns[j].value then
+                for k = 3, j + 1, -1 do
+                  topAddOns[k] = topAddOns[k - 1]
+                end
+                topAddOns[j] = { value = mem, name = C_AddOns.GetAddOnName(i) }
+                break
+              end
+            end
+          end
+        end
+        if totalMem > 0 then
+          local str
+          if totalMem > 1000 then
+            str = format(TOTAL_MEM_MB_ABBR, totalMem / 1000)
+          else
+            str = format(TOTAL_MEM_KB_ABBR, totalMem)
+          end
+          GameTooltip:AddLine(" ")
+          GameTooltip:AddLine(str, 1, 1, 1)
+          for i = 1, 3 do
+            if not topAddOns[i] then break end
+            if topAddOns[i].value > 1000 then
+              str = format(ADDON_MEM_MB_ABBR, topAddOns[i].value / 1000, topAddOns[i].name)
+            else
+              str = format(ADDON_MEM_KB_ABBR, topAddOns[i].value, topAddOns[i].name)
+            end
+            GameTooltip:AddLine(str, 1, 1, 1)
+          end
+        end
         GameTooltip:AddLine(" ")
         GameTooltip:AddDoubleLine(T["Network Down"], "|cffffffff" .. round(nin,1) .. "KB/s")
         GameTooltip:AddDoubleLine(T["Network Up"], "|cffffffff" .. round(nout,1) .. "KB/s")

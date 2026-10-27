@@ -5,7 +5,7 @@
 ## Notes-ruRU: Полная замена пользовательского интерфейса.
 ## Version: @project-version@
 ## SavedVariables: pfUI_profiles, pfUI_addon_profiles, pfUI_cache, pfUI_throttle
-## SavedVariablesPerCharacter: pfUI_config, pfUI_init, pfUI_playerDB
+## SavedVariablesPerCharacter: pfUI_config, pfUI_init, pfUI_playerDB, pfUI_eqmgr
 ## X-Website: https://github.com/brues-code/pfUI
 
 # Selected by ClassicAPI on every non-Turtle client. Turtle clients get

@@ -2428,6 +2428,21 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(nil, T["Always Show Equipment Slot Flyouts"], C.character.inventory, "equipflyout", "checkbox")
     end)
 
+    CreateGUIEntry(T["Character"], T["Equipment Manager"], function()
+      CreateConfig(nil, T["Automatic Set Switching"], nil, nil, "header")
+      CreateConfig(U["equipmentmanager"], T["Enable Automatic Set Switching"], C.equipmentmanager, "autoswitch", "checkbox")
+      CreateConfig(U["equipmentmanager"], T["Announce Automatic Set Switches In Chat"], C.equipmentmanager, "announce", "checkbox")
+      CreateConfig(nil, T["Items Not In Any Set"], nil, nil, "header")
+      CreateConfig(U["equipmentmanager"], T["Minimum Item Quality"], C.equipmentmanager, "unusedquality", "dropdown", {
+        "0:" .. ITEM_QUALITY0_DESC,
+        "1:" .. ITEM_QUALITY1_DESC,
+        "2:" .. ITEM_QUALITY2_DESC,
+        "3:" .. ITEM_QUALITY3_DESC,
+        "4:" .. ITEM_QUALITY4_DESC,
+      })
+      CreateConfig(U["equipmentmanager"], T["Include Bank Items"], C.equipmentmanager, "unusedbank", "checkbox")
+    end)
+
     CreateGUIEntry(T["Character"], T["Reputation"], function()
       CreateConfig(nil, T["Show Reputation Remaining"], C.character.reputation, "repRequired", "checkbox")
     end)

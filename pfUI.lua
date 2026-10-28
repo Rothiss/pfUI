@@ -497,7 +497,7 @@ function pfUI.SetupCVars()
   UIParentLoadAddOn("Blizzard_CombatText")
 end
 
-do -- RunMacroText
+if not RunMacroText then
   local obj = setmetatable({ ["GetText"] = function(self) return self.text end }, {
     __index = function(tab,key)
       local value = function() return end

@@ -382,8 +382,6 @@ pfUI:RegisterModule("actionbar", function ()
       end
     elseif self.spellID then
       GameTooltip:SetSpellByID(self.spellID)
-    elseif self.spellslot and self.booktype then
-      GameTooltip:SetSpell(self.spellslot, self.booktype)
     else
       GameTooltip:SetAction(self.id)
     end
@@ -454,11 +452,6 @@ pfUI:RegisterModule("actionbar", function ()
       texture = GetActionTexture(sid)
       bar = GetActiveBar()
       id = self.bar == 1 and self.slot or sid-((self.bar)-1)*12
-    end
-
-    -- overwrite with spell macro texture where possible
-    if self.spellslot and self.booktype then
-      texture = GetSpellTexture(self.spellslot, self.booktype)
     end
 
     if not self.showempty and self.backdrop and not texture and grid == 0 then
@@ -590,9 +583,6 @@ pfUI:RegisterModule("actionbar", function ()
       start, duration, enable = GetShapeshiftFormCooldown(button.id)
     elseif button.bar == 12 then
       start, duration, enable = GetPetActionCooldown(button.id)
-    elseif button.spellslot and button.booktype then
-      start, duration = GetSpellCooldown(button.spellslot, button.booktype)
-      enable = 1
     else
       start, duration, enable = GetActionCooldown(button.id)
     end
@@ -1149,8 +1139,6 @@ pfUI:RegisterModule("actionbar", function ()
     f.count:SetTextColor(unpack(count_color))
     f.count:SetJustifyH("RIGHT")
     f.count:SetJustifyV("BOTTOM")
-
-    f.scanmacro, f.spellslot, f.booktype = nil, nil, nil
 
     -- range glow color
     f.rangeColor = GetStringColorObject(C.bars.rangecolor)

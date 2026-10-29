@@ -497,19 +497,4 @@ function pfUI.SetupCVars()
   UIParentLoadAddOn("Blizzard_CombatText")
 end
 
-if not RunMacroText then
-  local obj = setmetatable({ ["GetText"] = function(self) return self.text end }, {
-    __index = function(tab,key)
-      local value = function() return end
-      rawset(tab,key,value)
-      return value
-    end
-  })
-
-  function RunMacroText(text)
-    obj.text = text
-    ChatEdit_ParseText(obj, 1)
-  end
-end
-
 _G.PLAYER_BUFF_START_ID = -1

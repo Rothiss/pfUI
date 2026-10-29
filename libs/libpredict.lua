@@ -834,7 +834,6 @@ local pendingHots = {}
 
 -- Gather Data by User Actions
 hooksecurefunc("CastSpell", function(id, bookType)
-  if not libpredict.sender.enabled then return end
   local effect, rank = libspell.GetSpellInfo(id, bookType)
   if not effect then return end
   spell_queue[1] = effect
@@ -887,7 +886,6 @@ hooksecurefunc("CastSpell", function(id, bookType)
 end)
 
 hooksecurefunc("CastSpellByName", function(effect, target)
-  if not libpredict.sender.enabled then return end
   local effect, rank = libspell.GetSpellInfo(effect)
   if not effect then return end
 
@@ -951,7 +949,6 @@ hooksecurefunc("CastSpellByName", function(effect, target)
 end)
 
 hooksecurefunc("UseAction", function(slot, target, selfcast)
-  if not libpredict.sender.enabled then return end
   if not IsCurrentAction(slot) then return end
   local kind, id = GetActionInfo(slot)
   local effect, rank
@@ -1012,8 +1009,10 @@ hooksecurefunc("UseAction", function(slot, target, selfcast)
 end)
 
 libpredict.sender = CreateFrame("Frame", "pfPredictionSender", UIParent)
+-- cleared when a HealComm addon already broadcasts this player's casts
 libpredict.sender.enabled = true
 libpredict.sender.SendHealCommMsg = function(self, msg)
+  if not self.enabled then return end
   -- Smart channel selection: Only send to relevant channel to avoid duplicates
   if IsInRaid() then
     -- In raid: Only send to RAID (includes all raid members)
@@ -1026,6 +1025,7 @@ libpredict.sender.SendHealCommMsg = function(self, msg)
   -- BG groups are handled by RAID channel
 end
 libpredict.sender.SendResCommMsg = function(self, msg)
+  if not self.enabled then return end
   -- Smart channel selection: Only send to relevant channel to avoid duplicates
   if IsInRaid() then
     -- In raid: Only send to RAID (includes all raid members)

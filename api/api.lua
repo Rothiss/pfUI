@@ -1353,15 +1353,18 @@ end
 
 -- [ Bar Layout Options ] --
 -- 'barsize'  size of bar in number of buttons
--- returns:   array of options as strings for pfUI.gui.bar
+-- returns:   array of options as strings for pfUI.gui.bar: every grid
+--            that fits the bar exactly, plus common uneven ones
 function pfUI.api.BarLayoutOptions(barsize)
   assert(barsize > 0 and barsize <= NUM_ACTIONBAR_BUTTONS,"BarLayoutOptions: barsize "..tostring(barsize).." is invalid")
   local options, seen = {}, {}
   local function add(option)
     if not seen[option] then table.insert(options, option); seen[option] = true end
   end
-  for i,layout in ipairs(pfGridmath[barsize]) do
-    add(string.format("%d x %d",layout[1],layout[2]))
+  for cols = 1, barsize do
+    if barsize % cols == 0 then
+      add(string.format("%d x %d", cols, barsize / cols))
+    end
   end
   for _, option in ipairs({
     "1 x 12", "1 x 10", "2 x 10", "2 x 5", "3 x 10", "3 x 5", "3 x 3",
@@ -1381,49 +1384,23 @@ function pfUI.api.BarLayoutOptions(barsize)
   return options
 end
 
--- [ Bar Layout Formfactor ] --
--- 'option'  string option as used in pfUI_config.bars[bar].option
--- returns:  integer formfactor
-local formfactors = {}
-setmetatable(formfactors, {__mode = "v"}) -- weak table so values not referenced are collected on next gc
-function pfUI.api.BarLayoutFormfactor(option)
-  if formfactors[option] then
-    return formfactors[option]
-  else
-    for barsize,_ in ipairs(pfGridmath) do
-      local options = pfUI.api.BarLayoutOptions(barsize)
-      for i,opt in ipairs(options) do
-        if opt == option then
-          formfactors[option] = i
-          return formfactors[option]
-        end
-      end
-    end
-  end
-end
-
+-- 'formfactor' has to be a "cols x rows" string; the actionbar module resets
+-- a stored layout that isn't one before it lays out a bar
 local function ResolveBarLayout(barsize, formfactor, uneven)
-  local layout = tostring(formfactor or "")
-  local _, _, a, b = string.find(layout, "(%d+)%s*x%s*(%d+)")
-  if a and b then
-    local cols, rows = tonumber(a), tonumber(b)
-    cols = math.min(NUM_ACTIONBAR_BUTTONS, math.max(1, cols))
-    rows = math.min(NUM_ACTIONBAR_BUTTONS, math.max(1, rows))
-    local orientation = string.upper(uneven or "DOWN")
-    local mode = (orientation == "LEFT" or orientation == "RIGHT") and "cols" or "rows"
-    if mode == "rows" then
-      cols = math.max(1, math.min(cols, barsize))
-      rows = math.max(1, math.ceil(barsize / cols))
-    else
-      rows = math.max(1, math.min(rows, barsize))
-      cols = math.max(1, math.ceil(barsize / rows))
-    end
-    return cols, rows, mode, orientation
+  local _, _, a, b = string.find(formfactor, "(%d+)%s*x%s*(%d+)")
+  local cols, rows = tonumber(a), tonumber(b)
+  cols = math.min(NUM_ACTIONBAR_BUTTONS, math.max(1, cols))
+  rows = math.min(NUM_ACTIONBAR_BUTTONS, math.max(1, rows))
+  local orientation = string.upper(uneven or "DOWN")
+  local mode = (orientation == "LEFT" or orientation == "RIGHT") and "cols" or "rows"
+  if mode == "rows" then
+    cols = math.max(1, math.min(cols, barsize))
+    rows = math.max(1, math.ceil(barsize / cols))
+  else
+    rows = math.max(1, math.min(rows, barsize))
+    cols = math.max(1, math.ceil(barsize / rows))
   end
-  local index = pfUI.api.BarLayoutFormfactor(layout)
-  if not index then return nil end
-  local cols, rows = unpack(pfGridmath[barsize][index])
-  return cols, rows, "rows", "DOWN"
+  return cols, rows, mode, orientation
 end
 
 -- [ Bar Layout Size ] --
@@ -1434,7 +1411,6 @@ end
 function pfUI.api.BarLayoutSize(bar,barsize,formfactor,iconsize,bordersize,padding,uneven,fillmode)
   assert(barsize > 0 and barsize <= NUM_ACTIONBAR_BUTTONS,"BarLayoutSize: barsize "..tostring(barsize).." is invalid")
   local cols, rows = ResolveBarLayout(barsize, formfactor, uneven)
-  if not cols or not rows then cols, rows = unpack(pfGridmath[barsize][1]) end
   local width = (iconsize + bordersize*2+padding) * cols + padding
   local height = (iconsize + bordersize*2+padding) * rows + padding
   bar._size = {width,height}
@@ -1452,9 +1428,6 @@ end
 function pfUI.api.BarButtonAnchor(button,basename,buttonindex,barsize,formfactor,iconsize,bordersize,padding,uneven,fillmode)
   assert(barsize > 0 and barsize <= NUM_ACTIONBAR_BUTTONS,"BarButtonAnchor: barsize "..tostring(barsize).." is invalid")
   local cols, rows, mode, orientation = ResolveBarLayout(barsize, formfactor, uneven)
-  if not cols or not rows then
-    cols, rows, mode, orientation = unpack(pfGridmath[barsize][1]), "rows", "DOWN"
-  end
 
   -- fillmode: remap buttonindex to slotindex (grid position in native fill order)
   -- only needed when fill direction differs from layout mode

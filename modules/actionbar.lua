@@ -1206,8 +1206,7 @@ pfUI:RegisterModule("actionbar", function ()
     end
 
     -- the stored layout is invalid, temporary fallback
-    local _, _, fcols, frows = string.find(tostring(formfactor or ""), "(%d+)%s*x%s*(%d+)")
-    if not ((fcols and frows) or pfGridmath[buttons][BarLayoutFormfactor(formfactor)]) then
+    if not fcols2 or not frows2 then
       formfactor = BarLayoutOptions(buttons)[1]
     end
 

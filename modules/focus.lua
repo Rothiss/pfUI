@@ -29,38 +29,15 @@ pfUI:RegisterModule("focus", function ()
 end)
 
 -- /focus and /clearfocus live in ClassicAPI's SlashCommandsRegistry now.
--- /focusname is pfUI-specific because the engine has no name→GUID
--- lookup for off-screen units — we resolve via a short target-swap.
+-- `/focus Name` takes the nearest prefix match; /focusname tries the exact
+-- name first, so "Bob" still wins over a nearer "Bobby".
 
 pfUI.api.RegisterSlashCommand("PFFOCUSNAME", { '/focusname', '/pffocusname' }, function(msg)
   if msg == "" then return end
 
-  local prevGUID = UnitGUID("target")
-  local prevPlayer = UnitIsUnit("target", "player")
-
-  -- Suppress async "Unknown unit" errors fired by TargetByName misses.
-  UIErrorsFrame:UnregisterEvent("UI_ERROR_MESSAGE")
-
-  -- Try exact match first, then prefix match via /target.
-  TargetByName(msg, true)
-  if not UnitExists("target") then
-    SlashCmdList.TARGET(msg)
-  end
-
-  if UnitExists("target") then
-    FocusUnit("target")
-  end
-
-  RunNextFrame(function()
-    UIErrorsFrame:RegisterEvent("UI_ERROR_MESSAGE")
-  end)
-
-  if prevGUID and prevGUID ~= "0x0000000000000000" then
-    TargetUnit(prevGUID)
-  elseif prevPlayer then
-    TargetUnit("player")
-  else
-    ClearTarget()
+  local unit = UnitTokenFromName(msg, true) or UnitTokenFromName(msg)
+  if unit then
+    FocusUnit(unit)
   end
 end, true)
 

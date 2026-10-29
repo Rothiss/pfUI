@@ -235,7 +235,50 @@ function pfUI.api.GetUnitStats(unitstr)
 end
 
 local aggrodata = { }
-local aggroScan = nil -- static { u, t, tt } triples, built once so the hot scan allocates nothing
+
+-- every unit whose target or target's target UnitHasAggro checks, as static
+-- { u, t, tt } triples so the hot scan allocates nothing
+local aggroScan = { }
+do
+  local function add(u)
+    local t = u .. "target"
+    table.insert(aggroScan, { u = u, t = t, tt = t .. "target" })
+  end
+
+  add("pet")
+  add("player")
+  add("target")
+  add("mouseover")
+
+  add("focus")
+  add("focustarget")
+  add("focustargettarget")
+
+  add("pettarget")
+  add("playertarget")
+  add("targettarget")
+  add("mouseovertarget")
+  add("targettargettarget")
+
+  for i=1,4 do
+    add("party" .. i)
+    add("party" .. i .. "target")
+    add("partypet" .. i)
+    add("partypet" .. i .. "target")
+  end
+
+  for i=1,40 do
+    add("raid" .. i)
+    add("raid" .. i .. "target")
+
+    add("raidpet" .. i)
+    add("raidpet" .. i .. "target")
+
+    add("nameplate" .. i)
+    add("nameplate" .. i .. "target")
+  end
+end
+
 function pfUI.api.UnitHasAggro(unit)
   local now = GetTime()
   local data = aggrodata[unit]
@@ -250,16 +293,6 @@ function pfUI.api.UnitHasAggro(unit)
   data.state = 0
 
   if UnitExists(unit) and UnitIsFriend(unit, "player") then
-    -- pfValidUnits never changes after load, so precompute the "<u>target" /
-    -- "<u>targettarget" token strings once instead of concatenating per call.
-    if not aggroScan then
-      aggroScan = {}
-      for u in pairs(pfValidUnits) do
-        local t = u .. "target"
-        table.insert(aggroScan, { u = u, t = t, tt = t .. "target" })
-      end
-    end
-
     for i = 1, table.getn(aggroScan) do
       local s = aggroScan[i]
       if UnitExists(s.t) and UnitIsUnit(s.t, unit) and UnitCanAttack(s.u, unit) then
@@ -349,11 +382,10 @@ function pfUI.uf:UpdateVisibility()
 
   -- this runs for every frame five times a second, so only touch the
   -- attribute when the unit actually changed
-  local unitstr = (self.label or "") .. (self.id or "")
-  local unit = unitstr ~= "" and unitstr or nil
-  if unit ~= self.unitstr then
-    self.unitstr = unit
-    self:SetAttribute("unit", unit)
+  local unitstr = self.label .. self.id
+  if unitstr ~= self.unitstr then
+    self.unitstr = unitstr
+    self:SetAttribute("unit", unitstr)
   end
   -- anything but "show"/"hide" means "show if the unit exists"
   local visibility = "exists"
@@ -395,9 +427,7 @@ function pfUI.uf:UpdateVisibility()
   self:RegisterUnitEvents(visibility ~= "hide" and self.unitstr or nil)
 
   -- vanilla visibility
-  if self.unitname then
-    self:Show()
-  elseif visibility == "hide" then
+  if visibility == "hide" then
     self:Hide()
   elseif visibility == "show" then
     self:Show()
@@ -1246,8 +1276,6 @@ function pfUI.uf.OnUpdate()
     end
   end
 
-  if not this.label or this.label == "" then return end
-
   -- update portrait on first visible frame
   if this.portrait and this.portrait.model and this.portrait.model.update then
     this.portrait.model.lastUnit = UnitName(this.portrait.model.update)
@@ -1334,11 +1362,7 @@ end
 -- ============================================================
 
 function pfUI.uf.OnClick()
-  if not this.label and this.unitname then
-    TargetByName(this.unitname, true)
-  else
-    pfUI.uf:ClickAction(arg1)
-  end
+  pfUI.uf:ClickAction(arg1)
 end
 
 function pfUI.uf:ClickAction(button)
@@ -1434,13 +1458,6 @@ function pfUI.uf:CreateUnitFrame(unit, id, config, tick)
   f.id = id
   f.config = config or pfUI_config.unitframes.fallback
   f.tick = tick
-
-  -- disable events for unknown unitstrings
-  if not pfValidUnits[strlower(unit) .. id] then
-    f.unitname = unit
-    f.label, f.id = "", ""
-    f.RegisterEvent = function() return end
-  end
 
   CreateBackdropShadow(f)
 
@@ -1558,9 +1575,7 @@ function pfUI.uf:CreateUnitFrame(unit, id, config, tick)
     f:Hide()
   end
 
-  if f.label ~= "" then
-    f:SetAttribute("unit", f.label .. f.id)
-  end
+  f:SetAttribute("unit", f.label .. f.id)
 
   -- register frame for clique
   _G.ClickCastFrames = ClickCastFrames or {}

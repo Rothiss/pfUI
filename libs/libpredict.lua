@@ -482,13 +482,15 @@ function libpredict:ParseChatMessage(sender, msg, comm)
     if cmd and ctratarget and cmd == "RES" and ctratarget ~= "" and ctratarget ~= UNKNOWN then
       msgtype = "Ress"
       target = ctratarget
+    elseif cmd == "RESNO" then
+      msgtype = "RessStop"
     end
   end
 
   if msgtype == "Stop" and sender then
     libpredict:HealStop(sender)
     return
-  elseif ( msg == "RessStop" or msg == "RESNO" ) and sender then
+  elseif msgtype == "RessStop" and sender then
     libpredict:RessStop(sender)
     return
   elseif msgtype == "Delay" and time then

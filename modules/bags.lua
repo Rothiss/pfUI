@@ -6,8 +6,6 @@ pfUI:RegisterModule("bags", function ()
     [1804] = {frame="picklock"},
   }
 
-  local scanner = libtipscan:GetScanner("input_search")
-
   local function BagSortOpts()
     return {
       reverse     = C.appearance.bags.sortreverse == "1",
@@ -95,6 +93,7 @@ pfUI:RegisterModule("bags", function ()
   pfUI.bag:RegisterEvent("ITEM_LOCK_CHANGED")
   pfUI.bag:RegisterEvent("SPELLS_CHANGED")
   pfUI.bag:RegisterEvent("MERCHANT_CLOSED")
+  pfUI.bag:RegisterEvent("INVENTORY_SEARCH_UPDATE")
 
   pfUI.bag.delay = { UpdateBag = {} }
 
@@ -120,6 +119,11 @@ pfUI:RegisterModule("bags", function ()
     if this.delay.UpdateItemLock then
       this.delay.UpdateItemLock = nil
       pfUI.bag:UpdateItemLock()
+    end
+
+    if this.delay.UpdateSearch then
+      this.delay.UpdateSearch = nil
+      pfUI.bag:UpdateSearch()
     end
 
     for bag in pairs(this.delay.UpdateBag) do
@@ -157,6 +161,10 @@ pfUI:RegisterModule("bags", function ()
 
     if event == "ITEM_LOCK_CHANGED" then
       this.delay.UpdateItemLock = true
+    end
+
+    if event == "INVENTORY_SEARCH_UPDATE" then
+      this.delay.UpdateSearch = true
     end
 
     if event == "PLAYERBANKSLOTS_CHANGED" then
@@ -377,6 +385,21 @@ pfUI:RegisterModule("bags", function ()
     end
   end
 
+  -- dim the slots that the bag search (C_Container.SetItemSearch) filters out
+  local searchInfo = {}
+  function pfUI.bag:UpdateSlotSearch(bag, slot)
+    local info = C_Container.GetContainerItemInfo(bag, slot, searchInfo)
+    pfUI.bags[bag].slots[slot].frame:SetAlpha(info and info.isFiltered and .25 or 1)
+  end
+
+  function pfUI.bag:UpdateSearch()
+    for bag = -2, 11 do
+      for slot in ipairs(pfUI.bags[bag].slots) do
+        pfUI.bag:UpdateSlotSearch(bag, slot)
+      end
+    end
+  end
+
   function pfUI.bag:UpdateSlot(bag, slot)
     if not pfUI.bags[bag] then return end
 
@@ -465,6 +488,7 @@ pfUI:RegisterModule("bags", function ()
     SetItemButtonTexture(pfUI.bags[bag].slots[slot].frame, texture)
     SetItemButtonCount(pfUI.bags[bag].slots[slot].frame, count)
     SetItemButtonDesaturated(pfUI.bags[bag].slots[slot].frame, locked, 0.5, 0.5, 0.5)
+    pfUI.bag:UpdateSlotSearch(bag, slot)
 
     local hasItem = texture and 1 or nil
     pfUI.bags[bag].slots[slot].frame.hasItem = hasItem
@@ -1010,7 +1034,6 @@ pfUI:RegisterModule("bags", function ()
       -- bag search
       if not frame.search then
         frame.search = CreateFrame("Frame", "pfBagSearch", frame)
-        frame.search.db = {}
         frame.search:SetHeight(12)
         frame.search:SetPoint("TOPLEFT", frame, "TOPLEFT", default_border, -default_border)
         frame.search:SetPoint("TOPRIGHT", frame.sort, "TOPLEFT", -default_border*3, -default_border)
@@ -1035,51 +1058,12 @@ pfUI:RegisterModule("bags", function ()
 
         frame.search.edit:SetScript("OnEditFocusLost", function()
           this:SetText(T["Search"])
-          for bag=-2, 11 do
-            local bagsize = GetContainerNumSlots(bag)
-            if bag == -2 and pfUI.bag.showKeyring == true then bagsize = GetKeyRingSize() end
-            for slot=1, bagsize do
-              pfUI.bags[bag].slots[slot].frame:SetAlpha(1)
-            end
-          end
+          C_Container.SetItemSearch("")
         end)
 
         frame.search.edit:SetScript("OnTextChanged", function()
           if this:GetText() == T["Search"] then return end
-          for bag=-2, 11 do
-            local bagsize = GetContainerNumSlots(bag)
-            if bag == -2 and pfUI.bag.showKeyring == true then bagsize = GetKeyRingSize() end
-            for slot=1, bagsize do
-              pfUI.bags[bag].slots[slot].frame:SetAlpha(.25)
-              local texture, itemCount, locked, quality, readable = GetContainerItemInfo(bag, slot)
-              if itemCount then
-                local itemLink = GetContainerItemLink(bag, slot)
-                local itemstring = string.sub(itemLink, string.find(itemLink, "%[")+1, string.find(itemLink, "%]")-1)
-
-                if C.appearance.bags.fulltext == "1" then
-                  if not frame.search.db[itemLink] then
-                    scanner:SetBagItem(bag, slot)
-                    local text = scanner:Text()
-
-                    local str = ""
-                    for k, v in pairs(text) do
-                      str = str .. (v[1] or "") .. (v[2] or "")
-                    end
-
-                    frame.search.db[itemLink] = strlower(str)
-                  end
-
-                  if strfind(frame.search.db[itemLink], strlower(this:GetText()), 1, true) then
-                    pfUI.bags[bag].slots[slot].frame:SetAlpha(1)
-                  end
-                end
-
-                if strfind(strlower(itemstring), strlower(this:GetText()), 1, true) then
-                  pfUI.bags[bag].slots[slot].frame:SetAlpha(1)
-                end
-              end
-            end
-          end
+          C_Container.SetItemSearch(this:GetText())
         end)
 
         frame.search:SetScript("OnLeave", function()
@@ -1094,17 +1078,7 @@ pfUI:RegisterModule("bags", function ()
 
         frame.search:SetScript("OnHide", function()
           frame.search.edit:SetText(T["Search"])
-          for bag = -2, 11 do
-            if pfUI.bags[bag] then
-              local bagsize = GetContainerNumSlots(bag)
-              if bag == -2 and pfUI.bag.showKeyring == true then bagsize = GetKeyRingSize() end
-              for slot = 1, bagsize do
-                if pfUI.bags[bag] and pfUI.bags[bag].slots[slot] then
-                  pfUI.bags[bag].slots[slot].frame:SetAlpha(1)
-                end
-              end
-            end
-          end
+          C_Container.SetItemSearch("")
         end)
       end
     else

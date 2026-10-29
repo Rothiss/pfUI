@@ -508,6 +508,8 @@ function pfUI.uf:UpdateConfig()
   if tonumber(f.config.height) < 0 then f.hp:Hide() end
   pfUI.api.CreateBackdrop(f.hp, default_border)
 
+  -- one level above the backdrop for the bar's background, one more for its fill
+  f.hp.bar:SetFrameLevel(f.hp.backdrop:GetFrameLevel() + 2)
   f.hp.bar:SetStatusBarTexture(pfUI.media[f.config.bartexture])
   f.hp.bar:SetAllPoints(f.hp)
   if f.config.verticalbar == "1" then
@@ -522,7 +524,7 @@ function pfUI.uf:UpdateConfig()
   if custombg == "1" then
     local cr, cg, cb, ca = GetStringColor(custombgcolor)
     cr, cg, cb, ca = tonumber(cr), tonumber(cg), tonumber(cb), tonumber(ca)
-    f.hp.bar:SetStatusBarBackgroundTexture(cr,cg,cb,ca)
+    f.hp.bar:SetStatusBarBackgroundColor(cr,cg,cb,ca)
   end
 
   f.power:ClearAllPoints()
@@ -531,7 +533,7 @@ function pfUI.uf:UpdateConfig()
   if tonumber(f.config.pheight) < 0 then f.power:Hide() end
 
   pfUI.api.CreateBackdrop(f.power, default_border)
-  f.power.bar:SetFrameLevel(f.power.backdrop:GetFrameLevel() + 1)
+  f.power.bar:SetFrameLevel(f.power.backdrop:GetFrameLevel() + 2)
   f.power.bar:SetStatusBarTexture(pfUI.media[f.config.pbartexture])
   f.power.bar:SetAllPoints(f.power)
 
@@ -541,7 +543,7 @@ function pfUI.uf:UpdateConfig()
   if custompbg == "1" then
     local cr, cg, cb, ca = GetStringColor(custompbgcolor)
     cr, cg, cb, ca = tonumber(cr), tonumber(cg), tonumber(cb), tonumber(ca)
-    f.power.bar:SetStatusBarBackgroundTexture(cr,cg,cb,ca)
+    f.power.bar:SetStatusBarBackgroundColor(cr,cg,cb,ca)
   end
 
   local fontname, fontsize, fontstyle
@@ -1490,7 +1492,7 @@ function pfUI.uf:CreateUnitFrame(unit, id, config, tick)
 
   f.incHeal = CreateFrame("Frame", nil, f.hp)
   -- Texture lives on hp.bar for correct draw order:
-  -- hp.bar.bg (BACKGROUND) < incHeal (BORDER) < hp.bar.bar (NORMAL)
+  -- hp.bar.bg (a level below) < incHeal (BORDER) < hp.bar's fill (ARTWORK)
   f.incHeal.texture = f.hp.bar:CreateTexture(nil, "BORDER")
   f.incHeal.texture:SetAllPoints(f.incHeal)
   -- Override Show/Hide since texture lives on hp.bar, not incHeal

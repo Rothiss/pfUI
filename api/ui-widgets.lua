@@ -3,15 +3,19 @@ setfenv(1, pfUI:GetEnvironment())
 
 do -- statusbars
   local animations = {}
-  local stepsize, val
-  local width, height, point
+  local stepsize
+
+  -- native StatusBar methods the bar overrides
+  local statusbar = CreateFrame("StatusBar")
+  local SetValue, SetMinMaxValues = statusbar.SetValue, statusbar.SetMinMaxValues
+  local SetOrientation, SetFrameLevel = statusbar.SetOrientation, statusbar.SetFrameLevel
 
   local animate = CreateFrame("Frame", "pfStatusBarAnimation", UIParent)
   animate:SetScript("OnUpdate", function()
     stepsize = tonumber(pfUI_config.unitframes.animation_speed)
 
     for bar in pairs(animations) do
-      if not bar.val_ or abs(bar.val_ - bar.val) < stepsize or bar.instant then
+      if not bar.val_ or abs(bar.val_ - bar.val) < stepsize then
         bar:DisplayValue(bar.val)
       elseif bar.val ~= bar.val_ then
         bar:DisplayValue(bar.val_ + min((bar.val-bar.val_) / stepsize, max(bar.val-bar.val_, 30 / GetFramerate())))
@@ -21,7 +25,8 @@ do -- statusbars
 
   local handlers = {
     ["DisplayValue"] = function(self, val)
-      val = Clamp(val, self.min, self.max)
+      local smin, smax = self:GetMinMaxValues()
+      val = Clamp(val, smin, smax)
 
       -- remove animation queue
       if val == self.val_ then
@@ -30,51 +35,20 @@ do -- statusbars
 
       -- set current visible value
       self.val_ = val
+      SetValue(self, val)
 
-      if self.mode == "vertical" then
-        height = self:GetHeight()
-        point = height / (self.max - self.min) * (val - self.min)
-
-        -- keep values in limits
-        point = Clamp(point, 0, height)
-
-        -- set point to zero if value and max is zero
-        if val == 0 then point = 0 end
-
-        -- set status bar position/size
-        self.bar:SetPoint("TOPLEFT", self, "TOPLEFT", 0, - height + point)
-        self.bar:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, 0)
-
-        -- set background bar position/size
-        self.bg:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
-        self.bg:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, point)
-      else
-        width = self:GetWidth()
-        point = width / (self.max - self.min) * (val - self.min)
-
-        -- keep values in limits
-        point = Clamp(point, 0, width)
-
-        -- set point to zero if value and max is zero
-        if val == 0 then point = 0 end
-
-        -- set status bar position/size
-        self.bar:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
-        self.bar:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", - width + point, 0)
-
-        -- set background bar position/size
-        self.bg:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, 0)
-        self.bg:SetPoint("TOPLEFT", self, "TOPLEFT", point, 0)
-      end
+      -- the background fills the missing part, all of an empty range
+      self.bg:SetValue(smax > smin and (smax - val) / (smax - smin) or 1)
     end,
 
     ["SetMinMaxValues"] = function(self, smin, smax, smooth)
       -- smoothen the transition by keeping the value at the same percentage as before
-      if smooth and self.max and self.max > 0 and smax > 0 and self.max ~= smax then
-        self.val_ = (self.val_ or self.val) / self.max * smax
+      local _, oldmax = self:GetMinMaxValues()
+      if smooth and oldmax > 0 and smax > 0 and oldmax ~= smax then
+        self.val_ = (self.val_ or self.val) / oldmax * smax
       end
 
-      self.min, self.max = smin, smax
+      SetMinMaxValues(self, smin, smax)
       self:DisplayValue(self.val_ or self.val)
     end,
 
@@ -87,41 +61,35 @@ do -- statusbars
       end
     end,
 
-    ["SetStatusBarTexture"] = function(self, r, g, b, a)
-      self.bar:SetTexture(r, g, b, a)
-    end,
-
-    ["SetStatusBarColor"] = function(self, r, g, b, a)
-      self.bar:SetVertexColor(r, g, b, a)
-    end,
-
-    ["SetStatusBarBackgroundTexture"] = function(self, r, g, b, a)
-      self.bg:SetTexture(r, g, b, a)
-    end,
-
     ["SetStatusBarBackgroundColor"] = function(self, r, g, b, a)
-      self.bg:SetVertexColor(r, g, b, a)
+      self.bg:SetColorFill(r, g, b, a)
     end,
 
-    ["SetOrientation"] = function(self, mode)
-      self.mode = strlower(mode)
+    ["SetOrientation"] = function(self, orientation)
+      SetOrientation(self, orientation)
+      self.bg:SetOrientation(orientation)
+    end,
+
+    -- the background stays one level below the fill, under anything else
+    -- drawn on the fill's frame
+    ["SetFrameLevel"] = function(self, level)
+      SetFrameLevel(self, level)
+      self.bg:SetFrameLevel(level - 1)
     end,
   }
 
   function pfUI.api.CreateStatusBar(name, parent)
-    local f = CreateFrame("Button", name, parent)
-    f:EnableMouse(false)
+    local f = CreateFrame("StatusBar", name, parent)
+    SetMinMaxValues(f, 0, 100)
+    SetValue(f, 0)
+    f.val = 0
 
-    f.bar = f:CreateTexture(nil, "NORMAL")
-    f.bar:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
-    f.bar:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
-
-    f.bg = f:CreateTexture(nil, "BACKGROUND")
-    f.bg:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
-    f.bg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
-
-    -- set some default values
-    f.min, f.max, f.val = 0, 100, 0
+    f.bg = CreateFrame("StatusBar", nil, f)
+    f.bg:SetFrameLevel(f:GetFrameLevel() - 1)
+    f.bg:SetAllPoints(f)
+    f.bg:SetReverseFill(true)
+    f.bg:SetMinMaxValues(0, 1)
+    f.bg:SetValue(1)
 
     -- add all handler functions to the object
     for name, func in pairs(handlers) do

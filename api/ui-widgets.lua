@@ -6,6 +6,10 @@ do -- statusbars
   local stepsize, val
   local width, height, point
 
+  -- ClassicAPI before v1.18.0 leaves the UI scale in the size of an anchored
+  -- frame, so the bar has to divide it back out
+  local scaledsize = CLASSIC_API_VERSION < 11800
+
   local animate = CreateFrame("Frame", "pfStatusBarAnimation", UIParent)
   animate:SetScript("OnUpdate", function()
     stepsize = tonumber(pfUI_config.unitframes.animation_speed)
@@ -33,7 +37,7 @@ do -- statusbars
 
       if self.mode == "vertical" then
         height = self:GetHeight()
-        height = height / self:GetEffectiveScale()
+        if scaledsize then height = height / self:GetEffectiveScale() end
         point = height / (self.max - self.min) * (val - self.min)
 
         -- keep values in limits
@@ -51,7 +55,7 @@ do -- statusbars
         self.bg:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, point)
       else
         width = self:GetWidth()
-        width = width / self:GetEffectiveScale()
+        if scaledsize then width = width / self:GetEffectiveScale() end
         point = width / (self.max - self.min) * (val - self.min)
 
         -- keep values in limits

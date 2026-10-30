@@ -376,7 +376,8 @@ pfUI:RegisterModule("chat", function ()
     CreateBackdrop(LanguageMenu)
     CreateBackdrop(VoiceMacroMenu)
 
-    local combatlogpanel = (CombatLogQuickButtonFrame_Custom and CombatLogQuickButtonFrame_Custom:GetHeight() or 0)
+    -- the combatlog module's quick button bar sits above the docked log
+    local combatlogpanel = (ChatFrame2.CombatLogQuickButtonFrame and ChatFrame2.CombatLogQuickButtonFrame:GetHeight() or 0)
 
     for i=1, NUM_CHAT_WINDOWS do
       local frame = _G["ChatFrame"..i]
@@ -389,7 +390,7 @@ pfUI:RegisterModule("chat", function ()
         end
       end
 
-      if combat > 5 then
+      if frame.CombatLogQuickButtonFrame or combat > 5 then
         frame.pfCombatLog = true
       else
         frame.pfCombatLog = nil

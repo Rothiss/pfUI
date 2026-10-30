@@ -105,11 +105,12 @@ pfUI:RegisterModule("panel", function()
 
     do -- FPS & Lag
       local widget = CreateFrame("Frame", "pfPanelWidgetLag", UIParent)
-      local lag, fps, laghex, fpshex, _
-      widget.Tooltip = function()
+      local lag, fps, laghex, fpshex, owner, _
+      widget.Tooltip = function(self)
+        owner = self
         local active = 0
         GameTooltip:ClearLines()
-        GameTooltip_SetDefaultAnchor(GameTooltip, this)
+        GameTooltip_SetDefaultAnchor(GameTooltip, self)
         GameTooltip:AddLine("|cff555555" .. T["Systeminfo"])
         for i=1, GetNumAddOns() do
           if IsAddOnLoaded(i) then
@@ -202,6 +203,10 @@ pfUI:RegisterModule("panel", function()
         end
 
         pfUI.panel:OutputPanel("fps", fps .. " " .. T["fps"] .. " & " .. lag .. " " .. T["ms"], widget.Tooltip, widget.Click)
+
+        if owner and GameTooltip:IsOwned(owner) then
+          widget.Tooltip(owner)
+        end
       end)
     end
 

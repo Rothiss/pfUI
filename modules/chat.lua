@@ -779,6 +779,20 @@ pfUI:RegisterModule("chat", function ()
   local r,g,b,a = GetStringColor(C.chat.text.timecolor)
   local timecolorhex = rgbhex(r,g,b,a)
 
+  -- AddMessage puts the time between these at the start of each line
+  local timestampStart = timecolorhex .. tleft
+  local timestampEnd = tright .. "|r "
+
+  -- [ StripTimestamp ]
+  -- Returns a chat line without the timestamp AddMessage put before it.
+  function pfUI.chat.StripTimestamp(text)
+    if C.chat.text.time ~= "1" or text:sub(1, #timestampStart) ~= timestampStart then
+      return text
+    end
+    local _, last = text:find(timestampEnd, #timestampStart + 1, true)
+    return last and text:sub(last + 1) or text
+  end
+
   local r,g,b = GetStringColor(C.chat.text.unknowncolor)
   local unknowncolorhex = rgbhex(r,g,b)
 
@@ -879,9 +893,15 @@ pfUI:RegisterModule("chat", function ()
     -- pushes the whisper colour code off position 1 and the find below fails
     local isWhisper = C.chat.global.whispermod == "1" and string.find(text, wcol, 1) == 1
 
+    if isWhisper then
+      -- patch incoming whisper string to match the colors, before the
+      -- timestamp so it keeps the form StripTimestamp looks for
+      text = string.gsub(text, "|r", "|r" .. wcol)
+    end
+
     -- show timestamp in chat
     if C.chat.text.time == "1" then
-      text = timecolorhex .. tleft .. date(C.chat.text.timeformat) .. tright .. "|r " .. text
+      text = timestampStart .. date(C.chat.text.timeformat) .. timestampEnd .. text
     end
 
     -- save chat history
@@ -889,11 +909,6 @@ pfUI:RegisterModule("chat", function ()
       SaveChatHistory(frame:GetID(), string.gsub(text, wcol, ""), cr, cg, cb)
     else
       SaveChatHistory(frame:GetID(), text, a1, a2, a3)
-    end
-
-    if isWhisper then
-      -- patch incoming whisper string to match the colors
-      text = string.gsub(text, "|r", "|r" .. wcol)
     end
 
     frame:HookAddMessage(text, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17)

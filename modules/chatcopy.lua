@@ -75,6 +75,9 @@ pfUI:RegisterModule("chatcopy", function ()
         local lines = {}
         for index=1, frame:GetNumMessages() do
           local text, r, g, b = frame:GetMessageInfo(index)
+          if C.chat.text.copytime == "0" then
+            text = pfUI.chat.StripTimestamp(text)
+          end
           local color = rgbhex(r, g, b)
           table.insert(lines, color .. text:gsub("|r", color))
         end

@@ -2892,6 +2892,8 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(nil, T["Timestamp Format"], C.chat.text, "timeformat", nil, nil, nil, nil, "STRING")
       CreateConfig(nil, T["Timestamp Brackets"], C.chat.text, "timebracket", nil, nil, nil, nil, "STRING")
       CreateConfig(nil, T["Timestamp Color"], C.chat.text, "timecolor", "color")
+      -- read each time chat copy opens, so no reload
+      CreateConfig(function() end, T["Show Timestamps In Chat Copy"], C.chat.text, "copytime", "checkbox")
       CreateConfig(nil, T["Hide Channel Names"], C.chat.text, "channelnumonly", "checkbox")
       CreateConfig(nil, T["Generate Playerlinks"], C.chat.text, "playerlinks", "checkbox")
       CreateConfig(nil, T["Enable URL Detection"], C.chat.text, "detecturl", "checkbox")

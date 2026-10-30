@@ -802,12 +802,14 @@ pfUI:RegisterModule("chat", function ()
     return pfUI_playerDB[name].level
   end
 
-  local function AddMessage(frame, text, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17)
+  -- Passes every argument after the text on: GetMessageInfo returns them all,
+  -- and a hook that drops some loses them for every frame after it.
+  local function AddMessage(frame, text, ...)
     if not text then return end
 
     -- skip chat parsing on combat log
     if frame.pfCombatLog then
-      return frame:HookAddMessage(text, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17)
+      return frame:HookAddMessage(text, ...)
     end
 
     -- payload of the CHAT_MSG event printing this line; nil for lines
@@ -908,10 +910,10 @@ pfUI:RegisterModule("chat", function ()
     if isWhisper then
       SaveChatHistory(frame:GetID(), string.gsub(text, wcol, ""), cr, cg, cb)
     else
-      SaveChatHistory(frame:GetID(), text, a1, a2, a3)
+      SaveChatHistory(frame:GetID(), text, ...)
     end
 
-    frame:HookAddMessage(text, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17)
+    frame:HookAddMessage(text, ...)
   end
 
   for i=1,NUM_CHAT_WINDOWS do

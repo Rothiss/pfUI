@@ -722,20 +722,7 @@ end
 function pfUI.api.CreateGoldString(money)
   if type(money) ~= "number" then return "-" end
 
-  if _G.GetCoinTextureString then
-    return "|cffffffff" .. _G.GetCoinTextureString(money) .. "|r"
-  end
-
-  local gold = floor(money/ 100 / 100)
-  local silver = floor(mod((money/100),100))
-  local copper = floor(mod(money,100))
-
-  local string = ""
-  if gold > 0 then string = string .. "|cffffffff" .. gold .. "|cffffd700g" end
-  if silver > 0 or gold > 0 then string = string .. "|cffffffff " .. silver .. "|cffc7c7cfs" end
-  string = string .. "|cffffffff " .. copper .. "|cffeda55fc"
-
-  return string
+  return "|cffffffff" .. _G.GetCoinTextureString(money) .. "|r"
 end
 
 -- [ Enable Movable ]

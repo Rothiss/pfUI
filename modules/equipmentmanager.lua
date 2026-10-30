@@ -270,39 +270,20 @@ pfUI:RegisterModule("equipmentmanager", function()
   -- ============================================================
 
   local LIST_VISIBLE_ROWS = 7
-  local LIST_ROW_STRIDE = SET_ROW_HEIGHT + 2
-  local listFrame = CreateFrame("Frame", nil, frame)
+  -- The template keeps 5px around the rows, which sit 2px apart.
+  local listFrame = CreateFrame("Frame", nil, frame, "pfUIScrollBoxListTemplate")
   listFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -58)
-  -- Height fits N rows + (N-1) inter-row gaps + 3px top/bottom padding.
-  listFrame:SetSize(180, LIST_VISIBLE_ROWS * LIST_ROW_STRIDE + 4)
+  listFrame:SetSize(180, LIST_VISIBLE_ROWS * (SET_ROW_HEIGHT + 2) - 2 + 10)
   CreateBackdrop(listFrame, nil, nil, .75)
 
-  -- Mouse-wheel scroll: list of [sets..., newSetRow] is virtualized
-  -- through LIST_VISIBLE_ROWS slots. Refresh() consumes listFrame.offset
-  -- and the wheel handler clamps + bumps it.
-  listFrame.offset = 0
-  listFrame:EnableMouseWheel(true)
-  listFrame:SetScript("OnMouseWheel", function()
-    listFrame.offset = listFrame.offset - (arg1 or 0)
-    pfUI.equipmentmanager.Refresh()
-  end)
-
-  local setRows = {}
-  local function CreateSetRow()
-    local row = CreateFrame("Button", nil, listFrame)
-    row:SetSize(170, SET_ROW_HEIGHT)
-    -- Position is set per-Refresh based on the row's visible slot;
-    -- start anchored to avoid uninitialized geometry before first Refresh.
-    row:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 5, -3)
-
+  -- One-time setup of a pooled row. A row shows a set or, last in the
+  -- list, the "New Set" entry; InitSetRow sets what differs.
+  local function SetupSetRow(row)
     row.icon = row:CreateTexture(nil, "ARTWORK")
-    row.icon:SetSize(30, 30)
-    row.icon:SetPoint("LEFT", row, "LEFT", 2, 0)
-    row.icon:SetTexCoord(.08, .92, .08, .92)
+    row.icon:SetPoint("CENTER", row, "LEFT", 17, 0)
 
     row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    row.text:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
-    row.text:SetPoint("RIGHT", row, "RIGHT", -22, 0)
+    row.text:SetPoint("LEFT", row, "LEFT", 38, 0)
     row.text:SetJustifyH("LEFT")
 
     row.highlight = row:CreateTexture(nil, "BACKGROUND")
@@ -316,7 +297,11 @@ pfUI:RegisterModule("equipmentmanager", function()
     row.gear.tex = row.gear:CreateTexture(nil, "ARTWORK")
     row.gear.tex:SetAllPoints(row.gear)
     row.gear.tex:SetTexture(pfUI.path.."\\img\\Gear_64Grey")
-    row.gear:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+    row.gear.tex:SetAlpha(.5)
+    -- the gear drawn again additively lights up the gear itself
+    row.gear:SetHighlightTexture(pfUI.path.."\\img\\Gear_64Grey", "ADD")
+    -- moving onto the gear does not leave the row
+    row.gear:SetPropagateMouseMotion(true)
     row.gear:Hide()
     row.gear:SetScript("OnClick", function()
       if not row.setID then return end
@@ -335,39 +320,30 @@ pfUI:RegisterModule("equipmentmanager", function()
     end)
 
     row:SetScript("OnClick", function()
-      selectedSetID = row.setID
-      -- Detect double-click manually; vanilla Button has no native event.
-      local now = GetTime()
-      if row.lastClick and (now - row.lastClick) < 0.4 then
-        row.lastClick = nil
-        EquipSet(row.setID)
+      if row.setID then
+        selectedSetID = row.setID
+        pfUI.equipmentmanager.Refresh()
       else
-        row.lastClick = now
+        OpenNamePopup("new")
       end
-      pfUI.equipmentmanager.Refresh()
+    end)
+    row:SetScript("OnDoubleClick", function()
+      if row.setID then EquipSet(row.setID) end
     end)
 
-    -- Drag a set onto an action bar. PickupEquipmentSet is newer than
-    -- the rest of C_EquipmentSet, so dragging stays inert on ClassicAPI
-    -- builds that don't ship it yet.
-    if C_EquipmentSet.PickupEquipmentSet then
-      row:RegisterForDrag("LeftButton")
-      row:SetScript("OnDragStart", function()
-        if row.setID then C_EquipmentSet.PickupEquipmentSet(row.setID) end
-      end)
-    end
+    -- Drag a set onto an action bar.
+    row:RegisterForDrag("LeftButton")
+    row:SetScript("OnDragStart", function()
+      if row.setID then C_EquipmentSet.PickupEquipmentSet(row.setID) end
+    end)
 
-    -- Show the gear and tooltip while the cursor is over the row or its
-    -- gear child. The gear sits inside the row's rectangle, so a single
-    -- MouseIsOverHitRect(row) check covers both. OnLeave on the row and the
-    -- gear catches every exit path, so no OnUpdate poll is needed.
-    local function HideRowHover()
-      if MouseIsOverHitRect(row) then return end
-      GameTooltip:Hide()
-      row.gear:Hide()
-    end
+    -- A set row shows its gear and tooltip while the cursor is over it;
+    -- the "New Set" row lights up.
     row:SetScript("OnEnter", function()
-      if not row.setID then return end
+      if not row.setID then
+        row.highlight:Show()
+        return
+      end
       local name = C_EquipmentSet.GetEquipmentSetInfo(row.setID)
       if name then
         GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
@@ -376,40 +352,50 @@ pfUI:RegisterModule("equipmentmanager", function()
       end
       row.gear:Show()
     end)
-    row:SetScript("OnLeave", HideRowHover)
-    row.gear:SetScript("OnLeave", HideRowHover)
-
-    return row
+    row:SetScript("OnLeave", function()
+      GameTooltip:Hide()
+      row.gear:Hide()
+      if not row.setID then row.highlight:Hide() end
+    end)
   end
 
-  -- Rows are allocated lazily in Refresh — ClassicAPI no longer caps
-  -- the number of equipment sets, so we grow the pool to numSets on
-  -- demand. The set list is wheel-scrolled, so only LIST_VISIBLE_ROWS
-  -- are ever positioned in-frame at a time, but each row is bound to a
-  -- specific set index (row[i] always shows ids[i]).
+  local function InitSetRow(row, entry)
+    if not row.text then SetupSetRow(row) end
 
-  local newSetRow = CreateFrame("Button", nil, listFrame)
-  newSetRow:SetSize(170, SET_ROW_HEIGHT);
+    row.setID = entry.setID
+    row.gear:Hide()
 
-  newSetRow.icon = newSetRow:CreateTexture(nil, "ARTWORK")
-  newSetRow.icon:SetSize(24, 24);
-  newSetRow.icon:SetPoint("LEFT", newSetRow, "LEFT", 5, 0)
-  newSetRow.icon:SetTexture(pfUI.path.."\\img\\Character-Plus")
+    if not entry.setID then
+      row.icon:SetSize(24, 24)
+      row.icon:SetTexCoord(0, 1, 0, 1)
+      row.icon:SetTexture(pfUI.path.."\\img\\Character-Plus")
+      row.text:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+      row.text:SetText(PAPERDOLL_NEWEQUIPMENTSET)
+      row.text:SetTextColor(0.2, 1, 0.2)
+      row.highlight:Hide()
+      return
+    end
 
-  newSetRow.text = newSetRow:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  newSetRow.text:SetPoint("LEFT", newSetRow.icon, "RIGHT", 8, 0)
-  newSetRow.text:SetPoint("RIGHT", newSetRow, "RIGHT", -4, 0)
-  newSetRow.text:SetJustifyH("LEFT")
-  newSetRow.text:SetText(PAPERDOLL_NEWEQUIPMENTSET)
-  newSetRow.text:SetTextColor(0.2, 1, 0.2)
+    local name, icon, _, isEquipped, _, _, _, numMissing = C_EquipmentSet.GetEquipmentSetInfo(entry.setID)
+    row.icon:SetSize(30, 30)
+    row.icon:SetTexCoord(.08, .92, .08, .92)
+    if icon then
+      row.icon:SetTexture(string.find(icon, "\\") and icon or ("Interface\\Icons\\" .. icon))
+    else
+      row.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+    end
+    -- Color precedence: missing items (red) > equipped (green) > normal (white).
+    local color = (numMissing and numMissing > 0) and "|cffff5555"
+                  or isEquipped and "|cff33ff33" or "|cffffffff"
+    row.text:SetPoint("RIGHT", row, "RIGHT", -22, 0)
+    row.text:SetText(color .. (name or "?") .. "|r")
+    row.highlight:SetShown(entry.setID == selectedSetID)
+  end
 
-  newSetRow.highlight = newSetRow:CreateTexture(nil, "BACKGROUND")
-  newSetRow.highlight:SetAllPoints(newSetRow)
-  newSetRow.highlight:SetTexture(.3, .3, .3, .4)
-  newSetRow.highlight:Hide()
-  newSetRow:SetScript("OnEnter", function() newSetRow.highlight:Show() end)
-  newSetRow:SetScript("OnLeave", function() newSetRow.highlight:Hide() end)
-  newSetRow:SetScript("OnClick", function() OpenNamePopup("new") end)
+  local setView = CreateScrollBoxListLinearView(0, 0, 0, 2, 2)
+  setView:SetElementExtent(SET_ROW_HEIGHT)
+  setView:SetElementInitializer("Button", InitSetRow)
+  ScrollUtil.InitScrollBoxListWithScrollBar(listFrame.ScrollBox, listFrame.ScrollBar, setView)
 
   local function MakeButton(name, label, parent, anchor, ax, ay, width)
     local b = CreateFrame("Button", name, parent, "UIPanelButtonTemplate")
@@ -863,60 +849,21 @@ pfUI:RegisterModule("equipmentmanager", function()
       selectedSetID = nil
     end
 
-    -- Virtual list = sets ++ newSetRow. Clamp the current scroll
-    -- offset against the visible window before laying out rows so
-    -- deleting sets snaps the list back into view.
-    local totalItems = numSets + 1
-    local maxOffset = math.max(0, totalItems - LIST_VISIBLE_ROWS)
-    if listFrame.offset > maxOffset then listFrame.offset = maxOffset end
-    if listFrame.offset < 0 then listFrame.offset = 0 end
-    local off = listFrame.offset
-
-    -- Set rows: lazy-grow the pool to numSets, then position visible
-    -- ones into slots and hide the rest. Each row stays bound to a
-    -- specific set index (row[i] always shows ids[i]).
-    for i = 1, numSets do
-      if not setRows[i] then setRows[i] = CreateSetRow() end
-      local row = setRows[i]
-      local slot = i - off
-      if slot >= 1 and slot <= LIST_VISIBLE_ROWS then
-        local setID = ids[i]
-        local name, icon, _, isEquipped, _, _, _, numMissing = C_EquipmentSet.GetEquipmentSetInfo(setID)
-        row.setID = setID
-        -- Color precedence: missing items (red) > equipped (green) > normal (white).
-        local color = (numMissing and numMissing > 0) and "|cffff5555"
-                      or isEquipped and "|cff33ff33" or "|cffffffff"
-        row.text:SetText(color .. (name or "?") .. "|r")
-        if icon then
-          local full = string.find(icon, "\\") and icon or ("Interface\\Icons\\" .. icon)
-          row.icon:SetTexture(full)
-        else
-          row.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-        end
-        if setID == selectedSetID then row.highlight:Show() else row.highlight:Hide() end
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 5, -3 - (slot - 1) * LIST_ROW_STRIDE)
-        row:Show()
-      else
-        row:Hide()
-        row.setID = nil
+    -- The rows are the sets, then the "New Set" entry. They are rebuilt
+    -- only when the sets change; otherwise the shown rows refresh in
+    -- place, so the row under the cursor stays the same frame and a
+    -- double-click reaches it.
+    local setsKey = table.concat(ids, ",")
+    if setsKey ~= listFrame.setsKey then
+      listFrame.setsKey = setsKey
+      local entries = {}
+      for _, setID in ipairs(ids) do
+        table.insert(entries, { setID = setID })
       end
-    end
-    -- Hide pool entries past the current set count (left over from a
-    -- previous Refresh with more sets — e.g. just deleted one).
-    for i = numSets + 1, table.getn(setRows) do
-      setRows[i]:Hide()
-      setRows[i].setID = nil
-    end
-
-    -- "+ New Set" row occupies virtual index numSets+1.
-    local newSlot = (numSets + 1) - off
-    if newSlot >= 1 and newSlot <= LIST_VISIBLE_ROWS then
-      newSetRow:ClearAllPoints()
-      newSetRow:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 5, -3 - (newSlot - 1) * LIST_ROW_STRIDE)
-      newSetRow:Show()
+      table.insert(entries, { newSet = true })
+      listFrame.ScrollBox:SetDataProvider(CreateDataProvider(entries), ScrollBoxConstants.RetainScrollPosition)
     else
-      newSetRow:Hide()
+      listFrame.ScrollBox:ReinitializeFrames()
     end
 
     -- Update the ignored-overlay textures attached to each paperdoll
@@ -1102,11 +1049,14 @@ pfUI:RegisterModule("equipmentmanager", function()
 
   local UNUSED_COLS, UNUSED_ROWS = 7, 8
   local UNUSED_SIZE, UNUSED_GAP = 30, 4
-  local UNUSED_STRIDE = UNUSED_SIZE + UNUSED_GAP
+
+  -- The grid's list template keeps 5px around the buttons and a 7px scroll
+  -- bar 2px right of them.
+  local UNUSED_GRID_W = UNUSED_COLS * (UNUSED_SIZE + UNUSED_GAP) - UNUSED_GAP + 2 + 7 + 10
+  local UNUSED_GRID_H = UNUSED_ROWS * (UNUSED_SIZE + UNUSED_GAP) - UNUSED_GAP + 10
 
   local unusedPanel = CreateSubPanel("pfEqMgrUnusedFrame",
-    UNUSED_COLS * UNUSED_STRIDE + 24, frame:GetHeight(), T["Items Not In Any Set"])
-  unusedPanel.offset = 0  -- first visible row
+    UNUSED_GRID_W + 22, frame:GetHeight(), T["Items Not In Any Set"])
 
   unusedPanel.info = unusedPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   unusedPanel.info:SetPoint("TOPLEFT", unusedPanel, "TOPLEFT", 14, -34)
@@ -1118,14 +1068,13 @@ pfUI:RegisterModule("equipmentmanager", function()
   unusedPanel.showIgnored.label:SetPoint("RIGHT", unusedPanel.showIgnored, "LEFT", -4, 0)
   unusedPanel.showIgnored.label:SetText(T["Show Ignored"])
 
-  local unusedGrid = CreateFrame("Frame", nil, unusedPanel)
-  unusedGrid:SetPoint("TOPLEFT", unusedPanel, "TOPLEFT", 12 + UNUSED_GAP/2, -54)
-  unusedGrid:SetSize(UNUSED_COLS * UNUSED_STRIDE, UNUSED_ROWS * UNUSED_STRIDE)
-  unusedGrid:EnableMouseWheel(true)
+  local unusedGrid = CreateFrame("Frame", nil, unusedPanel, "pfUIScrollBoxListTemplate")
+  unusedGrid:SetPoint("TOPLEFT", unusedPanel, "TOPLEFT", 11, -51)
+  unusedGrid:SetSize(UNUSED_GRID_W, UNUSED_GRID_H)
 
   unusedPanel.empty = unusedPanel:CreateFontString(nil, "OVERLAY", "GameFontDisable")
   unusedPanel.empty:SetPoint("CENTER", unusedGrid, "CENTER", 0, 0)
-  unusedPanel.empty:SetWidth(UNUSED_COLS * UNUSED_STRIDE - 10)
+  unusedPanel.empty:SetWidth(UNUSED_GRID_W - 20)
   unusedPanel.empty:SetText(T["Every equippable item is part of a set."])
 
   unusedPanel.hint = unusedPanel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -1135,7 +1084,6 @@ pfUI:RegisterModule("equipmentmanager", function()
   unusedPanel.hint:SetText(T["Shift-Click: Link  Ctrl-Click: Preview\nRight-Click: Ignore / Unignore"])
 
   local RefreshUnusedPanel  -- forward decl
-  local unusedButtons = {}
 
   -- Bag highlight: while the panel is open, items of the list glow in
   -- pfUI's bag and bank frames and every other item is dimmed.
@@ -1203,12 +1151,8 @@ pfUI:RegisterModule("equipmentmanager", function()
   local WHERE_TAG = { equipped = "|cff33ff33E|r", bags = "", bank = "|cff66aaffB|r" }
   local WHERE_TEXT = { equipped = T["Equipped"], bags = T["In Bags"], bank = T["In Bank"] }
 
-  local function CreateUnusedButton(i)
-    local b = CreateFrame("Button", nil, unusedGrid)
-    b:SetSize(UNUSED_SIZE, UNUSED_SIZE)
-    local col = math.mod(i - 1, UNUSED_COLS)
-    local row = math.floor((i - 1) / UNUSED_COLS)
-    b:SetPoint("TOPLEFT", unusedGrid, "TOPLEFT", col * UNUSED_STRIDE + UNUSED_GAP/2, -row * UNUSED_STRIDE - UNUSED_GAP/2)
+  -- one-time setup of a pooled grid button
+  local function SetupUnusedButton(b)
     CreateBackdrop(b)
     b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
@@ -1252,14 +1196,24 @@ pfUI:RegisterModule("equipmentmanager", function()
         DressUpItemLink(e.link)
       end
     end)
-
-    return b
   end
 
-  unusedGrid:SetScript("OnMouseWheel", function()
-    unusedPanel.offset = unusedPanel.offset - (arg1 or 0)
-    RefreshUnusedPanel()
-  end)
+  local function InitUnusedButton(b, e)
+    if not b.icon then SetupUnusedButton(b) end
+
+    b.entry = e
+    b.icon:SetTexture(e.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+    b.icon:SetDesaturated(e.ignored and true or false)
+    b.icon:SetAlpha(e.ignored and .5 or 1)
+    b.tag:SetText(WHERE_TAG[e.where] or "")
+    local r, g, bl = GetItemQualityColor(e.quality or 1)
+    b.backdrop:SetBackdropBorderColor(r, g, bl, 1)
+  end
+
+  local unusedView = CreateScrollBoxListGridView(UNUSED_COLS, 0, 0, 0, 2, UNUSED_GAP, UNUSED_GAP)
+  unusedView:SetElementSize(UNUSED_SIZE, UNUSED_SIZE)
+  unusedView:SetElementInitializer("Button", InitUnusedButton)
+  ScrollUtil.InitScrollBoxListWithScrollBar(unusedGrid.ScrollBox, unusedGrid.ScrollBar, unusedView)
 
   function RefreshUnusedPanel()
     local list, numIgnored = ScanUnusedItems(unusedPanel.showIgnored:GetChecked() and true or nil)
@@ -1267,33 +1221,7 @@ pfUI:RegisterModule("equipmentmanager", function()
     local numShownIgnored = unusedPanel.showIgnored:GetChecked() and numIgnored or 0
     unusedPanel.info:SetText(string.format(T["%d items, %d ignored"], total - numShownIgnored, numIgnored))
 
-    local totalRows = math.ceil(total / UNUSED_COLS)
-    local maxOffset = math.max(0, totalRows - UNUSED_ROWS)
-    if unusedPanel.offset > maxOffset then unusedPanel.offset = maxOffset end
-    if unusedPanel.offset < 0 then unusedPanel.offset = 0 end
-    local first = unusedPanel.offset * UNUSED_COLS
-
-    for i = 1, UNUSED_COLS * UNUSED_ROWS do
-      local e = list[first + i]
-      local b = unusedButtons[i]
-      if e then
-        if not b then
-          b = CreateUnusedButton(i)
-          unusedButtons[i] = b
-        end
-        b.entry = e
-        b.icon:SetTexture(e.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
-        b.icon:SetDesaturated(e.ignored and true or false)
-        b.icon:SetAlpha(e.ignored and .5 or 1)
-        b.tag:SetText(WHERE_TAG[e.where] or "")
-        local r, g, bl = GetItemQualityColor(e.quality or 1)
-        if b.backdrop then b.backdrop:SetBackdropBorderColor(r, g, bl, 1) end
-        b:Show()
-      elseif b then
-        b.entry = nil
-        b:Hide()
-      end
-    end
+    unusedGrid.ScrollBox:SetDataProvider(CreateDataProvider(list), ScrollBoxConstants.RetainScrollPosition)
 
     if total == 0 then unusedPanel.empty:Show() else unusedPanel.empty:Hide() end
 
@@ -1690,10 +1618,8 @@ pfUI:RegisterModule("equipmentmanager", function()
   -- ============================================================
 
   local TRIGGER_ROWS, TRIGGER_ROW_H = 5, 24
-  local TRIGGER_STRIDE = TRIGGER_ROW_H + 2
   local triggerPanel = CreateSubPanel("pfEqMgrTriggerFrame", 310, 404, T["Automatic Set Switching"])
   local selectedTriggerID = nil
-  triggerPanel.offset = 0
 
   local cbAuto = CreateCheckbox(triggerPanel, T["Enable Automatic Set Switching"])
   cbAuto:SetPoint("TOPLEFT", triggerPanel, "TOPLEFT", 12, -30)
@@ -1702,15 +1628,11 @@ pfUI:RegisterModule("equipmentmanager", function()
     UpdateEngine()
   end)
 
-  local triggerList = CreateFrame("Frame", nil, triggerPanel)
+  -- The template keeps 5px around the rows, which sit 2px apart.
+  local triggerList = CreateFrame("Frame", nil, triggerPanel, "pfUIScrollBoxListTemplate")
   triggerList:SetPoint("TOPLEFT", triggerPanel, "TOPLEFT", 14, -56)
-  triggerList:SetSize(282, TRIGGER_ROWS * TRIGGER_STRIDE + 4)
+  triggerList:SetSize(282, TRIGGER_ROWS * (TRIGGER_ROW_H + 2) - 2 + 10)
   CreateBackdrop(triggerList, nil, nil, .75)
-  triggerList:EnableMouseWheel(true)
-  triggerList:SetScript("OnMouseWheel", function()
-    triggerPanel.offset = triggerPanel.offset - (arg1 or 0)
-    RefreshTriggerPanel()
-  end)
 
   triggerList.empty = triggerList:CreateFontString(nil, "OVERLAY", "GameFontDisable")
   triggerList.empty:SetPoint("CENTER", triggerList, "CENTER", 0, 0)
@@ -1725,12 +1647,8 @@ pfUI:RegisterModule("equipmentmanager", function()
     RefreshTriggerPanel()
   end
 
-  local triggerRows = {}
-  for i = 1, TRIGGER_ROWS do
-    local row = CreateFrame("Button", nil, triggerList)
-    row:SetSize(272, TRIGGER_ROW_H)
-    row:SetPoint("TOPLEFT", triggerList, "TOPLEFT", 5, -3 - (i - 1) * TRIGGER_STRIDE)
-
+  -- one-time setup of a pooled trigger row
+  local function SetupTriggerRow(row)
     row.highlight = row:CreateTexture(nil, "BACKGROUND")
     row.highlight:SetAllPoints(row)
     row.highlight:SetTexture(.3, .3, .3, .4)
@@ -1792,9 +1710,38 @@ pfUI:RegisterModule("equipmentmanager", function()
       GameTooltip:Show()
     end)
     row:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-    triggerRows[i] = row
   end
+
+  local function InitTriggerRow(row, entry)
+    if not row.check then SetupTriggerRow(row) end
+
+    local t, index = entry.trigger, entry.index
+    row.trigger = t
+    row.index = index
+    row.check:SetChecked(t.enabled)
+
+    local color = "|cffffffff"
+    if not t.enabled then
+      color = "|cff808080"
+    elseif not SetExists(t.setID) then
+      color = "|cffff5555"
+    elseif db.applied == t.id then
+      color = "|cff33ff33"
+    elseif ConditionActive(t) then
+      color = "|cffffd100"
+    end
+    local target = SetExists(t.setID) and SetName(t.setID) or T["No set selected"]
+    row.text:SetText(color .. DescribeTrigger(t) .. "|r |cffaaaaaa>|r " .. color .. target .. "|r")
+
+    row.highlight:SetShown(t.id == selectedTriggerID)
+    row.up:SetEnabled(index > 1)
+    row.down:SetEnabled(index < table.getn(db.triggers))
+  end
+
+  local triggerView = CreateScrollBoxListLinearView(0, 0, 0, 2, 2)
+  triggerView:SetElementExtent(TRIGGER_ROW_H)
+  triggerView:SetElementInitializer("Button", InitTriggerRow)
+  ScrollUtil.InitScrollBoxListWithScrollBar(triggerList.ScrollBox, triggerList.ScrollBar, triggerView)
 
   local btnNewTrigger = CreateFrame("Button", nil, triggerPanel, "UIPanelButtonTemplate")
   btnNewTrigger:SetSize(110, 22)
@@ -1813,10 +1760,10 @@ pfUI:RegisterModule("equipmentmanager", function()
     db.nextID = db.nextID + 1
     table.insert(db.triggers, t)
     selectedTriggerID = t.id
-    -- Scroll so the new trigger is visible.
-    triggerPanel.offset = math.max(0, table.getn(db.triggers) - TRIGGER_ROWS)
     UpdateEngine()
     RefreshTriggerPanel()
+    -- the new trigger is the last row
+    triggerList.ScrollBox:ScrollToEnd()
   end)
 
   -- Editor for the selected trigger
@@ -2016,43 +1963,12 @@ pfUI:RegisterModule("equipmentmanager", function()
   local function RefreshTriggerRows()
     cbAuto:SetChecked(C.equipmentmanager.autoswitch == "1")
 
-    local num = table.getn(db.triggers)
-    local maxOffset = math.max(0, num - TRIGGER_ROWS)
-    if triggerPanel.offset > maxOffset then triggerPanel.offset = maxOffset end
-    if triggerPanel.offset < 0 then triggerPanel.offset = 0 end
-
-    for i, row in ipairs(triggerRows) do
-      local index = i + triggerPanel.offset
-      local t = db.triggers[index]
-      if t then
-        row.trigger = t
-        row.index = index
-        row.check:SetChecked(t.enabled)
-
-        local color = "|cffffffff"
-        if not t.enabled then
-          color = "|cff808080"
-        elseif not SetExists(t.setID) then
-          color = "|cffff5555"
-        elseif db.applied == t.id then
-          color = "|cff33ff33"
-        elseif ConditionActive(t) then
-          color = "|cffffd100"
-        end
-        local target = SetExists(t.setID) and SetName(t.setID) or T["No set selected"]
-        row.text:SetText(color .. DescribeTrigger(t) .. "|r |cffaaaaaa>|r " .. color .. target .. "|r")
-
-        if t.id == selectedTriggerID then row.highlight:Show() else row.highlight:Hide() end
-        if index > 1 then row.up:Enable() else row.up:Disable() end
-        if index < num then row.down:Enable() else row.down:Disable() end
-        row:Show()
-      else
-        row.trigger = nil
-        row.index = nil
-        row:Hide()
-      end
+    local entries = {}
+    for index, t in ipairs(db.triggers) do
+      table.insert(entries, { trigger = t, index = index })
     end
-    if num == 0 then triggerList.empty:Show() else triggerList.empty:Hide() end
+    triggerList.ScrollBox:SetDataProvider(CreateDataProvider(entries), ScrollBoxConstants.RetainScrollPosition)
+    triggerList.empty:SetShown(table.getn(entries) == 0)
   end
 
   function RefreshTriggerPanel()

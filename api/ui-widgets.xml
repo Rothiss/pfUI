@@ -30,6 +30,36 @@
   </EventFrame>
 
   <!--
+  A ScrollFrame for free-form content, with pfUIScrollBarTemplate inside its
+  right edge. Put the content in frame.Content, which spans the frame: the
+  engine measures the scroll range from the shown frames inside it, so the
+  content needs no height. Changes inside it are not measured until
+  frame:UpdateScrollChildRect().
+  -->
+  <ScrollFrame name="pfUIScrollFrameTemplate" virtual="true">
+    <Frames>
+      <EventFrame parentKey="ScrollBar" inherits="pfUIScrollBarTemplate">
+        <Anchors>
+          <Anchor point="TOPRIGHT"/>
+          <Anchor point="BOTTOMRIGHT"/>
+        </Anchors>
+      </EventFrame>
+    </Frames>
+    <ScrollChild>
+      <Frame parentKey="Content">
+        <Size x="1" y="1"/>
+      </Frame>
+    </ScrollChild>
+    <Scripts>
+      <OnLoad>
+        self.Content:SetAllPoints()
+        self:EnableMouseWheel(true)
+        ScrollUtil.InitScrollFrameWithScrollBar(self, self.ScrollBar)
+      </OnLoad>
+    </Scripts>
+  </ScrollFrame>
+
+  <!--
   A WowScrollBoxList with pfUIScrollBarTemplate beside it, both 5px inside the
   frame so CreateBackdrop(frame, nil, true) can frame them. Fill it with
   ScrollUtil.InitScrollBoxListWithScrollBar(frame.ScrollBox, frame.ScrollBar, view).

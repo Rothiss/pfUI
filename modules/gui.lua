@@ -515,14 +515,15 @@ pfUI:RegisterModule("gui", function ()
 
       -- are we a frame with contents?
       if func then
-        f.scroll = CreateScrollFrame(nil, f)
+        f.scroll = CreateFrame("ScrollFrame", nil, f, "pfUIScrollFrameTemplate")
         SetAllPointsOffset(f.scroll, f, 2)
-        f.scroll.content = CreateScrollChild(nil, f.scroll)
+        f.scroll.content = f.scroll.Content
         f.scroll.content.parent = f.scroll
         f.scroll.content:SetScript("OnShow", function()
           if not this.setup then
             func()
             this.setup = true
+            this.parent:UpdateScrollChildRect()
           end
         end)
       end
@@ -774,7 +775,10 @@ pfUI:RegisterModule("gui", function ()
         end
       end
 
-      if strlen(this:GetText()) < 1 then return end
+      if strlen(this:GetText()) < 1 then
+        parent:UpdateScrollChildRect()
+        return
+      end
 
       local i = 1
       local search = strlower(this:GetText())
@@ -798,16 +802,9 @@ pfUI:RegisterModule("gui", function ()
         end
       end
 
-      -- reload scroll frames
-      scroll:Hide()
-      scroll:SetHeight(i * 25 )
-      scroll:Show()
-      parent:SetScrollChild(scroll)
-      QueueFunction(function()
-        parent:SetVerticalScroll(0)
-        parent:UpdateScrollState()
-        parent:Scroll()
-      end)
+      -- measure the new results and start at the top
+      parent:UpdateScrollChildRect()
+      parent:SetVerticalScroll(0)
     end)
 
     pfUI.gui.search:SetScript("OnEditFocusGained", function(self)

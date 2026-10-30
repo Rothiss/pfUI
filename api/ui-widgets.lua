@@ -427,6 +427,30 @@ function pfUI.api.CreateTabFrame(parent, align, outside)
   return f
 end
 
+-- [ pfUIScrollingEditBoxTemplate ]
+-- Mixin of the template in ui-widgets.xml: ClassicAPI's scrolling edit box
+-- with pfUI's scroll bar beside it.
+_G.pfUIScrollingEditBoxMixin = {}
+
+function pfUIScrollingEditBoxMixin:InitScrollBar()
+  local scrollBox = self:GetScrollBox()
+  scrollBox:ClearAllPoints()
+  scrollBox:SetPoint("TOPLEFT")
+  scrollBox:SetPoint("BOTTOMRIGHT", self.ScrollBar, "BOTTOMLEFT")
+  ScrollUtil.RegisterScrollBoxWithScrollBar(scrollBox, self.ScrollBar)
+end
+
+-- The edit box takes its font from a font object and sets that object again
+-- on every SetText, so a font path goes through a font object of the frame's own.
+function pfUIScrollingEditBoxMixin:SetFont(font, size, flags)
+  if not self.font then
+    self.font = CreateFont(self:GetName() .. "Font")
+    self:GetEditBox().fontName = self.font
+  end
+  self.font:SetFont(font, size, flags)
+  self:SetFontObject(self.font)
+end
+
 function pfUI.api.CreateScrollFrame(name, parent)
   local f = CreateFrame("ScrollFrame", name, parent)
 

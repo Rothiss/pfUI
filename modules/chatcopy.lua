@@ -1,5 +1,4 @@
 pfUI:RegisterModule("chatcopy", function ()
-  local limit = 100
   local f = CreateFrame("Frame")
   f:RegisterEvent("PLAYER_ENTERING_WORLD")
   f:SetScript("OnEvent", function()
@@ -15,26 +14,27 @@ pfUI:RegisterModule("chatcopy", function ()
     button.icon:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Disabled")
     button.icon:SetAllPoints()
 
+    -- show or hide the copy box of every chat frame
+    local function SetCopyMode(state)
+      button.state = state
+
+      for i=1, _G.NUM_CHAT_WINDOWS do
+        local scroll = _G["ChatFrame"..i].scroll
+        if scroll then
+          scroll:SetShown(state)
+        end
+      end
+
+      if state then
+        button.icon:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
+      else
+        button.icon:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Disabled")
+      end
+    end
+
     button:SetScript("OnClick", function()
       if arg1 == "LeftButton" then
-        this.state = not this.state
-
-        for i=1, _G.NUM_CHAT_WINDOWS do
-          local frame = _G["ChatFrame"..i]
-          local scroll = frame.scroll
-
-          if scroll and this.state then
-            scroll:Show()
-          elseif scroll then
-            scroll:Hide()
-          end
-        end
-
-        if this.state then
-          button.icon:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
-        else
-          button.icon:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Disabled")
-        end
+        SetCopyMode(not this.state)
       elseif arg1 == "RightButton" then
         if ChatMenu:IsShown() then
           ChatMenu:Hide()
@@ -56,98 +56,39 @@ pfUI:RegisterModule("chatcopy", function ()
 
     for i=1, _G.NUM_CHAT_WINDOWS do
       local frame = _G["ChatFrame"..i]
-      local name = frame:GetName()
 
-      local combat = 0
-      for i, msg in pairs(frame.messageTypeList) do
-        if strfind(msg, "SPELL", 1) or strfind(msg, "COMBAT", 1) then
-          combat = combat + 1
+      -- the chat frame's messages in an edit box to copy from
+      local scroll = CreateFrame("Frame", "pfChatCopy" .. i, frame, "pfUIScrollingEditBoxTemplate")
+      scroll:SetAllPoints(frame)
+      scroll.tex = scroll:CreateTexture(nil, "BACKGROUND")
+      scroll.tex:SetTexture(0,0,0,.95)
+      scroll.tex:SetPoint("TOPLEFT", -3, 3)
+      scroll.tex:SetPoint("BOTTOMRIGHT", 3, -3)
+      scroll:Hide()
+
+      scroll:RegisterCallback("OnEscapePressed", function()
+        SetCopyMode(false)
+      end, scroll)
+
+      scroll:HookScript("OnShow", function()
+        -- each line in its own color, which also replaces the |r resets inside it
+        local lines = {}
+        for index=1, frame:GetNumMessages() do
+          local text, r, g, b = frame:GetMessageInfo(index)
+          local color = rgbhex(r, g, b)
+          table.insert(lines, color .. text:gsub("|r", color))
         end
-      end
+        local text = table.concat(lines, "\n")
 
-      if combat < 5 then
-        -- initialize message cache
-        local history = {}
-        local AddMessage = frame.AddMessage
-        frame.AddMessage = function(self,msg,r,g,b)
-          if msg and r and g and b then
-            local col = rgbhex(r,g,b)
-            table.insert(history, 1, col..string.gsub(msg, "|r", col))
-          elseif msg then
-            table.insert(history, 1, "|cffffffff"..msg)
-          end
+        scroll:SetFont(frame:GetFont())
+        scroll:SetText(text)
 
-          if history[limit] then
-            table.remove(history, limit)
-          end
-          AddMessage(self,msg,r,g,b)
-        end
+        -- the cursor at the end scrolls the box to the newest line
+        scroll:SetFocus()
+        scroll:SetCursorPosition(#text)
+      end)
 
-        -- read chat defaults
-        local font, size, flags = frame:GetFont()
-
-        -- build the frames
-        local scroll = CreateScrollFrame("ChatFrameScroll"..i, frame)
-        scroll:SetAllPoints(frame)
-        scroll.tex = scroll:CreateTexture(nil, "BACKGROUND")
-        scroll.tex:SetTexture(0,0,0,.95)
-        scroll.tex:SetPoint("TOPLEFT", -3, 3)
-        scroll.tex:SetPoint("BOTTOMRIGHT", 3, -3)
-        scroll:Hide()
-
-        local editbox = CreateFrame("EditBox", "pfChatCopyBox" .. i, scroll)
-        editbox:SetSize(frame:GetSize())
-        editbox:SetAllPoints(scroll)
-        editbox:SetTextColor(1,1,1,1)
-        editbox:SetFontObject(ChatFontNormal)
-        editbox:SetFont(font, size, flags)
-        editbox:SetAutoFocus(true)
-        editbox:SetMultiLine(true)
-        editbox:SetMaxLetters(0)
-
-        editbox:SetScript("OnMouseDown", function()
-          editbox.hasFocus = true
-        end)
-
-        editbox:SetScript("OnEscapePressed", function()
-          if editbox.hasFocus then
-            editbox:HighlightText(0, 0)
-            editbox:ClearFocus()
-            editbox.hasFocus = false
-          else
-            editbox:GetParent():Hide()
-            pfChatCopyButton.icon:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Disabled")
-            pfChatCopyButton.state = false
-          end
-        end)
-
-        scroll:SetScrollChild(editbox)
-        scroll:SetScript("OnShow", function()
-          editbox:SetText("")
-          for i=limit,0,-1 do
-            if history[i] then
-              editbox:Insert("\n" .. history[i])
-            end
-          end
-
-          editbox:SetScript("OnUpdate", function()
-            if not this.count then this.count = 0 end
-
-            scroll:UpdateScrollChildRect()
-            scroll:SetVerticalScroll(scroll:GetVerticalScrollRange())
-            scroll:Scroll()
-            this.count = this.count + 1
-
-            -- the scroll frame takes a while to update
-            if this.count >= 3 then
-              this:SetScript("OnUpdate", nil)
-              this.count = 0
-            end
-          end)
-        end)
-
-        frame.scroll = scroll
-      end
+      frame.scroll = scroll
     end
 
     this:UnregisterAllEvents()

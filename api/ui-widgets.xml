@@ -28,4 +28,26 @@
       <EventButton parentKey="Forward" hidden="true"/>
     </Frames>
   </EventFrame>
+
+  <!--
+  ClassicAPI's ScrollingEditBoxTemplate with pfUIScrollBarTemplate beside the
+  text. The frame needs a name: SetFont(font, size, flags) names its font
+  object after it.
+  -->
+  <Frame name="pfUIScrollingEditBoxTemplate" inherits="ScrollingEditBoxTemplate" mixin="pfUIScrollingEditBoxMixin" virtual="true">
+    <KeyValues>
+      <KeyValue key="maxLetters" value="0" type="number"/>
+    </KeyValues>
+    <Frames>
+      <EventFrame parentKey="ScrollBar" inherits="pfUIScrollBarTemplate">
+        <Anchors>
+          <Anchor point="TOPRIGHT"/>
+          <Anchor point="BOTTOMRIGHT"/>
+        </Anchors>
+      </EventFrame>
+    </Frames>
+    <Scripts>
+      <OnLoad method="InitScrollBar" inherit="prepend"/>
+    </Scripts>
+  </Frame>
 </Ui>

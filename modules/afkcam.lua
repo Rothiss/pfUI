@@ -166,9 +166,9 @@ pfUI:RegisterModule("afkcam", function ()
     if event == "PLAYER_FLAGS_CHANGED" then
       if UnitIsAFK('player') then
         delay:Show()
-      elseif delay:IsVisible() then
+      else
         delay:Hide()
-        this:stop()
+        if this._spinning then this:stop() end
       end
     else
       if this._spinning then

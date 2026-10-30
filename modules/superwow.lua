@@ -95,20 +95,7 @@ pfUI:RegisterModule("superwow", function ()
   -- TrackUnit API for adding group members to minimap
   -- Tracks friendly units on the minimap for easier group coordination
   if TrackUnit and C.unitframes.track_group == "1" then
-    local trackFrame = CreateFrame("Frame")
-    trackFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
-    trackFrame:RegisterEvent("RAID_ROSTER_UPDATE")
-    trackFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-    trackFrame:RegisterEvent("PLAYER_LOGOUT")
-
-    trackFrame:SetScript("OnEvent", function()
-      -- Handle shutdown to prevent crash 132
-      if event == "PLAYER_LOGOUT" then
-        this:UnregisterAllEvents()
-        this:SetScript("OnEvent", nil)
-        return
-      end
-
+    local function TrackGroup()
       -- Track party members
       for i = 1, 4 do
         local unit = "party" .. i
@@ -124,7 +111,11 @@ pfUI:RegisterModule("superwow", function ()
           pcall(TrackUnit, unit)
         end
       end
-    end)
+    end
+
+    pfUI.events:RegisterFrameEventAndCallback("PARTY_MEMBERS_CHANGED", TrackGroup)
+    pfUI.events:RegisterFrameEventAndCallback("RAID_ROSTER_UPDATE", TrackGroup)
+    pfUI.events:RegisterFrameEventAndCallback("PLAYER_ENTERING_WORLD", TrackGroup)
   end
 
   -- Raid Marker Targeting API

@@ -38,13 +38,7 @@ pfUI:RegisterModule("unusable", function ()
   -- requirement changes (level, proficiency/skill, required spell, reputation,
   -- honor rank) don't touch the bags; queue a full rebag through pfUI.bag's
   -- coalesced delay, whose UpdateSlot resets the tint before we reapply it
-  local refresh = CreateFrame("Frame")
-  refresh:RegisterEvent("PLAYER_LEVEL_UP")
-  refresh:RegisterEvent("SKILL_LINES_CHANGED")
-  refresh:RegisterEvent("SPELLS_CHANGED")
-  refresh:RegisterEvent("FACTION_STANDING_CHANGED")
-  refresh:RegisterEvent("PLAYER_PVP_RANK_CHANGED")
-  refresh:SetScript("OnEvent", function()
+  local function Refresh()
     for _, bag in pairs(pfUI.BACKPACK) do
       pfUI.bag.delay.UpdateBag[bag] = true
     end
@@ -54,5 +48,10 @@ pfUI:RegisterModule("unusable", function ()
         pfUI.bag.delay.UpdateBag[bag] = true
       end
     end
-  end)
+  end
+
+  for _, event in ipairs({ "PLAYER_LEVEL_UP", "SKILL_LINES_CHANGED", "SPELLS_CHANGED",
+      "FACTION_STANDING_CHANGED", "PLAYER_PVP_RANK_CHANGED" }) do
+    pfUI.events:RegisterFrameEventAndCallback(event, Refresh)
+  end
 end)

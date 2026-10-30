@@ -1502,23 +1502,10 @@ pfUI:RegisterModule("actionbar", function ()
   _G.ShapeshiftBar_ChangeForm = function(slot) pfActionButton(slot, nil, "ShapeShiftBar") end
 
   -- handle drag-drop grid
-  local grid = CreateFrame("Frame")
-  grid:RegisterEvent("ACTIONBAR_SHOWGRID")
-  grid:RegisterEvent("ACTIONBAR_HIDEGRID")
-  grid:RegisterEvent("PET_BAR_SHOWGRID")
-  grid:RegisterEvent("PET_BAR_HIDEGRID")
-
-  grid:SetScript("OnEvent", function()
-    if event == "ACTIONBAR_SHOWGRID" then
-      pfUI.bars:UpdateGrid(1)
-    elseif event == "ACTIONBAR_HIDEGRID" then
-      pfUI.bars:UpdateGrid(0)
-    elseif event == "PET_BAR_SHOWGRID" then
-      pfUI.bars:UpdateGrid(1, "PET")
-    elseif event == "PET_BAR_HIDEGRID" then
-      pfUI.bars:UpdateGrid(0, "PET")
-    end
-  end)
+  pfUI.events:RegisterFrameEventAndCallback("ACTIONBAR_SHOWGRID", function() pfUI.bars:UpdateGrid(1) end)
+  pfUI.events:RegisterFrameEventAndCallback("ACTIONBAR_HIDEGRID", function() pfUI.bars:UpdateGrid(0) end)
+  pfUI.events:RegisterFrameEventAndCallback("PET_BAR_SHOWGRID", function() pfUI.bars:UpdateGrid(1, "PET") end)
+  pfUI.events:RegisterFrameEventAndCallback("PET_BAR_HIDEGRID", function() pfUI.bars:UpdateGrid(0, "PET") end)
 
   -- reagent counter
   if C.bars.reagents == "1" then

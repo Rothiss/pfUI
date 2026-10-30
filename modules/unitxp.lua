@@ -253,24 +253,14 @@ pfUI:RegisterModule("unitxp", function ()
 
   -- OS Notification Support
   if C.unitframes.unitxp_notify == "1" then
-    local notifyFrame = CreateFrame("Frame")
-    notifyFrame:RegisterEvent("CHAT_MSG_WHISPER")
-    notifyFrame:RegisterEvent("CHAT_MSG_BN_WHISPER")
-    notifyFrame:RegisterEvent("READY_CHECK")
-    notifyFrame:RegisterEvent("RAID_INSTANCE_WELCOME")
-    notifyFrame:RegisterEvent("PLAYER_LOGOUT")
-
-    notifyFrame:SetScript("OnEvent", function()
-      -- Handle shutdown to prevent crash 132
-      if event == "PLAYER_LOGOUT" then
-        this:UnregisterAllEvents()
-        this:SetScript("OnEvent", nil)
-        return
-      end
-      
+    local function Notify()
       pcall(UnitXP, "notify", "taskbarIcon")
       pcall(UnitXP, "notify", "systemSound")
-    end)
+    end
+
+    for _, event in ipairs({ "CHAT_MSG_WHISPER", "CHAT_MSG_BN_WHISPER", "READY_CHECK", "RAID_INSTANCE_WELCOME" }) do
+      pfUI.events:RegisterFrameEventAndCallback(event, Notify)
+    end
 
     -- Also notify on BG queue pop
     local origBattlefieldPortShow = BattlefieldFrame_Show

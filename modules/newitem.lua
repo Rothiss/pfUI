@@ -57,7 +57,7 @@ pfUI:RegisterModule("newitem", function ()
     pfUI.newitem:UpdateSlot(bag, slot)
   end)
 
-  EventRegistry:RegisterFrameEventAndCallback("BAG_NEW_ITEMS_UPDATED", function()
+  pfUI.events:RegisterFrameEventAndCallback("BAG_NEW_ITEMS_UPDATED", function()
     pfUI.newitem:RefreshAll()
   end)
 

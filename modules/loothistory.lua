@@ -318,20 +318,18 @@ pfUI:RegisterModule("loothistory", function ()
   -- ==========================================================================
   -- Events
   -- ==========================================================================
-  local events = CreateFrame("Frame")
-  events:RegisterEvent("LOOT_HISTORY_FULL_UPDATE")
-  events:RegisterEvent("LOOT_HISTORY_ROLL_CHANGED")
-  events:RegisterEvent("LOOT_HISTORY_ROLL_COMPLETE")
-  events:SetScript("OnEvent", function()
-    -- auto-show on a new roll opening / completing, if enabled
-    if C.loothistory.autoshow == "1"
-        and (event == "LOOT_HISTORY_FULL_UPDATE" or event == "LOOT_HISTORY_ROLL_COMPLETE")
-        and not pfUI.loothistory:IsShown() then
+  -- auto-show on a new roll opening / completing, if enabled
+  local function AutoShow()
+    if C.loothistory.autoshow == "1" and not pfUI.loothistory:IsShown() then
       pfUI.loothistory:Show() -- OnShow runs FullUpdate
       return
     end
     FullUpdate() -- no-op while hidden
-  end)
+  end
+
+  pfUI.events:RegisterFrameEventAndCallback("LOOT_HISTORY_FULL_UPDATE", AutoShow)
+  pfUI.events:RegisterFrameEventAndCallback("LOOT_HISTORY_ROLL_COMPLETE", AutoShow)
+  pfUI.events:RegisterFrameEventAndCallback("LOOT_HISTORY_ROLL_CHANGED", FullUpdate)
 
   -- ==========================================================================
   -- Slash command

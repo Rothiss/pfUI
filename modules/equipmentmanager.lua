@@ -1243,23 +1243,22 @@ pfUI:RegisterModule("equipmentmanager", function()
     UpdateBagHighlights()
   end)
 
-  local bankEvents = CreateFrame("Frame")
-  bankEvents:RegisterEvent("BANKFRAME_OPENED")
-  bankEvents:RegisterEvent("BANKFRAME_CLOSED")
-  bankEvents:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
-  bankEvents:RegisterEvent("BAG_UPDATE_DELAYED")
-  bankEvents:RegisterEvent("EQUIPMENT_SETS_CHANGED")
-  bankEvents:SetScript("OnEvent", function()
-    if event == "BANKFRAME_OPENED" then
-      bankOpen = true
-    elseif event == "BANKFRAME_CLOSED" then
-      bankOpen = false
-      return
-    end
+  local function RescanBank()
     if not bankOpen then return end
     ScanBank()
     if frame:IsShown() then pfUI.equipmentmanager.Refresh() end
+  end
+
+  pfUI.events:RegisterFrameEventAndCallback("BANKFRAME_OPENED", function()
+    bankOpen = true
+    RescanBank()
   end)
+  pfUI.events:RegisterFrameEventAndCallback("BANKFRAME_CLOSED", function()
+    bankOpen = false
+  end)
+  for _, event in ipairs({ "PLAYERBANKSLOTS_CHANGED", "BAG_UPDATE_DELAYED", "EQUIPMENT_SETS_CHANGED" }) do
+    pfUI.events:RegisterFrameEventAndCallback(event, RescanBank)
+  end
 
   -- ============================================================
   -- Automatic set switching (triggers)
@@ -2084,15 +2083,14 @@ pfUI:RegisterModule("equipmentmanager", function()
   -- Events
   -- ============================================================
 
-  local events = CreateFrame("Frame")
-  events:RegisterEvent("EQUIPMENT_SETS_CHANGED")
-  events:RegisterEvent("EQUIPMENT_SWAP_FINISHED")
-  events:RegisterEvent("EQUIPMENT_SWAP_PENDING")
-  events:RegisterEvent("BAG_UPDATE_DELAYED")
-  events:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
-  events:SetScript("OnEvent", function()
+  local function RefreshShown()
     if not frame:IsShown() then return end
     pfUI.equipmentmanager.Refresh()
-  end)
+  end
+
+  for _, event in ipairs({ "EQUIPMENT_SETS_CHANGED", "EQUIPMENT_SWAP_FINISHED", "EQUIPMENT_SWAP_PENDING",
+      "BAG_UPDATE_DELAYED", "PLAYER_EQUIPMENT_CHANGED" }) do
+    pfUI.events:RegisterFrameEventAndCallback(event, RefreshShown)
+  end
 
 end)

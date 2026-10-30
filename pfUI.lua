@@ -52,9 +52,11 @@ pfUI.env = {}
 -- the flag; one that lacks it should drop the flag and get the safe fallback.
 pfUI.handlesHookScript = true
 
-pfUI.events = Mixin({}, CallbackRegistryMixin)
+-- pfUI's own EventRegistry: carries pfUI's custom events ("bag:closed",
+-- "config:changed", ...) and game events alike. Register game events with
+-- RegisterFrameEventAndCallback instead of creating a frame per listener.
+pfUI.events = CreateFromMixins(EventRegistry)
 pfUI.events:OnLoad()
-pfUI.events:SetUndefinedEventsAllowed(true)
 
 -- check if macro addons are loaded (disables macrotweak/macroscan)
 function pfUI:MacroAddonsLoaded()

@@ -180,7 +180,7 @@ pfUI:RegisterModule("mapreveal", function ()
   -- above, so nothing is redrawn while the map is closed — the next open
   -- rebuilds from the current state.
 
-  EventRegistry:RegisterFrameEventAndCallback("MAP_EXPLORATION_UPDATED", function()
+  pfUI.events:RegisterFrameEventAndCallback("MAP_EXPLORATION_UPDATED", function()
     if WorldMapFrame and WorldMapFrame:IsShown() then
       pfWorldMapFrame_Update()
     end

@@ -18,9 +18,7 @@ pfUI:RegisterModule("focus", function ()
   -- Between events, ClassicAPI fires UNIT_* (health/mana/aura/...) with
   -- arg1 == "focus" and arg1 == "focustarget", so both frames update
   -- event-driven like target and need no polling tick.
-  local refresher = CreateFrame("Frame")
-  refresher:RegisterEvent("PLAYER_FOCUS_CHANGED")
-  refresher:SetScript("OnEvent", function()
+  pfUI.events:RegisterFrameEventAndCallback("PLAYER_FOCUS_CHANGED", function()
     pfUI.uf.focus.instantRefresh = true
     pfUI.uf:RefreshUnit(pfUI.uf.focus, "all")
     pfUI.uf.focustarget.instantRefresh = true

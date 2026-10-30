@@ -1051,6 +1051,8 @@ function pfUI.uf.OnEvent()
       this.update_pvp = true
     elseif event == "UNIT_COMBAT" then
       CombatFeedback_OnCombatEvent(arg2, arg3, arg4, arg5)
+    elseif event == "INCOMING_RESURRECT_CHANGED" then
+      this.update_indicators = true
     else
       this.update_base = true
     end
@@ -1221,10 +1223,6 @@ function pfUI.uf.OnUpdate()
             this.incHeal:Hide()
           end
         end
-        
-        -- update ressurections
-        local ress = libpredict:UnitHasIncomingResurrection(unit)
-        this.ressIcon:SetShown(ress and UnitIsDeadOrGhost(unit))
       end
     end
   end
@@ -1302,6 +1300,7 @@ local UNIT_EVENTS = {
   "UNIT_PORTRAIT_UPDATE", "UNIT_MODEL_CHANGED",
   "UNIT_FACTION",
   "UNIT_AURA", -- frame=buff, frame=debuff
+  "INCOMING_RESURRECT_CHANGED", -- frame=ressIcon
 }
 
 -- Point this frame's unit-event subscriptions at `unitstr`, or drop them when
@@ -1647,6 +1646,10 @@ function pfUI.uf:RefreshIndicators(unit)
 
   if unit.pvpIcon then -- PvP Icon
     unit.pvpIcon:SetShown(unit.config.showPVP == "1" and UnitIsPVP(unitstr))
+  end
+
+  if unit.ressIcon then -- Resurrection Icon
+    unit.ressIcon:SetShown(libpredict:UnitHasResurrection(unitstr))
   end
 
   if unit.restIcon and unit:GetName() == "pfPlayer" then -- Rest Icon

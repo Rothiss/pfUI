@@ -2,16 +2,21 @@
 setfenv(1, pfUI:GetEnvironment())
 
 --[[ libpredict ]]--
--- A pfUI library that detects, receives and sends heal and resurrection predictions.
+-- A pfUI library that detects, receives and sends heal predictions.
 -- Healing predictions are done by caching the last known "normal" heal value of the
 -- spell when last being used. Those chaches are cleared when new talents are detected.
 -- The API provides function calls similar to later WoW expansions such as:
 --   UnitGetIncomingHeals(unit)
---   UnitHasIncomingResurrection(unit)
+--   UnitHasResurrection(unit)
 --
--- The library is able to receive and send compatible messages to HealComm
--- including resurrections. It has an option to disable the sending of those
--- messages in case HealComm is already active.
+-- UnitHasResurrection extends ClassicAPI's UnitHasIncomingResurrection, which
+-- ends with the cast, to a resurrection that landed and waits for the target
+-- to accept it.
+--
+-- The library is able to receive and send compatible messages to HealComm,
+-- and announces the player's resurrections to HealComm and CTRA. It has an
+-- option to disable the sending of those messages in case HealComm is
+-- already active.
 --
 -- Casts are read from ClassicAPI's UNIT_SPELLCAST_* events and heal amounts
 -- from COMBAT_LOG_EVENT_UNFILTERED. GetHotDuration() reads live HoT timers
@@ -20,18 +25,16 @@ setfenv(1, pfUI:GetEnvironment())
 -- return instantly when another libpredict is already active
 if pfUI.api.libpredict then return end
 
-local heals, ress, events, hots = {}, {}, {}, {}
+local heals, events, hots = {}, {}, {}
 local spell_queue = { "DUMMY", "DUMMYRank 9", "TARGET" }
 local player = UnitName("player")
 local cache, gear_string = {}, ""
 local foreignCache = {}   -- [casterName][spellKey] = amount, in-memory cache for other healers
 local rejuvDuration, renewDuration = 12, 15 --default durations
-local ressGuidToName = {} -- [casterGuid] = casterName, for interrupted-cast cleanup
 local healGuidToName = {} -- [casterGuid] = casterName, for interrupted-cast cleanup
 local sentTargets = {}    -- [castGUID] = target name of an own cast, from UNIT_SPELLCAST_SENT
-local castTargets = {}    -- [castGUID] = target name of a foreign cast, from UNIT_SPELLCAST_START
-local ress_timers = {}    -- [target][sender] = expiry_timestamp (60s rez window)
-local RESS_TIMEOUT = 60   -- Vanilla: rez offer expires after 60s
+local resOffers = {}      -- [guid] = expiry of a landed resurrection the target has yet to accept
+local RES_OFFER_TIMEOUT = 60 -- the target's resurrect popup declines itself after 60s
 
 -- Localized spell names resolved once from canonical rank-1 spellIDs.
 -- Every rank shares the same name, so per-rank comparisons elsewhere can
@@ -42,7 +45,6 @@ local RENEW             = C_Spell.GetSpellName(139)   -- Renew (Rank 1)
 local REGROWTH          = C_Spell.GetSpellName(8936)  -- Regrowth (Rank 1)
 
 local libpredict = CreateFrame("Frame")
-libpredict:RegisterEvent("UNIT_HEALTH")
 libpredict:RegisterEvent("CHAT_MSG_ADDON")
 libpredict:RegisterEvent("PLAYER_TARGET_CHANGED")
 libpredict:RegisterEvent("PLAYER_LOGOUT")
@@ -55,13 +57,8 @@ libpredict:SetScript("OnEvent", function()
     return
   end
   
-  if event == "CHAT_MSG_ADDON" and (arg1 == "HealComm" or arg1 == "CTRA") then
-    this:ParseChatMessage(arg4, arg2, arg1)
-  elseif event == "UNIT_HEALTH" then
-    local name = UnitName(arg1)
-    if name and ress[name] and not UnitIsDeadOrGhost(arg1) then
-      ress[name] = nil
-    end
+  if event == "CHAT_MSG_ADDON" and arg1 == "HealComm" then
+    this:ParseChatMessage(arg4, arg2)
   end
 end)
 
@@ -95,12 +92,6 @@ local function cacheRaidNames()
   if pguid then guidNameCache[pguid] = UnitName("player") end
 end
 
-local function isRezSpell(spellId)
-  if not L["resurrections"] then return false end
-  local spellName = C_Spell.GetSpellName(spellId)
-  return spellName and L["resurrections"][spellName]
-end
-
 -- Build cache on world enter
 libpredict:RegisterEvent("PLAYER_ENTERING_WORLD")
 libpredict:RegisterEvent("RAID_ROSTER_UPDATE")
@@ -131,7 +122,6 @@ local function OnOwnCastStart(spellId, castGUID)
 
   if L["resurrections"][spellName] then
     if target then
-      libpredict:Ress(player, target, UnitGUID("player"))
       libpredict.sender:SendHealCommMsg("Resurrection/" .. target .. "/start/")
       libpredict.sender:SendResCommMsg("RES " .. target)
       libpredict.sender.resurrecting = true
@@ -212,7 +202,7 @@ local function OnOwnCastStart(spellId, castGUID)
   end
 end
 
--- Own cast landed: HealStop, Regrowth timer, instant HoTs, own rez timer
+-- Own cast landed: HealStop, Regrowth timer, instant HoTs
 local function OnOwnCastSucceeded(spellId, castGUID)
   local target = sentTargets[castGUID] or spell_queue[3]
   sentTargets[castGUID] = nil
@@ -250,14 +240,10 @@ local function OnOwnCastSucceeded(spellId, castGUID)
     libpredict:Hot(player, target, hotType, duration, nil, "UNIT_SPELLCAST_SUCCEEDED", rank)
     libpredict.sender:SendHealCommMsg(hotType .. "/" .. target .. "/" .. duration .. "/" .. rank .. "/")
   end
-
-  if isRezSpell(spellId) then
-    libpredict:RessSetTimer(player, target)
-  end
 end
 
--- Foreign cast-time spell started (heals + rez)
-local function OnOtherCastStart(unit, spellId, castGUID)
+-- Foreign cast-time heal started
+local function OnOtherCastStart(unit, spellId)
   local spellName = C_Spell.GetSpellName(spellId)
   if not spellName then return end
 
@@ -267,13 +253,6 @@ local function OnOtherCastStart(unit, spellId, castGUID)
 
   local targetName = UnitSpellTargetName(unit)
   if not targetName then return end
-  castTargets[castGUID] = targetName
-
-  -- Resurrection cast
-  if L["resurrections"][spellName] then
-    libpredict:Ress(casterName, targetName, casterGuid)
-    return
-  end
 
   -- Heal cast: look up cached amount from a previous cast by this healer
   local _, _, _, startMs, endMs = C_Spell.UnitCastingInfo(unit)
@@ -324,33 +303,29 @@ local function OnOtherCastStart(unit, spellId, castGUID)
   libpredict:Heal(casterName, targetName, amount, castTime, casterGuid)
 end
 
--- Foreign cast landed: rez timer, or the predicted heal is fulfilled
-local function OnOtherCastSucceeded(unit, spellId, castGUID)
-  local casterGuid = UnitGUID(unit)
-  local casterName = resolveNameFromGuid(casterGuid)
+-- Foreign cast landed: the predicted heal is fulfilled
+local function OnOtherCastSucceeded(unit)
+  local casterName = resolveNameFromGuid(UnitGUID(unit))
   if not casterName then return end
-
-  if isRezSpell(spellId) then
-    local targetName = castTargets[castGUID]
-    if targetName then
-      libpredict:RessSetTimer(casterName, targetName)
-    end
-    return
-  end
 
   libpredict:HealStop(casterName)
 end
 
--- Foreign cast interrupted: remove cancelled resses/heals
+-- Foreign cast interrupted: remove cancelled heals
 local function OnOtherCastInterrupted(unit)
   local casterGuid = UnitGUID(unit)
   if not casterGuid then return end
-  local ressName = ressGuidToName[casterGuid]
-  if ressName then
-    libpredict:RessStop(ressName)
-  end
   local healName = healGuidToName[casterGuid]
   if healName then libpredict:HealStop(healName) end
+end
+
+-- Flag the unit frames showing `guid` to redraw their resurrection icon
+local function RefreshResFrames(guid)
+  for _, frame in pairs(pfUI.uf.frames) do
+    if frame.unitstr and UnitGUID(frame.unitstr) == guid then
+      frame.update_indicators = true
+    end
+  end
 end
 
 libpredict:SetScript("OnUpdate", function()
@@ -366,13 +341,12 @@ libpredict:SetScript("OnUpdate", function()
     end
   end
 
-  -- Rez timeout: remove offer after 60s if player doesn't accept
-  for target, senders in pairs(ress_timers) do
-    for sender, expiry in pairs(senders) do
-      if now >= expiry then
-        senders[sender] = nil
-        if ress[target] then ress[target][sender] = nil end
-      end
+  -- drop resurrection offers the target accepted or let run out
+  for guid, expiry in pairs(resOffers) do
+    local unit = UnitTokenFromGUID(guid)
+    if now >= expiry or not (unit and UnitIsDeadOrGhost(unit)) then
+      resOffers[guid] = nil
+      RefreshResFrames(guid)
     end
   end
 end)
@@ -386,8 +360,6 @@ function libpredict:ParseComm(sender, msg)
     if libpredict.debug then
       DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[libpredict RX]|r HealStop from " .. tostring(sender))
     end
-  elseif msg == "Resurrection/stop/" then
-    msgtype = "RessStop"
   elseif msg then
     local msgobj = {strsplit("/", msg)}
 
@@ -395,10 +367,6 @@ function libpredict:ParseComm(sender, msg)
       -- legacy healcomm object
       if msgobj[1] == "GrpHealdelay" or msgobj[1] == "Healdelay" then
         msgtype, time = "Delay", msgobj[2]
-      end
-
-      if msgobj[1] and msgobj[1] == "Resurrection" and msgobj[2] then
-        msgtype, target = "Ress", msgobj[2]
       end
 
       if msgobj[1] == "Heal" and msgobj[2] then
@@ -472,26 +440,11 @@ end
 local recentHots = {}
 local DUPLICATE_WINDOW = 0.5  -- Ignoriere gleiche Nachricht innerhalb 0.5s
 
-function libpredict:ParseChatMessage(sender, msg, comm)
-  local msgtype, target, heal, time, rank
-
-  if comm == "HealComm" then
-    msgtype, target, heal, time, rank = libpredict:ParseComm(sender, msg)
-  elseif comm == "CTRA" then
-    local _, _, cmd, ctratarget = string.find(msg, "(%a+)%s?([^#]*)")
-    if cmd and ctratarget and cmd == "RES" and ctratarget ~= "" and ctratarget ~= UNKNOWN then
-      msgtype = "Ress"
-      target = ctratarget
-    elseif cmd == "RESNO" then
-      msgtype = "RessStop"
-    end
-  end
+function libpredict:ParseChatMessage(sender, msg)
+  local msgtype, target, heal, time, rank = libpredict:ParseComm(sender, msg)
 
   if msgtype == "Stop" and sender then
     libpredict:HealStop(sender)
-    return
-  elseif msgtype == "RessStop" and sender then
-    libpredict:RessStop(sender)
     return
   elseif msgtype == "Delay" and time then
     libpredict:HealDelay(sender, time)
@@ -502,29 +455,6 @@ function libpredict:ParseChatMessage(sender, msg, comm)
       end
     else
       libpredict:Heal(sender, target, heal, time)
-    end
-  elseif msgtype == "Ress" then
-    -- HealComm: only for other players (own resses tracked via UNIT_SPELLCAST_START)
-    local playerName = UnitName("player")
-    if sender ~= playerName then
-      local senderGuid
-      for i = 1, GetNumRaidMembers() do
-        local unit = "raid" .. i
-        if UnitName(unit) == sender then
-          senderGuid = UnitGUID(unit)
-          break
-        end
-      end
-      if not senderGuid then
-        for i = 1, GetNumPartyMembers() do
-          local unit = "party" .. i
-          if UnitName(unit) == sender then
-            senderGuid = UnitGUID(unit)
-            break
-          end
-        end
-      end
-      libpredict:Ress(sender, target, senderGuid)
     end
   elseif msgtype == "Hot" then
     -- Duplicate check: ignore same sender+target+spell within DUPLICATE_WINDOW
@@ -674,41 +604,6 @@ function libpredict:HealDelay(sender, delay)
   end
 end
 
-function libpredict:Ress(sender, target, senderGuid)
-  ress[target] = ress[target] or {}
-  ress[target][sender] = true
-  if senderGuid then ressGuidToName[senderGuid] = sender end
-  -- no timer here - timer is only set once the cast actually completes
-end
-
-function libpredict:RessSetTimer(sender, target)
-  ress_timers[target] = ress_timers[target] or {}
-  local existing = ress_timers[target][sender]
-  if not existing or GetTime() >= existing then
-    ress_timers[target][sender] = GetTime() + RESS_TIMEOUT
-  else
-  end
-end
-
-function libpredict:RessStop(sender)
-  local now = GetTime()
-  for ttarget, t in pairs(ress) do
-    for tsender in pairs(ress[ttarget]) do
-      if sender == tsender then
-        local expiry = ress_timers[ttarget] and ress_timers[ttarget][tsender]
-        if not expiry or now >= expiry then
-          ress[ttarget][tsender] = nil
-          if ress_timers[ttarget] then ress_timers[ttarget][tsender] = nil end
-        else
-        end
-      end
-    end
-  end
-  for guid, name in pairs(ressGuidToName) do
-    if name == sender then ressGuidToName[guid] = nil end
-  end
-end
-
 function libpredict:UnitGetIncomingHeals(unit)
   if not unit then return 0 end
   local name = UnitName(unit)
@@ -731,21 +626,10 @@ function libpredict:UnitGetIncomingHeals(unit)
   return sumheal
 end
 
-function libpredict:UnitHasIncomingResurrection(unit)
-  if not unit then return nil end
-  local name = UnitName(unit)
-  if not name then return nil end
-
-  if not ress[name] then
-    return nil
-  else
-    for sender, val in pairs(ress[name]) do
-      if val == true then
-        return val
-      end
-    end
-  end
-  return nil
+-- Whether a resurrection is being cast at the unit, or landed and waits for
+-- the unit to accept it
+function libpredict:UnitHasResurrection(unit)
+  return UnitHasIncomingResurrection(unit) or resOffers[UnitGUID(unit)] ~= nil
 end
 
 local realm = GetRealmName()
@@ -1073,7 +957,6 @@ libpredict.sender:RegisterEvent("UNIT_SPELLCAST_DELAYED")
 libpredict.sender:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 libpredict.sender:RegisterEvent("UNIT_SPELLCAST_FAILED")
 libpredict.sender:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
-libpredict.sender:RegisterEvent("UNIT_SPELLCAST_STOP")
 libpredict.sender:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 
 -- Shared cleanup helper for failed/interrupted casts
@@ -1085,7 +968,6 @@ local function onCastFailed()
     s.healing = nil
   elseif s.resurrecting then
     local target = s.current_cast_target or spell_queue[3]
-    libpredict:RessStop(UnitName("player"))
     s:SendHealCommMsg("Resurrection/stop/")
     s:SendResCommMsg("RESNO " .. (target or ""))
     s.resurrecting = nil
@@ -1136,11 +1018,20 @@ local function OnHeal()
   end
 end
 
+-- A landed resurrection: the target has an offer to accept, which outlasts
+-- UnitHasIncomingResurrection's end with the cast
+local function OnResurrect()
+  -- arg8=destGUID
+  resOffers[arg8] = GetTime() + RES_OFFER_TIMEOUT
+  RefreshResFrames(arg8)
+end
+
 local lastOtherCast = {}  -- [event] = castGUID of the last other-unit event handled
 
 libpredict.sender:SetScript("OnEvent", function()
   if event == "COMBAT_LOG_EVENT_UNFILTERED" then
-    if arg2 == "SPELL_HEAL" then OnHeal() end
+    if arg2 == "SPELL_HEAL" then OnHeal()
+    elseif arg2 == "SPELL_RESURRECT" then OnResurrect() end
     return
   end
 
@@ -1176,13 +1067,11 @@ libpredict.sender:SetScript("OnEvent", function()
   lastOtherCast[event] = arg2
 
   if event == "UNIT_SPELLCAST_START" then
-    OnOtherCastStart(unit, arg3, arg2)
+    OnOtherCastStart(unit, arg3)
   elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
-    OnOtherCastSucceeded(unit, arg3, arg2)
+    OnOtherCastSucceeded(unit)
   elseif event == "UNIT_SPELLCAST_INTERRUPTED" then
     OnOtherCastInterrupted(unit)
-  elseif event == "UNIT_SPELLCAST_STOP" then
-    castTargets[arg2] = nil
   end
 end)
 

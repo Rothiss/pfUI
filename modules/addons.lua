@@ -69,12 +69,42 @@ pfUI:RegisterModule("addons", function ()
     pfUI.addons:Hide()
   end)
 
+  -- installed addons, one entry per row of the addon list
+  local addons = {}
+  for i = 1, GetNumAddOns() do
+    local name, title, notes = GetAddOnInfo(i)
+    addons[i] = {
+      index = i,
+      name = name,
+      title = title,
+      notes = notes,
+      author = GetAddOnMetadata(name, "Author"),
+      version = GetAddOnMetadata(name, "Version"),
+      deps = { GetAddOnDependencies(i) },                         -- required (.toc Dependencies)
+      optdeps = { C_AddOns.GetAddOnOptionalDependencies(i) },     -- optional (.toc OptionalDeps)
+    }
+  end
+
+  local function IsAddonEnabled(index)
+    local _, _, _, enabled = GetAddOnInfo(index)
+    return enabled
+  end
+
+  local function SetAddonEnabled(index, enabled)
+    if enabled then
+      EnableAddOn(index)
+    else
+      DisableAddOn(index)
+    end
+    pfUI.addons.hasChanged = true
+  end
+
   -- addons profile
   local function GetSelectedAddonsList()
     local selected_addons = {}
-    for i, frame in ipairs(pfUI.addons.list) do
-      if frame.input:GetChecked() then
-        table.insert(selected_addons, frame.aname)
+    for i, addon in ipairs(addons) do
+      if IsAddonEnabled(i) then
+        table.insert(selected_addons, addon.name)
       end
     end
     return selected_addons
@@ -90,28 +120,20 @@ pfUI:RegisterModule("addons", function ()
     pfUI.addons.profile.dropdown:SetSelectionByText(profile)
 
     -- load profile
-    local selected_list = pfUI_addon_profiles[profile]
-    for i=1, GetNumAddOns() do
-      local active = false
-      local f = pfUI.addons.list[i]
+    local selected = {}
+    for _, name in ipairs(pfUI_addon_profiles[profile]) do
+      selected[name] = true
+    end
 
-      for i_i, n in ipairs(selected_list) do
-        if f.aname == n then
-          active = true
-          break
-        end
-      end
-
-      if active then
-        if not f.input:GetChecked() then
-          f.input:Click()
-        end
-      else
-        if f.input:GetChecked() then
-          f.input:Click()
-        end
+    for i, addon in ipairs(addons) do
+      if selected[addon.name] and not IsAddonEnabled(i) then
+        SetAddonEnabled(i, true)
+      elseif not selected[addon.name] and IsAddonEnabled(i) then
+        SetAddonEnabled(i, false)
       end
     end
+
+    pfUI.addons.scroll:ReinitializeFrames()
   end
 
   -- addon profiles
@@ -193,23 +215,6 @@ pfUI:RegisterModule("addons", function ()
     return menu
   end)
 
-  -- addon list: scroll frame
-  pfUI.addons.scroll = CreateScrollFrame("pfAddonListScroll", pfUI.addons)
-  pfUI.addons.scroll:SetSize(360, 410)
-  pfUI.addons.scroll:SetPoint("BOTTOM", 0, 10)
-
-  pfUI.addons.scroll.backdrop = CreateFrame("Frame", nil, pfUI.addons.scroll)
-  pfUI.addons.scroll.backdrop:SetFrameLevel(1)
-  pfUI.addons.scroll.backdrop:SetPoint("TOPLEFT", pfUI.addons.scroll, "TOPLEFT", -5, 5)
-  pfUI.addons.scroll.backdrop:SetPoint("BOTTOMRIGHT", pfUI.addons.scroll, "BOTTOMRIGHT", 5, -5)
-  CreateBackdrop(pfUI.addons.scroll.backdrop, nil, true)
-
-  -- addon list: scroll parent
-  pfUI.addons.list = CreateScrollChild("pfAddonList", pfUI.addons.scroll)
-  pfUI.addons.list:RegisterEvent("ADDON_LOADED")
-  pfUI.addons.list:RegisterEvent("PLAYER_ENTERING_WORLD")
-  pfUI.addons.list:SetHeight(GetNumAddOns() * 25 + 26)
-
   local function AddDependencyLines(header, deps)
     if not deps or table.getn(deps) == 0 then return end
     GameTooltip:AddLine(" ")
@@ -225,137 +230,105 @@ pfUI:RegisterModule("addons", function ()
     end
   end
 
-  local function AddonOnEnter()
-    this:SetBackdropBorderColor(1,1,1,.08)
+  local function RowOnEnter(self)
+    local addon = self.addon
+    self:SetBackdropBorderColor(1,1,1,.08)
 
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:SetText(this.atitle)
-    if this.aversion then
-      GameTooltip:AddDoubleLine(T["Version"], this.aversion, 1,1,1, .2,1,.8)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(addon.title)
+    if addon.version then
+      GameTooltip:AddDoubleLine(T["Version"], addon.version, 1,1,1, .2,1,.8)
     end
 
-    if this.aauthor then
-      GameTooltip:AddDoubleLine(T["Author"], this.aauthor, 1,1,1, .2,1,.8)
+    if addon.author then
+      GameTooltip:AddDoubleLine(T["Author"], addon.author, 1,1,1, .2,1,.8)
     end
 
-    GameTooltip:AddLine(this.anote, .75,.75,.75,1)
-    AddDependencyLines(T["Dependencies"], this.adeps)
-    AddDependencyLines(T["Optional Dependencies"], this.aoptdeps)
+    GameTooltip:AddLine(addon.notes, .75,.75,.75,1)
+    AddDependencyLines(T["Dependencies"], addon.deps)
+    AddDependencyLines(T["Optional Dependencies"], addon.optdeps)
     GameTooltip:SetWidth(180)
     GameTooltip:Show()
   end
 
-  local function AddonOnLeave()
-    this:SetBackdropBorderColor(1,1,1,.04)
+  local function RowOnLeave(self)
+    self:SetBackdropBorderColor(1,1,1,.04)
     GameTooltip:Hide()
   end
 
-  local function AddonOnClick()
-    this.input:Click()
+  local function RowOnClick(self)
+    self.input:Click()
   end
 
-  local function InputOnClick()
-    if this:GetChecked() then
-      EnableAddOn(this:GetID())
-    else
-      DisableAddOn(this:GetID())
-    end
-    pfUI.addons.hasChanged = true
+  local function InputOnClick(self)
+    SetAddonEnabled(self:GetParent().addon.index, self:GetChecked())
 
-    local id, name = pfUI.addons.profile.dropdown:GetSelection()
+    local _, name = pfUI.addons.profile.dropdown:GetSelection()
     name = name or T["Current"]
     pfUI_addon_profiles[name] = GetSelectedAddonsList()
   end
 
-  pfUI.addons.list:SetScript("OnEvent", function()
-    for i=1, GetNumAddOns() do
-      local aname, atitle, anote = GetAddOnInfo(i)
-      local aauthor = GetAddOnMetadata(aname, "Author")
-      local aversion = GetAddOnMetadata(aname, "Version")
+  local function InitRow(row, addon)
+    -- one-time setup of a pooled row
+    if not row.input then
+      row:SetBackdrop(pfUI.backdrop_hover)
+      row:SetBackdropBorderColor(1,1,1,.04)
 
-      -- basic frame
-      if not pfUI.addons.list[i] then
-        pfUI.addons.list[i] = CreateFrame("Button", nil, pfUI.addons.list)
-        local frame = pfUI.addons.list[i]
-        frame.aname = aname
-        frame.atitle = atitle
-        frame.anote = anote
-        frame.aauthor = aauthor
-        frame.aversion = aversion
-        frame.adeps = { GetAddOnDependencies(i) }                          -- required (.toc Dependencies)
-        frame.aoptdeps = { C_AddOns.GetAddOnOptionalDependencies(i) }      -- optional (.toc OptionalDeps)
+      row:EnableMouse(true)
+      row:SetScript("OnEnter", RowOnEnter)
+      row:SetScript("OnLeave", RowOnLeave)
+      row:SetScript("OnClick", RowOnClick)
 
-        frame:SetSize(340, 25)
-        frame:SetPoint("TOPLEFT", 5, i * -25 + 20)
+      -- caption
+      row.caption = row:CreateFontString(nil, "LOW", "GameFontNormal")
+      row.caption:SetFont(pfUI.font_default, C.global.font_size + 2, "OUTLINE")
+      row.caption:SetPoint("LEFT", row, "LEFT", 2, 0)
+      row.caption:SetFontObject(GameFontWhite)
+      row.caption:SetJustifyH("LEFT")
 
-        frame:SetBackdrop(pfUI.backdrop_hover)
-        frame:SetBackdropBorderColor(1,1,1,.04)
-
-        frame:EnableMouse(1)
-        frame:SetScript("OnEnter", AddonOnEnter)
-        frame:SetScript("OnLeave", AddonOnLeave)
-        frame:SetScript("OnClick", AddonOnClick)
-
-        -- caption
-        frame.caption = frame:CreateFontString("Status", "LOW", "GameFontNormal")
-        frame.caption:SetFont(pfUI.font_default, C.global.font_size + 2, "OUTLINE")
-        frame.caption:SetPoint("LEFT", frame, "LEFT", 2, 0)
-        frame.caption:SetFontObject(GameFontWhite)
-        frame.caption:SetJustifyH("LEFT")
-        frame.caption:SetText(atitle)
-
-        -- input field
-        frame.input = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
-        frame.input:SetFrameLevel(3)
-        frame.input:SetNormalTexture("")
-        frame.input:SetPushedTexture("")
-        frame.input:SetHighlightTexture("")
-        CreateBackdrop(frame.input, nil, true)
-        frame.input:SetBackdropBorderColor(.3,.3,.3,1)
-        frame.input:SetWidth(14)
-        frame.input:SetHeight(14)
-        frame.input:SetPoint("RIGHT" , -5, 1)
-        frame.input:SetID(i)
-        frame.input:SetScript("OnClick", InputOnClick)
-      end
-
-      if IsAddOnLoaded(i) then
-        pfUI.addons.list[i].input:SetChecked()
-        pfUI.addons.list[i].caption:SetAlpha(1)
-      else
-        pfUI.addons.list[i].caption:SetAlpha(.5)
-      end
+      -- input field
+      row.input = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
+      row.input:SetNormalTexture("")
+      row.input:SetPushedTexture("")
+      row.input:SetHighlightTexture("")
+      CreateBackdrop(row.input, nil, true)
+      row.input:SetBackdropBorderColor(.3,.3,.3,1)
+      row.input:SetSize(14, 14)
+      row.input:SetPoint("RIGHT" , -5, 1)
+      row.input:SetScript("OnClick", InputOnClick)
     end
-  end)
 
-  -- show only frames in visible range
-  function pfUI.addons.scroll:ShowVisibleRange()
-    local top_index, bottom_index, range
-    range = floor(pfUI.addons.scroll:GetHeight() / 25) + 1
-    top_index = floor(pfUI.addons.scroll:GetVerticalScroll() / 25) > 0 and floor(pfUI.addons.scroll:GetVerticalScroll() / 25) or 1
-    bottom_index = top_index + range
-    for i=1, GetNumAddOns() do
-      if i >= top_index and i <= bottom_index then
-        pfUI.addons.list[i]:Show()
-      else
-        pfUI.addons.list[i]:Hide()
-      end
-    end
+    row.addon = addon
+    row.caption:SetText(addon.title)
+    row.caption:SetAlpha(IsAddOnLoaded(addon.index) and 1 or .5)
+    row.input:SetChecked(IsAddonEnabled(addon.index))
   end
 
-  pfUI.addons.scroll.slider:SetScript("OnValueChanged", function()
-    this:GetParent():SetVerticalScroll(this:GetValue())
-  end)
-  pfUI.addons.scroll:SetScript("OnScrollRangeChanged", function()
-    this.slider:SetMinMaxValues(1, floor(this:GetVerticalScrollRange() + 25))
-  end)
-  pfUI.addons.scroll:SetScript("OnShow", function()
-    this.slider:SetValue(floor(this:GetVerticalScroll()))
-    pfUI.addons.scroll:ShowVisibleRange()
-  end)
-  pfUI.addons.scroll:SetScript("OnVerticalScroll", function()
-    pfUI.addons.scroll:ShowVisibleRange()
-    this.slider:SetValue(floor(this:GetVerticalScroll()))
+  -- addon list: a ScrollBox keeps rows only for the addons in view
+  pfUI.addons.scroll = CreateFrame("Frame", "pfAddonListScroll", pfUI.addons, "WowScrollBoxList")
+  pfUI.addons.scroll:SetSize(360, 410)
+  pfUI.addons.scroll:SetPoint("BOTTOM", 0, 10)
+
+  -- the ScrollBox clips its children, so the backdrop is a sibling
+  pfUI.addons.scroll.backdrop = CreateFrame("Frame", nil, pfUI.addons)
+  pfUI.addons.scroll.backdrop:SetPoint("TOPLEFT", pfUI.addons.scroll, "TOPLEFT", -5, 5)
+  pfUI.addons.scroll.backdrop:SetPoint("BOTTOMRIGHT", pfUI.addons.scroll, "BOTTOMRIGHT", 5, -5)
+  CreateBackdrop(pfUI.addons.scroll.backdrop, nil, true)
+
+  local scrollbar = CreateFrame("EventFrame", nil, pfUI.addons, "pfUIScrollBarTemplate")
+  scrollbar:SetPoint("TOPRIGHT", pfUI.addons.scroll, "TOPRIGHT")
+  scrollbar:SetPoint("BOTTOMRIGHT", pfUI.addons.scroll, "BOTTOMRIGHT")
+
+  local view = CreateScrollBoxListLinearView(5, 5, 5, 15)
+  view:SetElementExtent(25)
+  view:SetElementInitializer("Button", InitRow)
+  ScrollUtil.InitScrollBoxListWithScrollBar(pfUI.addons.scroll, scrollbar, view)
+  pfUI.addons.scroll:SetDataProvider(CreateDataProvider(addons))
+
+  -- a load-on-demand addon that loads brightens its row
+  pfUI.addons.scroll:RegisterEvent("ADDON_LOADED")
+  pfUI.addons.scroll:SetScript("OnEvent", function(self)
+    self:ReinitializeFrames()
   end)
 
 end)

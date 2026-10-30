@@ -1,0 +1,31 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+  <!--
+  pfUI's scroll bar for ClassicAPI's ScrollBox: a thin track with a flat
+  thumb. ScrollBarMixin needs Back and Forward steppers, so they exist but
+  stay hidden. Hook it up with ScrollUtil.InitScrollBoxListWithScrollBar.
+  -->
+  <EventFrame name="pfUIScrollBarTemplate" inherits="VerticalScrollBarTemplate" virtual="true">
+    <Size x="7"/>
+    <KeyValues>
+      <KeyValue key="hideIfUnscrollable" value="true" type="boolean"/>
+    </KeyValues>
+    <Frames>
+      <Frame parentKey="Track" setAllPoints="true" enableMouse="true">
+        <Frames>
+          <EventButton parentKey="Thumb">
+            <Size x="7"/>
+            <Layers>
+              <Layer level="ARTWORK">
+                <Texture setAllPoints="true">
+                  <Color r=".3" g="1" b=".8" a=".5"/>
+                </Texture>
+              </Layer>
+            </Layers>
+          </EventButton>
+        </Frames>
+      </Frame>
+      <EventButton parentKey="Back" hidden="true"/>
+      <EventButton parentKey="Forward" hidden="true"/>
+    </Frames>
+  </EventFrame>
+</Ui>

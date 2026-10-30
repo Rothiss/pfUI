@@ -761,7 +761,7 @@ pfUI:RegisterModule("gui", function ()
       local defval = "["..T["Search"].."]"
 
       -- initialize search window
-      CreateGUIEntry(defval, nil, function() end)
+      CreateGUIEntry(defval, nil, nop)
       pfUI.gui.frames[defval]:Click()
 
       local scroll = pfUI.gui.frames[defval].area.scroll.content

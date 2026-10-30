@@ -76,8 +76,8 @@ pfUI:RegisterSkin("Books", function ()
     ItemTextScrollFrameScrollBarScrollUpButton:Show()
     ItemTextScrollFrameScrollBarScrollDownButton:Show()
 
-    ItemTextScrollFrame.Show = function(self) end
-    ItemTextScrollFrame.Hide = function(self) end
+    ItemTextScrollFrame.Show = nop
+    ItemTextScrollFrame.Hide = nop
     ItemTextScrollFrameScrollBar.Show = function(self) self.thumb:Show() end
     ItemTextScrollFrameScrollBar.Hide = function(self) self.thumb:Hide() end
     ItemTextScrollFrameScrollBarScrollUpButton.Show = function(self) if self:GetParent():GetValue() ~= 0 then self:Enable() end end

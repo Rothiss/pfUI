@@ -23,7 +23,7 @@ pfUI:RegisterSkin("Options - Interface", function ()
     SkinCollapseButton(toggle)
     toggle:SetPushedTexture("")
     toggle:SetHighlightTexture("")
-    toggle.SetPushedTexture = function() end
+    toggle.SetPushedTexture = nop
   end
 
   -- ClassicAPI's own pages (Options\Panel.lua) number their controls

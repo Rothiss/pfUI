@@ -34,8 +34,8 @@ pfUI:RegisterSkin("KeyBindings", function ()
         local button = _G["KeyBindingFrameBinding"..key.."Key"..btn.."Button"]
         StripTextures(button)
         SkinButton(button)
-        button:SetScript("OnMouseDown", function() end)
-        button:SetScript("OnMouseUp", function() end)
+        button:SetScript("OnMouseDown", nop)
+        button:SetScript("OnMouseUp", nop)
       end
     end
   end)

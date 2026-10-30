@@ -1324,14 +1324,14 @@ pfUI:RegisterModule("gui", function ()
 
       this.version = this:CreateFontString("Status", "LOW", "GameFontWhite")
       this.version:SetFont(pfUI.font_default, C.global.font_size)
-      this.version:SetPoint("TOPRIGHT", 375, -170)
+      this.version:SetPoint("TOPRIGHT", this, "TOPLEFT", 375, -170)
       this.version:SetWidth(200)
       this.version:SetJustifyH("RIGHT")
 
       this.update = this:CreateFontString("Status", "LOW", "GameFontWhite")
       this.update:SetFont(pfUI.font_default, C.global.font_size)
       this.update:SetPoint("TOPLEFT", 200, -140)
-      this.update:SetPoint("TOPRIGHT", 375, -140)
+      this.update:SetPoint("TOPRIGHT", this, "TOPLEFT", 375, -140)
       this.update:SetJustifyH("CENTER")
       this.update:SetTextColor(.2,1,.8)
 
@@ -1344,7 +1344,7 @@ pfUI:RegisterModule("gui", function ()
 
       this.screen = this:CreateFontString("Status", "LOW", "GameFontWhite")
       this.screen:SetFont(pfUI.font_default, C.global.font_size)
-      this.screen:SetPoint("TOPRIGHT", 375, -200)
+      this.screen:SetPoint("TOPRIGHT", this, "TOPLEFT", 375, -200)
       this.screen:SetWidth(200)
       this.screen:SetJustifyH("RIGHT")
 
@@ -1357,7 +1357,7 @@ pfUI:RegisterModule("gui", function ()
 
       this.scale = this:CreateFontString("Status", "LOW", "GameFontWhite")
       this.scale:SetFont(pfUI.font_default, C.global.font_size)
-      this.scale:SetPoint("TOPRIGHT", 375, -220)
+      this.scale:SetPoint("TOPRIGHT", this, "TOPLEFT", 375, -220)
       this.scale:SetWidth(200)
       this.scale:SetJustifyH("RIGHT")
 
@@ -1370,7 +1370,7 @@ pfUI:RegisterModule("gui", function ()
 
       this.client = this:CreateFontString("Status", "LOW", "GameFontWhite")
       this.client:SetFont(pfUI.font_default, C.global.font_size)
-      this.client:SetPoint("TOPRIGHT", 375, -250)
+      this.client:SetPoint("TOPRIGHT", this, "TOPLEFT", 375, -250)
       this.client:SetWidth(200)
       this.client:SetJustifyH("RIGHT")
 
@@ -1382,7 +1382,7 @@ pfUI:RegisterModule("gui", function ()
       this.langc:SetText(T["Language"] .. ":")
       this.lang = this:CreateFontString("Status", "LOW", "GameFontWhite")
       this.lang:SetFont(pfUI.font_default, C.global.font_size)
-      this.lang:SetPoint("TOPRIGHT", 375, -270)
+      this.lang:SetPoint("TOPRIGHT", this, "TOPLEFT", 375, -270)
       this.lang:SetWidth(200)
       this.lang:SetJustifyH("RIGHT")
 

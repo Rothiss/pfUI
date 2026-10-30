@@ -30,6 +30,28 @@
   </EventFrame>
 
   <!--
+  A WowScrollBoxList with pfUIScrollBarTemplate beside it, both 5px inside the
+  frame so CreateBackdrop(frame, nil, true) can frame them. Fill it with
+  ScrollUtil.InitScrollBoxListWithScrollBar(frame.ScrollBox, frame.ScrollBar, view).
+  -->
+  <Frame name="pfUIScrollBoxListTemplate" virtual="true">
+    <Frames>
+      <EventFrame parentKey="ScrollBar" inherits="pfUIScrollBarTemplate">
+        <Anchors>
+          <Anchor point="TOPRIGHT" x="-5" y="-5"/>
+          <Anchor point="BOTTOMRIGHT" x="-5" y="5"/>
+        </Anchors>
+      </EventFrame>
+      <Frame parentKey="ScrollBox" inherits="WowScrollBoxList">
+        <Anchors>
+          <Anchor point="TOPLEFT" x="5" y="-5"/>
+          <Anchor point="BOTTOMRIGHT" relativeKey="$parent.ScrollBar" relativePoint="BOTTOMLEFT"/>
+        </Anchors>
+      </Frame>
+    </Frames>
+  </Frame>
+
+  <!--
   ClassicAPI's ScrollingEditBoxTemplate with pfUIScrollBarTemplate beside the
   text. The frame needs a name: SetFont(font, size, flags) names its font
   object after it.

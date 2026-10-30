@@ -133,7 +133,7 @@ pfUI:RegisterModule("addons", function ()
       end
     end
 
-    pfUI.addons.scroll:ReinitializeFrames()
+    pfUI.addons.list.ScrollBox:ReinitializeFrames()
   end
 
   -- addon profiles
@@ -305,30 +305,21 @@ pfUI:RegisterModule("addons", function ()
   end
 
   -- addon list: a ScrollBox keeps rows only for the addons in view
-  pfUI.addons.scroll = CreateFrame("Frame", "pfAddonListScroll", pfUI.addons, "WowScrollBoxList")
-  pfUI.addons.scroll:SetSize(360, 410)
-  pfUI.addons.scroll:SetPoint("BOTTOM", 0, 10)
+  pfUI.addons.list = CreateFrame("Frame", "pfAddonList", pfUI.addons, "pfUIScrollBoxListTemplate")
+  pfUI.addons.list:SetSize(370, 420)
+  pfUI.addons.list:SetPoint("BOTTOM", 0, 5)
+  CreateBackdrop(pfUI.addons.list, nil, true)
 
-  -- the ScrollBox clips its children, so the backdrop is a sibling
-  pfUI.addons.scroll.backdrop = CreateFrame("Frame", nil, pfUI.addons)
-  pfUI.addons.scroll.backdrop:SetPoint("TOPLEFT", pfUI.addons.scroll, "TOPLEFT", -5, 5)
-  pfUI.addons.scroll.backdrop:SetPoint("BOTTOMRIGHT", pfUI.addons.scroll, "BOTTOMRIGHT", 5, -5)
-  CreateBackdrop(pfUI.addons.scroll.backdrop, nil, true)
-
-  local scrollbar = CreateFrame("EventFrame", nil, pfUI.addons, "pfUIScrollBarTemplate")
-  scrollbar:SetPoint("TOPRIGHT", pfUI.addons.scroll, "TOPRIGHT")
-  scrollbar:SetPoint("BOTTOMRIGHT", pfUI.addons.scroll, "BOTTOMRIGHT")
-
-  local view = CreateScrollBoxListLinearView(5, 5, 5, 15)
+  local view = CreateScrollBoxListLinearView(5, 5, 5, 8)
   view:SetElementExtent(25)
   view:SetElementInitializer("Button", InitRow)
-  ScrollUtil.InitScrollBoxListWithScrollBar(pfUI.addons.scroll, scrollbar, view)
-  pfUI.addons.scroll:SetDataProvider(CreateDataProvider(addons))
+  ScrollUtil.InitScrollBoxListWithScrollBar(pfUI.addons.list.ScrollBox, pfUI.addons.list.ScrollBar, view)
+  pfUI.addons.list.ScrollBox:SetDataProvider(CreateDataProvider(addons))
 
   -- a load-on-demand addon that loads brightens its row
-  pfUI.addons.scroll:RegisterEvent("ADDON_LOADED")
-  pfUI.addons.scroll:SetScript("OnEvent", function(self)
-    self:ReinitializeFrames()
+  pfUI.addons.list:RegisterEvent("ADDON_LOADED")
+  pfUI.addons.list:SetScript("OnEvent", function(self)
+    self.ScrollBox:ReinitializeFrames()
   end)
 
 end)

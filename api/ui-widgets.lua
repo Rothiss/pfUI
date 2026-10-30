@@ -1252,7 +1252,7 @@ end
 -- survives filter changes -- a spell icon you picked still saves after you
 -- switch the filter to "Items" and it drops out of the visible grid.
 --
---   name          global-name prefix for the scroll frame and editboxes
+--   name          global-name prefix for the icon grid and editboxes
 --   parent        the popup frame to attach the widgets to
 --   extraType     IconDataProviderExtraType.* seed (Spellbook / Equipment)
 --   nameLabelText header shown above the name field
@@ -1322,17 +1322,13 @@ function pfUI.api.CreateIconPicker(name, parent, extraType, nameLabelText)
   parent.iconLabel:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, -86)
   parent.iconLabel:SetText(MACRO_POPUP_CHOOSE_ICON)
 
-  -- Icon grid + scroll
-  local iconScroll = CreateFrame("ScrollFrame", name.."Scroll", parent, "FauxScrollFrameTemplate")
-  iconScroll:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, -116)
-  iconScroll:SetWidth(ICON_GRID_COLS * (ICON_BTN_SIZE + ICON_BTN_PAD) - ICON_BTN_PAD)
-  iconScroll:SetHeight(ICON_GRID_ROWS * (ICON_BTN_SIZE + ICON_BTN_PAD) - ICON_BTN_PAD)
-
-  local scrollbar = _G[name.."ScrollScrollBar"]
-  scrollbar:ClearAllPoints()
-  scrollbar:SetPoint("TOPLEFT", iconScroll, "TOPRIGHT", 8, -16)
-  scrollbar:SetPoint("BOTTOMLEFT", iconScroll, "BOTTOMRIGHT", 8, 16)
-  SkinScrollbar(scrollbar)
+  -- Icon grid: the template keeps 5px around the grid and its 7px scroll bar,
+  -- and the grid leaves 4px before the bar
+  local gridWidth = ICON_GRID_COLS * (ICON_BTN_SIZE + ICON_BTN_PAD) - ICON_BTN_PAD
+  local gridHeight = ICON_GRID_ROWS * (ICON_BTN_SIZE + ICON_BTN_PAD) - ICON_BTN_PAD
+  local grid = CreateFrame("Frame", name.."Icons", parent, "pfUIScrollBoxListTemplate")
+  grid:SetPoint("TOPLEFT", parent, "TOPLEFT", 9, -111)
+  grid:SetSize(gridWidth + 4 + 7 + 10, gridHeight + 10)
 
   -- Filter dropdown: All / Spells / Items
   local filterDropdown = CreateFrame("Frame", name.."Filter", parent, "UIDropDownMenuTemplate")
@@ -1367,37 +1363,53 @@ function pfUI.api.CreateIconPicker(name, parent, extraType, nameLabelText)
   UIDropDownMenu_SetSelectedValue(filterDropdown, "all")
   SkinDropDown(filterDropdown)
 
-  local iconButtons = {}
-  for r = 1, ICON_GRID_ROWS do
-    for c = 1, ICON_GRID_COLS do
-      local i = (r - 1) * ICON_GRID_COLS + c
-      local btn = CreateFrame("Button", nil, parent)
-      btn:SetSize(ICON_BTN_SIZE, ICON_BTN_SIZE)
-      btn:SetPoint("TOPLEFT", iconScroll, "TOPLEFT", (c-1) * (ICON_BTN_SIZE + ICON_BTN_PAD), -(r-1) * (ICON_BTN_SIZE + ICON_BTN_PAD))
+  -- the selected icon gets a gold border in the grid and shows in the preview
+  local function UpdateSelection()
+    grid.ScrollBox:ReinitializeFrames()
+    parent.selectedPreview.tex:SetTexture(selectedIconPath)
+  end
+
+  local function IconOnClick()
+    local path = provider:GetIconByIndex(this.iconIndex)
+    if path then selectedIconPath = path end
+    UpdateSelection()
+  end
+
+  local function IconOnEnter()
+    local path = provider:GetIconByIndex(this.iconIndex)
+    if type(path) == "string" then
+      GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+      GameTooltip:SetText(IconKey(path), 1, 1, 1)
+      GameTooltip:Show()
+    end
+  end
+
+  local function InitIconButton(btn, icon)
+    -- one-time setup of a pooled button
+    if not btn.texture then
       CreateBackdrop(btn)
       btn.texture = btn:CreateTexture(nil, "ARTWORK")
       btn.texture:SetAllPoints(btn)
       btn.texture:SetTexCoord(.08, .92, .08, .92)
-      btn:SetScript("OnClick", function()
-        if this.iconIndex and provider then
-          local path = provider:GetIconByIndex(this.iconIndex)
-          if path then selectedIconPath = path end
-          RefreshIconGrid()
-        end
-      end)
-      btn:SetScript("OnEnter", function()
-        if not this.iconIndex or not provider then return end
-        local path = provider:GetIconByIndex(this.iconIndex)
-        if type(path) == "string" then
-          GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-          GameTooltip:SetText(IconKey(path), 1, 1, 1)
-          GameTooltip:Show()
-        end
-      end)
+      btn:SetScript("OnClick", IconOnClick)
+      btn:SetScript("OnEnter", IconOnEnter)
       btn:SetScript("OnLeave", GameTooltip_Hide)
-      iconButtons[i] = btn
+    end
+
+    btn.iconIndex = icon.index
+    local path = provider:GetIconByIndex(icon.index)
+    btn.texture:SetTexture(path)
+    if IconKey(path) == IconKey(selectedIconPath) then
+      btn.backdrop:SetBackdropBorderColor(1, 0.82, 0, 1)
+    else
+      btn.backdrop:SetBackdropBorderColor(pfUI.cache.er, pfUI.cache.eg, pfUI.cache.eb, pfUI.cache.ea)
     end
   end
+
+  local view = CreateScrollBoxListGridView(ICON_GRID_COLS, 0, 0, 0, 4, ICON_BTN_PAD, ICON_BTN_PAD)
+  view:SetElementSize(ICON_BTN_SIZE, ICON_BTN_SIZE)
+  view:SetElementInitializer("Button", InitIconButton)
+  ScrollUtil.InitScrollBoxListWithScrollBar(grid.ScrollBox, grid.ScrollBar, view)
 
   -- Rebuild the search-filtered index list (provider indices whose icon
   -- basename contains the search text); nil when the search box is empty.
@@ -1416,37 +1428,16 @@ function pfUI.api.CreateIconPicker(name, parent, extraType, nameLabelText)
     end
   end
 
+  -- one grid entry per provider index the filter lets through, scrolled to the top
   function RefreshIconGrid()
     EnsureProvider()
-    local numIcons = filtered and table.getn(filtered) or provider:GetNumIcons()
-    local numRows = math.ceil(numIcons / ICON_GRID_COLS)
-    FauxScrollFrame_Update(iconScroll, numRows, ICON_GRID_ROWS, ICON_BTN_SIZE + ICON_BTN_PAD)
-    local offset = FauxScrollFrame_GetOffset(iconScroll)
-    for i = 1, ICON_GRID_ROWS * ICON_GRID_COLS do
-      local listIdx = i + offset * ICON_GRID_COLS
-      local btn = iconButtons[i]
-      if listIdx <= numIcons then
-        btn:Show()
-        local providerIdx = filtered and filtered[listIdx] or listIdx
-        btn.iconIndex = providerIdx
-        local path = provider:GetIconByIndex(providerIdx)
-        btn.texture:SetTexture(path)
-        if IconKey(path) == IconKey(selectedIconPath) then
-          btn.backdrop:SetBackdropBorderColor(1, 0.82, 0, 1)
-        else
-          btn.backdrop:SetBackdropBorderColor(pfUI.cache.er, pfUI.cache.eg, pfUI.cache.eb, pfUI.cache.ea)
-        end
-      else
-        btn:Hide()
-        btn.iconIndex = nil
-      end
+    if filtered then
+      grid.ScrollBox:SetDataProvider(CreateDataProviderWithAssignedKey(filtered, "index"))
+    else
+      grid.ScrollBox:SetDataProvider(CreateDataProviderByIndexCount(provider:GetNumIcons()))
     end
     parent.selectedPreview.tex:SetTexture(selectedIconPath)
   end
-
-  iconScroll:SetScript("OnVerticalScroll", function()
-    FauxScrollFrame_OnVerticalScroll(ICON_BTN_SIZE + ICON_BTN_PAD, function() RefreshIconGrid() end)
-  end)
 
   -- Search box (bottom-left) filters the grid by icon name.
   parent.searchLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1462,13 +1453,14 @@ function pfUI.api.CreateIconPicker(name, parent, extraType, nameLabelText)
   parent.search:SetScript("OnTextChanged", function()
     searchText = strupper(strtrim(this:GetText()))
     RebuildFilter()
-    scrollbar:SetValue(0)
     RefreshIconGrid()
   end)
 
-  -- Release the provider when the popup closes so its icon cache GCs.
+  -- Release the provider when the popup closes so its icon cache GCs, and
+  -- the grid's entries that index into it.
   parent:HookScript("OnHide", function()
     if provider then provider:Release(); provider = nil end
+    grid.ScrollBox:RemoveDataProvider()
   end)
 
   local handle = { editbox = parent.editbox, search = parent.search }
@@ -1476,15 +1468,13 @@ function pfUI.api.CreateIconPicker(name, parent, extraType, nameLabelText)
   function handle.SetIcon(path) selectedIconPath = path or QUESTION_MARK end
   function handle.Refresh() RefreshIconGrid() end
   function handle.SetIconAreaShown(shown)
-    local method = shown and "Show" or "Hide"
-    iconScroll[method](iconScroll)
-    for _, b in ipairs(iconButtons) do b[method](b) end
-    parent.iconLabel[method](parent.iconLabel)
-    parent.selectedLabel[method](parent.selectedLabel)
-    parent.selectedPreview[method](parent.selectedPreview)
-    filterDropdown[method](filterDropdown)
-    parent.searchLabel[method](parent.searchLabel)
-    parent.search[method](parent.search)
+    grid:SetShown(shown)
+    parent.iconLabel:SetShown(shown)
+    parent.selectedLabel:SetShown(shown)
+    parent.selectedPreview:SetShown(shown)
+    filterDropdown:SetShown(shown)
+    parent.searchLabel:SetShown(shown)
+    parent.search:SetShown(shown)
   end
   return handle
 end

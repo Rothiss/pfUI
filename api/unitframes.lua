@@ -500,7 +500,7 @@ function pfUI.uf:UpdateConfig()
 
   local cooldown_text = tonumber(f.config.cooldown_text)
   local cooldown_anim = tonumber(f.config.cooldown_anim)
-  local cooldown_reverse = tonumber(f.config.cooldown_reverse) or 0
+  local cooldown_reverse = f.config.cooldown_reverse == "1"
 
   local relative_point = "BOTTOM"
   if f.config.panchor == "TOPLEFT" then
@@ -862,8 +862,9 @@ function pfUI.uf:UpdateConfig()
       f.buffs[i].cd.pfCooldownType = "ALL"
       f.buffs[i].cd.pfCooldownStyleText = cooldown_text
       f.buffs[i].cd.pfCooldownStyleAnimation = cooldown_anim
-      f.buffs[i].cd.pfCooldownReverse = cooldown_reverse
-      f.buffs[i].cd:SetAlpha(cooldown_anim == 1 and 1 or 0)
+      f.buffs[i].cd:SetDrawSwipe(cooldown_anim == 1)
+      f.buffs[i].cd:SetDrawBling(cooldown_anim == 1)
+      f.buffs[i].cd:SetReverse(cooldown_reverse)
       
       -- immediately show/hide existing cooldown text
       if f.buffs[i].cd.pfCooldownText then
@@ -923,8 +924,9 @@ function pfUI.uf:UpdateConfig()
       f.debuffs[i].cd.pfCooldownType = "ALL"
       f.debuffs[i].cd.pfCooldownStyleText = cooldown_text
       f.debuffs[i].cd.pfCooldownStyleAnimation = cooldown_anim
-      f.debuffs[i].cd.pfCooldownReverse = cooldown_reverse
-      f.debuffs[i].cd:SetAlpha(cooldown_anim == 1 and 1 or 0)
+      f.debuffs[i].cd:SetDrawSwipe(cooldown_anim == 1)
+      f.debuffs[i].cd:SetDrawBling(cooldown_anim == 1)
+      f.debuffs[i].cd:SetReverse(cooldown_reverse)
       
       -- immediately show/hide existing cooldown text
       if f.debuffs[i].cd.pfCooldownText then
@@ -2269,6 +2271,8 @@ function pfUI.uf:AddIcon(frame, pos, icon, timeleft, stacks, start, duration)
 
     frame.icon[pos].cd = CreateFrame("Cooldown", nil, frame.icon[pos], "CooldownFrameTemplate")
     frame.icon[pos].cd.pfCooldownStyleAnimation = 0
+    frame.icon[pos].cd:SetDrawSwipe(false)
+    frame.icon[pos].cd:SetDrawBling(false)
     frame.icon[pos].cd.pfCooldownType = "ALL"
     frame.icon[pos].cd:SetFrameLevel(48)
   end

@@ -1035,7 +1035,7 @@ pfUI:RegisterModule("actionbar", function ()
       -- cooldown
       f.cd = CreateFrame("Cooldown", f:GetName() .. "Cooldown", f, "CooldownFrameTemplate")
       f.cd.pfCooldownStyleAnimation = 1
-      f.cd.pfCooldownReverse = tonumber(C.bars.cooldown_reverse) or 0
+      f.cd:SetReverse(C.bars.cooldown_reverse == "1")
       f.cd.pfCooldownType = "NOGCD"
       f.cd.pfCooldownSize = cd_size
 

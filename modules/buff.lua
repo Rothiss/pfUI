@@ -86,23 +86,23 @@ pfUI:RegisterModule("buff", function ()
 
     -- drive the sweep from the aura duration (weapon enchants and permanent
     -- auras report no usable total, so those buttons stay text-only)
-    if buff.mode == buff.btype and duration and duration > 0 and expirationTime and expirationTime > 0 then
+    if C.buffs.cooldown_anim == "1" and buff.mode == buff.btype and duration and duration > 0 and expirationTime and expirationTime > 0 then
       local now = GetTime()
       local timeleft = expirationTime - now
       if timeleft > 0 then
         local effDuration = duration > timeleft and duration or timeleft
         local newStart = now + timeleft - effDuration
         if buff.cdStart == nil or abs(buff.cdStart - newStart) > .5 or buff.cdDuration ~= effDuration then
-          CooldownFrame_SetTimer(buff.cd, newStart, effDuration, 1)
+          buff.cd:SetCooldown(newStart, effDuration)
           buff.cdStart = newStart
           buff.cdDuration = effDuration
         end
       else
-        CooldownFrame_SetTimer(buff.cd, 0, 0, 0)
+        buff.cd:Clear()
         buff.cdStart = nil
       end
     else
-      CooldownFrame_SetTimer(buff.cd, 0, 0, 0)
+      buff.cd:Clear()
       buff.cdStart = nil
     end
 
@@ -145,15 +145,13 @@ pfUI:RegisterModule("buff", function ()
     buff.stacks:SetJustifyV("BOTTOM")
     buff.stacks:SetAllPoints(buff)
 
-    -- radial sweep (the template covers the button and starts hidden;
-    -- the cooldown hook drives it from here, text stays with buff.timer)
+    -- radial sweep (the template covers the button and starts hidden).
+    -- RefreshBuffButton drives it through the frame's own methods, never
+    -- CooldownFrame_SetTimer, so the cooldown module's hook leaves it alone;
+    -- text stays with buff.timer
     buff.cd = CreateFrame("Cooldown", buttonName .. "Cooldown", buff, "CooldownFrameTemplate")
     buff.cd:SetFrameLevel(buff:GetFrameLevel() + 1)
     buff.overlay:SetFrameLevel(buff:GetFrameLevel() + 2)
-    buff.cd.pfCooldownType = "ALL"
-    buff.cd.pfCooldownStyleText = 0
-    buff.cd.pfCooldownStyleAnimation = tonumber(C.buffs.cooldown_anim) or 0
-    buff.cd.pfCooldownReverse = tonumber(C.buffs.cooldown_reverse) or 0
 
     buff:RegisterForClicks("RightButtonUp")
 
@@ -345,8 +343,7 @@ pfUI:RegisterModule("buff", function ()
       offsetY = -(rowcount) * ((C.buffs.textinside == "1" and 0 or (fontsize*1.5))+buffSize+2*buffSpacing)
     end
     buff:SetSize(buffSize, buffSize)
-    buff.cd.pfCooldownStyleAnimation = tonumber(C.buffs.cooldown_anim) or 0
-    buff.cd.pfCooldownReverse = tonumber(C.buffs.cooldown_reverse) or 0
+    buff.cd:SetReverse(C.buffs.cooldown_reverse == "1")
     buff:ClearAllPoints()
     buff:SetPoint("TOPRIGHT", relFrame, "TOPRIGHT",offsetX, offsetY)
 

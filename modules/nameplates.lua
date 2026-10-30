@@ -157,9 +157,6 @@ pfUI:RegisterModule("nameplates", function ()
     cfg.hptextformat = C.nameplates.hptextformat
     -- NEW: Cache debuff config
     cfg.debufftimers = C.nameplates.debufftimers == "1"
-    cfg.debuffanim = tonumber(C.nameplates.debuffanim) or 0
-    cfg.debufftext = tonumber(C.nameplates.debufftext) or 1
-    cfg.debreverse = tonumber(C.nameplates.debreverse) or 0
 
     -- Throttle delays, resolved once instead of per plate per tick.
     -- libthrottle:Get walks the saved-variable table, a defaults fallback and a
@@ -443,11 +440,8 @@ pfUI:RegisterModule("nameplates", function ()
 
     plate.debuffs[index].cd = CreateFrame("Cooldown", plate.platename.."Debuff"..index.."Cooldown", plate.debuffs[index], "CooldownFrameTemplate")
     plate.debuffs[index].cd:SetFrameLevel(6)
-
-    -- Set initial config flags (will be cached per-cooldown later)
-    plate.debuffs[index].cd.pfCooldownStyleAnimation = cfg.debuffanim
-    plate.debuffs[index].cd.pfCooldownReverse = cfg.debreverse or 0
-    plate.debuffs[index].cd.pfCooldownStyleText = cfg.debufftext
+    -- the display settings come from UpdateDebuffConfig, which runs for
+    -- every new icon before its first timer
     plate.debuffs[index].cd.pfCooldownType = "ALL"
   end
 
@@ -483,14 +477,14 @@ pfUI:RegisterModule("nameplates", function ()
     nameplate.debuffs[i]:SetSize(debuffsize, debuffsize)
     
     -- Update cooldown display settings
-    if nameplate.debuffs[i].cd then
-      local cooldown_text = tonumber(C.nameplates.debufftext) or 1
-      local cooldown_anim = tonumber(C.nameplates.debuffanim) or 0
-      nameplate.debuffs[i].cd.pfCooldownStyleText = cooldown_text
-      nameplate.debuffs[i].cd.pfCooldownStyleAnimation = cooldown_anim
-      nameplate.debuffs[i].cd.pfCooldownReverse = tonumber(C.nameplates.debreverse) or 0
-      
-    end
+    local cd = nameplate.debuffs[i].cd
+    cd.pfCooldownStyleText = tonumber(C.nameplates.debufftext) or 1
+    cd.pfCooldownStyleAnimation = tonumber(C.nameplates.debuffanim) or 0
+    -- the draw flags, not alpha: the plate's SetAlpha copies its alpha down
+    -- to every child (ClassicAPI keeps 1.12's alpha under default plates)
+    cd:SetDrawSwipe(C.nameplates.debuffanim == "1")
+    cd:SetDrawBling(C.nameplates.debuffanim == "1")
+    cd:SetReverse(C.nameplates.debreverse == "1")
   end
 
   -- create nameplate core
@@ -1399,16 +1393,6 @@ nameplates:RegisterUnitEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "target", "focu
             local cd = plate.debuffs[index].cd
             cd:Show()
             if not cachedStart or abs(cachedStart - newStart) > 0.5 then
-              if not cd.configCached or cd.cachedAnim ~= cfg.debuffanim or cd.cachedText ~= cfg.debufftext or cd.cachedReverse ~= cfg.debreverse then
-                cd.pfCooldownStyleAnimation = cfg.debuffanim
-                cd.pfCooldownStyleText = cfg.debufftext
-                cd.pfCooldownReverse = cfg.debreverse or 0
-                cd:SetAlpha(cfg.debuffanim == 1 and 1 or 0)
-                cd.cachedAnim = cfg.debuffanim
-                cd.cachedText = cfg.debufftext
-                cd.cachedReverse = cfg.debreverse
-                cd.configCached = true
-              end
               CooldownFrame_SetTimer(cd, newStart, effDuration, 1)
               plate.cdCache[index] = plate.cdCache[index] or {}
               plate.cdCache[index].effect = effect

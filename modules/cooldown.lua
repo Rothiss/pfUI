@@ -135,17 +135,10 @@ pfUI:RegisterModule("cooldown", function ()
       start, duration = 0, 0
     end
 
-    -- hide animation
-    if this.pfCooldownStyleAnimation == 0 then
+    -- hide foreign animations; frames that set pfCooldownStyleAnimation
+    -- configure their own sweep (SetDrawSwipe, SetReverse)
+    if not this.pfCooldownStyleAnimation and C.appearance.cd.hideanim == "1" then
       this:SetAlpha(0)
-    elseif not this.pfCooldownStyleAnimation and C.appearance.cd.hideanim == "1" then
-      this:SetAlpha(0)
-    end
-
-    -- reversed sweep direction (ClassicAPI backports SetReverse with the
-    -- modern Cooldown frame; stock Model swipes don't have it, so guard it)
-    if this.pfCooldownReverse == 1 and this.SetReverse then
-      this:SetReverse(true)
     end
 
     -- print time as text on cooldown frames

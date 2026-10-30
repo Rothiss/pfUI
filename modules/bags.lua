@@ -415,20 +415,15 @@ pfUI:RegisterModule("bags", function ()
       pfUI.bags[bag].slots[slot].slot = slot
       pfUI.bags[bag].slots[slot].frame:SetID(slot)
 
-      -- add cooldown frame to bankslots
-      if tpl == "BankItemButtonGenericTemplate" then
-        local bankslot = pfUI.bags[bag].slots[slot].frame
-        local name = "pfBag" .. bag .. "item" .. slot .. "Cooldown"
-        bankslot.cd = CreateFrame("Cooldown", name, bankslot, "CooldownFrameTemplate")
-        bankslot.cd.pfCooldownStyleAnimation = 1
-        bankslot.cd.pfCooldownReverse = tonumber(C.appearance.bags.cooldown_reverse) or 0
-        bankslot.cd.pfCooldownType = "NOGCD"
-      else
-        local bagslot = pfUI.bags[bag].slots[slot].frame
-        bagslot.cd = _G[bagslot:GetName().."Cooldown"]
-        bagslot.cd.pfCooldownType = "NOGCD"
-        bagslot.cd.pfCooldownReverse = tonumber(C.appearance.bags.cooldown_reverse) or 0
-      end
+      -- native cooldown frame: the bank template has none and the bag
+      -- template's is 1.12's indicator Model, which can't reverse. Taking the
+      -- "<button>Cooldown" name points ContainerFrame_UpdateCooldown at it;
+      -- the Model starts hidden and nothing reaches it after that
+      local slotframe = pfUI.bags[bag].slots[slot].frame
+      slotframe.cd = CreateFrame("Cooldown", slotframe:GetName() .. "Cooldown", slotframe, "CooldownFrameTemplate")
+      slotframe.cd.pfCooldownStyleAnimation = 1
+      slotframe.cd:SetReverse(C.appearance.bags.cooldown_reverse == "1")
+      slotframe.cd.pfCooldownType = "NOGCD"
 
       if not pfUI.bags[bag].slots[slot].frame.backdrop then
         CreateBackdrop(pfUI.bags[bag].slots[slot].frame, default_border)

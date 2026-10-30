@@ -29,20 +29,20 @@ pfUI:RegisterModule("afkcam", function ()
   overlay:SetFrameStrata("DIALOG")
   overlay:SetAllPoints(WorldFrame)
 
-  overlay:SetScript("OnMouseUp",function()
-    SendChatMessage("","AFK")
-    this._parent:stop()
-  end)
+  -- /afk toggles, so send it only while AFK is still set: once the client
+  -- or the server has cleared it, /afk would set it again
+  local function Wake()
+    if IsChatAFK() then SendChatMessage("", "AFK") end
+    afkcam:stop()
+  end
+  overlay:SetScript("OnMouseUp", Wake)
   overlay:SetScript("OnShow", function()
     this:EnableKeyboard(true)
   end)
   overlay:SetScript("OnHide", function()
     this:EnableKeyboard(false)
   end)
-  overlay:SetScript("OnKeyUp",function()
-    SendChatMessage("","AFK")
-    this._parent:stop()
-  end)
+  overlay:SetScript("OnKeyUp", Wake)
   overlay:Hide()
 
   local chat = CreateFrame("ScrollingMessageFrame", "pfAFKCamChat", overlay)
@@ -82,7 +82,6 @@ pfUI:RegisterModule("afkcam", function ()
   end)
   overlay.chat = chat
 
-  overlay._parent = afkcam
   afkcam.overlay = overlay
 
   local clock = CreateFrame("Frame", "pfAFKClock", overlay)

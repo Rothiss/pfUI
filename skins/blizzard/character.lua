@@ -279,6 +279,36 @@ pfUI:RegisterSkin("Character", function ()
     SkinCheckbox(ReputationDetailInactiveCheckBox)
     SkinCheckbox(ReputationDetailMainScreenCheckBox)
 
+    -- Expand or collapse every header at once, as the Skills tab's button
+    -- does. It shows "+" while any header is collapsed.
+    local collapseAll = CreateFrame("Button", "pfReputationCollapseAllButton", ReputationFrame, "ReputationHeaderTemplate")
+    collapseAll:SetText(ALL)
+    collapseAll:SetWidth(collapseAll:GetTextWidth() + 20)
+    -- on the "Faction" label's row, in the headers' +/- column
+    collapseAll:SetPoint("LEFT", ReputationFrameFactionLabel, "LEFT", -43, 0)
+    collapseAll:SetScript("OnClick", function()
+      if this.isCollapsed then
+        ExpandAllFactionHeaders()
+      else
+        CollapseAllFactionHeaders()
+      end
+    end)
+    SkinCollapseButton(collapseAll, true)
+
+    -- GetFactionInfo, not C_Reputation.GetFactionDataByIndex: the latter
+    -- returns nil for the Other and Inactive headers.
+    hooksecurefunc("ReputationFrame_Update", function()
+      collapseAll.isCollapsed = nil
+      for i = 1, GetNumFactions() do
+        local _, _, _, _, _, _, _, _, isHeader, isCollapsed = GetFactionInfo(i)
+        if isHeader and isCollapsed then
+          collapseAll.isCollapsed = true
+          break
+        end
+      end
+      collapseAll:SetNormalTexture(collapseAll.isCollapsed and "Interface\\Buttons\\UI-PlusButton-Up" or "Interface\\Buttons\\UI-MinusButton-Up")
+    end)
+
     -- Append "(N)" to each standing label where N is rep remaining to the
     -- next reaction. Skip exalted (reaction 8) and effectively-capped bars.
     -- Each bar's OnLeave handler (Blizzard's ReputationFrame.xml) restores

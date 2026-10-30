@@ -416,11 +416,15 @@ pfUI:RegisterModule("bags", function ()
       pfUI.bags[bag].slots[slot].frame:SetID(slot)
 
       -- native cooldown frame: the bank template has none and the bag
-      -- template's is 1.12's indicator Model, which can't reverse. Taking the
-      -- "<button>Cooldown" name points ContainerFrame_UpdateCooldown at it;
-      -- the Model starts hidden and nothing reaches it after that
+      -- template's is 1.12's indicator Model, which can't reverse.
+      -- ContainerFrame_UpdateCooldown reads the "<button>Cooldown" global.
+      -- 1.12 binds a frame's name only while that global is unset, so the
+      -- global is rebound by hand; the Model starts hidden and nothing
+      -- reaches it after that
       local slotframe = pfUI.bags[bag].slots[slot].frame
-      slotframe.cd = CreateFrame("Cooldown", slotframe:GetName() .. "Cooldown", slotframe, "CooldownFrameTemplate")
+      local cdname = slotframe:GetName() .. "Cooldown"
+      slotframe.cd = CreateFrame("Cooldown", cdname, slotframe, "CooldownFrameTemplate")
+      _G[cdname] = slotframe.cd
       slotframe.cd.pfCooldownStyleAnimation = 1
       slotframe.cd:SetReverse(C.appearance.bags.cooldown_reverse == "1")
       slotframe.cd.pfCooldownType = "NOGCD"

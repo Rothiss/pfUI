@@ -1,7 +1,7 @@
 pfUI:RegisterModule("combatlog", function ()
   -- Classic Era's Blizzard_CombatLog in ChatFrame2. ClassicAPI runs the
   -- engine: COMBAT_LOG_EVENT, CombatLogAddFilter, and the kept entries that
-  -- the log refills itself from when it shows or changes filter.
+  -- the log refills itself from when its filter changes.
 
   -- Classic's combat log GlobalStrings that the 1.12 client lacks
   for name, text in pairs(L["combatlog"]) do
@@ -58,7 +58,7 @@ pfUI:RegisterModule("combatlog", function ()
   local Blizzard_CombatLog_CreateActionMenu, Blizzard_CombatLog_CreateSpellMenu
   local Blizzard_CombatLog_CreateUnitMenu, Blizzard_CombatLog_CreateFilterMenu
   local Blizzard_CombatLog_UnitMenuClick, Blizzard_CombatLog_SpellMenuClick
-  local CombatLog_OnEvent, CombatLog_AddEvent, CreateCombatLogContextMenu
+  local CombatLog_OnEvent, CombatLog_AddEvent, CreateCombatLogContextMenu, NewFilter
   local Blizzard_CombatLog_Update_QuickButtons, Blizzard_CombatLog_QuickButton_OnClick, ShowQuickButton
 
   -- runs the refilter a step per frame, and takes COMBAT_LOG_EVENT
@@ -271,6 +271,46 @@ pfUI:RegisterModule("combatlog", function ()
   end
 
   --
+  -- Default CombatLog Filter
+  -- This table is used to create new CombatLog filters
+  --
+  local DEFAULT_COMBATLOG_FILTER_TEMPLATE = {
+    -- Descriptive Information
+    hasQuickButton = true;
+    quickButtonDisplay = {
+      solo = true;
+      party = true;
+      raid = true;
+    };
+
+    -- Default Color and Formatting Options
+    settings = CopyTable(COMBATLOG_DEFAULT_SETTINGS);
+
+    -- Coloring
+    colors = CopyTable(COMBATLOG_DEFAULT_COLORS);
+
+    -- The actual client filters
+    filters = {
+      [1] = {
+        eventList = Blizzard_CombatLog_GenerateFullEventList();
+        sourceFlags = {
+          [COMBATLOG_FILTER_MINE] = true,
+          [COMBATLOG_FILTER_MY_PET] = true;
+        };
+        destFlags = nil;
+      };
+      [2] = {
+        eventList = Blizzard_CombatLog_GenerateFullEventList();
+        sourceFlags = nil;
+        destFlags = {
+          [COMBATLOG_FILTER_MINE] = true,
+          [COMBATLOG_FILTER_MY_PET] = true;
+        };
+      };
+    };
+  };
+
+  --
   -- Persistant Variables
   --
   --
@@ -281,15 +321,15 @@ pfUI:RegisterModule("combatlog", function ()
     filters = {
       [1] = {
         -- Descriptive Information
-        name = QUICKBUTTON_NAME_MY_ACTIONS;
+        name = QUICKBUTTON_NAME_SELF;
         hasQuickButton = true;
-        quickButtonName = QUICKBUTTON_NAME_MY_ACTIONS;
+        quickButtonName = QUICKBUTTON_NAME_SELF;
         quickButtonDisplay = {
           solo = true;
           party = true;
           raid = true;
         };
-        tooltip = QUICKBUTTON_NAME_MY_ACTIONS_TOOLTIP;
+        tooltip = QUICKBUTTON_NAME_SELF_TOOLTIP;
 
         -- Default Color and Formatting Options
         settings = CopyTable(COMBATLOG_DEFAULT_SETTINGS);
@@ -301,54 +341,54 @@ pfUI:RegisterModule("combatlog", function ()
         filters = {
           [1] = {
             eventList = {
-                  ["ENVIRONMENTAL_DAMAGE"] = false,
+                  ["ENVIRONMENTAL_DAMAGE"] = true,
                   ["SWING_DAMAGE"] = true,
-                  ["SWING_MISSED"] = false,
+                  ["SWING_MISSED"] = true,
                   ["RANGE_DAMAGE"] = true,
-                  ["RANGE_MISSED"] = false,
+                  ["RANGE_MISSED"] = true,
                   --["SPELL_CAST_START"] = true,
                   --["SPELL_CAST_SUCCESS"] = true,
                   --["SPELL_CAST_FAILED"] = true,
-                  ["SPELL_MISSED"] = false,
+                  ["SPELL_MISSED"] = true,
                   ["SPELL_DAMAGE"] = true,
                   ["SPELL_HEAL"] = true,
                   ["SPELL_ENERGIZE"] = true,
-                  ["SPELL_DRAIN"] = false,
-                  ["SPELL_LEECH"] = false,
-                  ["SPELL_INSTAKILL"] = false,
-                  ["SPELL_INTERRUPT"] = false,
-                  ["SPELL_EXTRA_ATTACKS"] = false,
-                  ["SPELL_DURABILITY_DAMAGE"] = false,
-                  ["SPELL_DURABILITY_DAMAGE_ALL"] = false,
-                  ["SPELL_AURA_APPLIED"] = false,
-                  ["SPELL_AURA_APPLIED_DOSE"] = false,
-                  ["SPELL_AURA_REMOVED"] = false,
-                  ["SPELL_AURA_REMOVED_DOSE"] = false,
-                  ["SPELL_AURA_BROKEN"] = false,
-                ["SPELL_AURA_BROKEN_SPELL"] = false,
-                ["SPELL_AURA_REFRESH"] = false,
-                  ["SPELL_DISPEL"] = false,
-                  ["SPELL_STOLEN"] = false,
-                  ["ENCHANT_APPLIED"] = false,
-                  ["ENCHANT_REMOVED"] = false,
-                  ["SPELL_PERIODIC_MISSED"] = false,
+                  ["SPELL_DRAIN"] = true,
+                  ["SPELL_LEECH"] = true,
+                  ["SPELL_INSTAKILL"] = true,
+                  ["SPELL_INTERRUPT"] = true,
+                  ["SPELL_EXTRA_ATTACKS"] = true,
+                  --["SPELL_DURABILITY_DAMAGE"] = true,
+                  --["SPELL_DURABILITY_DAMAGE_ALL"] = true,
+                  ["SPELL_AURA_APPLIED"] = true,
+                  ["SPELL_AURA_APPLIED_DOSE"] = true,
+                  ["SPELL_AURA_REMOVED"] = true,
+                  ["SPELL_AURA_REMOVED_DOSE"] = true,
+                  ["SPELL_AURA_BROKEN"] = true,
+                ["SPELL_AURA_BROKEN_SPELL"] = true,
+                ["SPELL_AURA_REFRESH"] = true,
+                  ["SPELL_DISPEL"] = true,
+                  ["SPELL_STOLEN"] = true,
+                  ["ENCHANT_APPLIED"] = true,
+                  ["ENCHANT_REMOVED"] = true,
+                  ["SPELL_PERIODIC_MISSED"] = true,
                   ["SPELL_PERIODIC_DAMAGE"] = true,
                   ["SPELL_PERIODIC_HEAL"] = true,
                   ["SPELL_PERIODIC_ENERGIZE"] = true,
-                  ["SPELL_PERIODIC_DRAIN"] = false,
-                  ["SPELL_PERIODIC_LEECH"] = false,
-                  ["SPELL_DISPEL_FAILED"] = false,
+                  ["SPELL_PERIODIC_DRAIN"] = true,
+                  ["SPELL_PERIODIC_LEECH"] = true,
+                  ["SPELL_DISPEL_FAILED"] = true,
                   --["DAMAGE_SHIELD"] = true,
                   --["DAMAGE_SHIELD_MISSED"] = true,
-                  ["DAMAGE_SPLIT"] = true,
+                  --["DAMAGE_SPLIT"] = true,
                   ["PARTY_KILL"] = true,
-                  ["UNIT_DIED"] = false,
+                  ["UNIT_DIED"] = true,
                   ["UNIT_DESTROYED"] = true,
-                  ["UNIT_DISSIPATES"] = true,
-                ["UNIT_LOYALTY"] = false
+                  ["UNIT_DISSIPATES"] = true
             };
             sourceFlags = {
-              [COMBATLOG_FILTER_MINE] = true
+              [COMBATLOG_FILTER_MINE] = true,
+              [COMBATLOG_FILTER_MY_PET] = true;
             };
             destFlags = nil;
           };
@@ -371,8 +411,8 @@ pfUI:RegisterModule("combatlog", function ()
                   ["SPELL_INSTAKILL"] = true,
                   ["SPELL_INTERRUPT"] = true,
                   ["SPELL_EXTRA_ATTACKS"] = true,
-                  ["SPELL_DURABILITY_DAMAGE"] = true,
-                  ["SPELL_DURABILITY_DAMAGE_ALL"] = true,
+                  --["SPELL_DURABILITY_DAMAGE"] = true,
+                  --["SPELL_DURABILITY_DAMAGE_ALL"] = true,
                   --["SPELL_AURA_APPLIED"] = true,
                   --["SPELL_AURA_APPLIED_DOSE"] = true,
                   --["SPELL_AURA_REMOVED"] = true,
@@ -390,22 +430,53 @@ pfUI:RegisterModule("combatlog", function ()
                   ["SPELL_DISPEL_FAILED"] = true,
                   --["DAMAGE_SHIELD"] = true,
                   --["DAMAGE_SHIELD_MISSED"] = true,
-                  ["DAMAGE_SPLIT"] = true,
+                  --["DAMAGE_SPLIT"] = true,
                   ["PARTY_KILL"] = true,
                   ["UNIT_DIED"] = true,
                   ["UNIT_DESTROYED"] = true,
-                  ["UNIT_DISSIPATES"] = true,
-                ["UNIT_LOYALTY"] = false
+                  ["UNIT_DISSIPATES"] = true
             };
             sourceFlags = nil;
-            destFlags =  {
-              [COMBATLOG_FILTER_MINE] = false,
-              [COMBATLOG_FILTER_MY_PET] = false;
+            destFlags = {
+              [COMBATLOG_FILTER_MINE] = true,
+              [COMBATLOG_FILTER_MY_PET] = true;
             };
           };
         };
       };
       [2] = {
+        -- Descriptive Information
+        name = QUICKBUTTON_NAME_EVERYTHING;
+        hasQuickButton = true;
+        quickButtonName = QUICKBUTTON_NAME_EVERYTHING;
+        quickButtonDisplay = {
+          solo = true;
+          party = true;
+          raid = true;
+        };
+        tooltip = QUICKBUTTON_NAME_EVERYTHING_TOOLTIP;
+
+        -- Settings
+        settings = CopyTable(COMBATLOG_DEFAULT_SETTINGS);
+
+        -- Coloring
+        colors = CopyTable(COMBATLOG_DEFAULT_COLORS);
+
+        -- The actual client filters
+        filters = {
+          [1] = {
+            eventList = Blizzard_CombatLog_GenerateFullEventList();
+            sourceFlags = Blizzard_CombatLog_GenerateFullFlagList(true);
+            destFlags = nil;
+          };
+          [2] = {
+            eventList = Blizzard_CombatLog_GenerateFullEventList();
+            sourceFlags = nil;
+            destFlags = Blizzard_CombatLog_GenerateFullFlagList(true);
+          };
+        };
+      };
+      [3] = {
         -- Descriptive Information
         name = QUICKBUTTON_NAME_ME;
         hasQuickButton = true;
@@ -426,19 +497,7 @@ pfUI:RegisterModule("combatlog", function ()
         -- The actual client filters
         filters = {
           [1] = {
-            eventList = {
-                  ["ENVIRONMENTAL_DAMAGE"] = true,
-                  ["SWING_DAMAGE"] = true,
-                  ["RANGE_DAMAGE"] = true,
-                  ["SPELL_DAMAGE"] = true,
-                  ["SPELL_HEAL"] = true,
-                  ["SPELL_PERIODIC_DAMAGE"] = true,
-                  ["SPELL_PERIODIC_HEAL"] = true,
-                  ["DAMAGE_SPLIT"] = true,
-                  ["UNIT_DIED"] = true,
-                  ["UNIT_DESTROYED"] = true,
-                  ["UNIT_DISSIPATES"] = true
-            };
+            eventList = Blizzard_CombatLog_GenerateFullEventList();
             sourceFlags = Blizzard_CombatLog_GenerateFullFlagList(false);
             destFlags = nil;
           };
@@ -447,8 +506,50 @@ pfUI:RegisterModule("combatlog", function ()
             sourceFlags = nil;
             destFlags =  {
               [COMBATLOG_FILTER_MINE] = true,
-              [COMBATLOG_FILTER_MY_PET] = false;
+              [COMBATLOG_FILTER_MY_PET] = true;
             };
+          };
+        };
+      };
+      [4] = {
+        -- Descriptive Information
+        name = QUICKBUTTON_NAME_KILLS;
+        hasQuickButton = false;
+        quickButtonName = QUICKBUTTON_NAME_KILLS;
+        quickButtonDisplay = {
+          solo = true;
+          party = true;
+          raid = true;
+        };
+        tooltip = QUICKBUTTON_NAME_KILLS_TOOLTIP;
+
+        -- Settings
+        settings = CopyTable(COMBATLOG_DEFAULT_SETTINGS);
+
+        -- Coloring
+        colors = CopyTable(COMBATLOG_DEFAULT_COLORS);
+
+        -- The actual client filters
+        filters = {
+          [1] = {
+            eventList = {
+              ["PARTY_KILL"] = true,
+              ["UNIT_DIED"] = true,
+              ["UNIT_DESTROYED"] = true,
+              ["UNIT_DISSIPATES"] = true
+            };
+            sourceFlags = Blizzard_CombatLog_GenerateFullFlagList(true);
+            destFlags = nil;
+          };
+          [2] = {
+            eventList = {
+              ["PARTY_KILL"] = true,
+              ["UNIT_DIED"] = true,
+              ["UNIT_DESTROYED"] = true,
+              ["UNIT_DISSIPATES"] = true
+            };
+            sourceFlags = nil;
+            destFlags = Blizzard_CombatLog_GenerateFullFlagList(true);
           };
         };
       };
@@ -749,7 +850,7 @@ pfUI:RegisterModule("combatlog", function ()
   --
   function Blizzard_CombatLog_UnitMenuClick(event, unitName, unitGUID, unitFlags)
     if ( event == "SAVE" ) then
-      StaticPopup_Show("PFUI_COPY_COMBAT_FILTER", nil, nil, Blizzard_CombatLog_CurrentSettings);
+      NewFilter(Blizzard_CombatLog_CurrentSettings);
       return;
     elseif ( event == "RESET" ) then
       Blizzard_CombatLog_CurrentSettings = Blizzard_CombatLog_Filters.filters[Blizzard_CombatLog_Filters.currentFilter];
@@ -2556,9 +2657,10 @@ pfUI:RegisterModule("combatlog", function ()
     return HookChatFrame_OnHyperlinkShow(link, text, button)
   end
 
-  -- CombatConfig_CreateCombatFilter, without the config window to select it in
+  -- CombatConfig_CreateCombatFilter: adds a copy of filter, or a new one from
+  -- the template, and returns its index
   local function CreateCombatFilter(name, filter)
-    local newFilter = CopyTable(filter)
+    local newFilter = CopyTable(filter or DEFAULT_COMBATLOG_FILTER_TEMPLATE)
     if not name or name == "" then
       name = format(DEFAULT_COMBATLOG_FILTER_NAME, #Blizzard_CombatLog_Filters.filters)
     end
@@ -2568,27 +2670,20 @@ pfUI:RegisterModule("combatlog", function ()
     newFilter.isTemp = nil
     tinsert(Blizzard_CombatLog_Filters.filters, newFilter)
     Blizzard_CombatLog_Update_QuickButtons()
+    return #Blizzard_CombatLog_Filters.filters
   end
 
-  -- the unit menu's "Save" (COPY_COMBAT_FILTER); the filter arrives as data
-  StaticPopupDialogs["PFUI_COPY_COMBAT_FILTER"] = {
-    text = ENTER_FILTER_NAME,
-    button1 = ACCEPT,
-    button2 = CANCEL,
-    hasEditBox = 1,
-    maxLetters = 32,
-    OnAccept = function(filter)
-      CreateCombatFilter(_G[this:GetParent():GetName().."EditBox"]:GetText(), filter)
-    end,
-    EditBoxOnEnterPressed = function(filter)
-      CreateCombatFilter(this:GetText(), filter)
-      this:GetParent():Hide()
-    end,
-    EditBoxOnEscapePressed = function() this:GetParent():Hide() end,
-    timeout = 0, whileDead = 1, hideOnEscape = 1,
-  }
+  -- COPY_COMBAT_FILTER and CREATE_COMBAT_FILTER: asks for a name, then
+  -- passes the new filter's index to done
+  function NewFilter(filter, done)
+    CreateQuestionDialog(ENTER_FILTER_NAME, { ACCEPT, function()
+      local index = CreateCombatFilter(this:GetParent().input:GetText(), filter)
+      if done then done(index) end
+    end }, { CANCEL }, true)
+  end
 
-  _G.pfUI_combatlog = _G.pfUI_combatlog or Blizzard_CombatLog_Filter_Defaults
+  -- a fresh copy, so the defaults stay as they are for a reset
+  _G.pfUI_combatlog = _G.pfUI_combatlog or CopyTable(Blizzard_CombatLog_Filter_Defaults)
   Blizzard_CombatLog_Filters = _G.pfUI_combatlog
   Blizzard_CombatLog_CurrentSettings = Blizzard_CombatLog_Filters.filters[Blizzard_CombatLog_Filters.currentFilter]
 
@@ -2673,23 +2768,59 @@ pfUI:RegisterModule("combatlog", function ()
     return OnEvent(self, event, ...)
   end)
 
-  -- The log takes live events only while it shows. Showing it again applies
-  -- the current filter and refills it from the kept entries.
-  CombatLogUpdateFrame:SetScript("OnEvent", function()
-    CombatLog_AddEvent(CombatLogGetCurrentEventInfo())
-  end)
+  -- What the settings window (modules/combatlog_config.lua) works on. It is
+  -- built the first time it opens.
+  local log = {
+    GetFilters = function() return Blizzard_CombatLog_Filters end,
+    -- replaces the saved filters with the defaults and shows the first
+    Reset = function()
+      _G.pfUI_combatlog = CopyTable(Blizzard_CombatLog_Filter_Defaults)
+      Blizzard_CombatLog_Filters = _G.pfUI_combatlog
+      Blizzard_CombatLog_QuickButton_OnClick(1)
+    end,
+    NewFilter = NewFilter,
+    SelectFilter = Blizzard_CombatLog_QuickButton_OnClick,
+    UpdateQuickButtons = Blizzard_CombatLog_Update_QuickButtons,
+    FormatEvent = CombatLog_OnEvent,
+  }
 
-  COMBATLOG:HookScript("OnShow", function()
-    CombatLogUpdateFrame:RegisterEvent("COMBAT_LOG_EVENT")
-    Blizzard_CombatLog_QuickButton_OnClick(Blizzard_CombatLog_Filters.currentFilter)
-  end)
-
-  COMBATLOG:HookScript("OnHide", function()
-    CombatLogUpdateFrame:UnregisterEvent("COMBAT_LOG_EVENT")
-  end)
-
-  if COMBATLOG:IsShown() then
-    CombatLogUpdateFrame:RegisterEvent("COMBAT_LOG_EVENT")
-    Blizzard_CombatLog_QuickButton_OnClick(Blizzard_CombatLog_Filters.currentFilter)
+  local config
+  local function ShowConfig()
+    config = config or pfUI.combatlog.CreateConfig(log)
+    config:Show()
   end
+
+  -- "Settings" in the Combat Log tab's right-click menu, as on later clients.
+  -- Each tab's menu keeps its own initialize function.
+  local dropdown = _G[COMBATLOG:GetName().."TabDropDown"]
+  local initialize = dropdown.initialize
+  dropdown.initialize = function()
+    initialize()
+    if UIDROPDOWNMENU_MENU_LEVEL == 1 then
+      local info = UIDropDownMenu_CreateInfo()
+      info.text = SETTINGS
+      info.func = ShowConfig
+      info.notCheckable = 1
+      UIDropDownMenu_AddButton(info)
+    end
+  end
+
+  -- Unlike Blizzard's, the log keeps taking events while another tab is
+  -- selected, so switching back to it shows what happened meanwhile instead
+  -- of rebuilding it from the kept entries (which only reach back 300s).
+  CombatLogUpdateFrame:SetScript("OnEvent", function(self, event)
+    if event == "COMBAT_LOG_EVENT" then
+      CombatLog_AddEvent(CombatLogGetCurrentEventInfo())
+    else
+      -- quick buttons show by solo, party or raid
+      Blizzard_CombatLog_Update_QuickButtons()
+    end
+  end)
+  CombatLogUpdateFrame:RegisterEvent("COMBAT_LOG_EVENT")
+  CombatLogUpdateFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+  CombatLogUpdateFrame:RegisterEvent("RAID_ROSTER_UPDATE")
+
+  -- apply the saved filter and refill the log from the kept entries, which
+  -- outlast a /reload
+  Blizzard_CombatLog_QuickButton_OnClick(Blizzard_CombatLog_Filters.currentFilter)
 end)

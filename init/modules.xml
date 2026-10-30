@@ -8,6 +8,7 @@
   <Include file="..\modules\hunterbar.lua"/>
   <Include file="..\modules\chat.lua"/>
   <Include file="..\modules\combatlog.lua"/>
+  <Include file="..\modules\combatlog_config.lua"/>
   <Include file="..\modules\whisperproxy.lua"/>
   <Include file="..\modules\chatcopy.lua"/>
   <Include file="..\modules\bubbles.lua"/>

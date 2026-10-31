@@ -37,17 +37,12 @@ pfUI:RegisterModule("lossofcontrol", function ()
   frame.cd = CreateFrame("Cooldown", nil, frame.icon, "CooldownFrameTemplate")
   frame.cd:SetAllPoints(frame.icon.tex)
   frame.cd.pfCooldownStyleAnimation = 1
-  -- the alert prints the time itself
-  frame.cd.noCooldownCount = true
+  frame.cd.pfCooldownType = "ALL"
 
   frame.label = frame:CreateFontString(nil, "OVERLAY")
   frame.label:SetFont(pfUI.font_default, 20, "OUTLINE")
   frame.label:SetTextColor(NORMAL_FONT_COLOR:GetRGB())
-  frame.label:SetPoint("TOPLEFT", frame.icon, "TOPRIGHT", 8, -4)
-
-  frame.time = frame:CreateFontString(nil, "OVERLAY")
-  frame.time:SetFont(pfUI.font_default, 14, "OUTLINE")
-  frame.time:SetPoint("BOTTOMLEFT", frame.icon, "BOTTOMRIGHT", 8, 4)
+  frame.label:SetPoint("LEFT", frame.icon, "RIGHT", 8, 0)
 
   frame.Refresh = function(self)
     local best
@@ -70,19 +65,20 @@ pfUI:RegisterModule("lossofcontrol", function ()
       self.icon.tex:SetTexture(best.iconTexture)
     end
 
-    -- a refreshed effect or a second kick on the same school changes the
-    -- timer without an event, so this runs again while the alert shows
-    if self.start ~= best.startTime or self.duration ~= best.duration then
-      self.start, self.duration = best.startTime, best.duration
-      CooldownFrame_SetTimer(self.cd, best.startTime or 0, best.duration or 0, best.startTime and 1 or 0)
-    end
-
-    self.time:SetText(best.timeRemaining and format("%.1f %s", best.timeRemaining, strings.LOSS_OF_CONTROL_SECONDS) or "")
+    CooldownFrame_SetTimer(self.cd, best.startTime or 0, best.duration or 0, best.startTime and 1 or 0)
     self:Show()
   end
 
-  frame:SetScript("OnUpdate", function()
-    if ( this.tick or 0) > GetTime() then return else this.tick = GetTime() + .1 end
+  -- a refreshed debuff (UNIT_AURA) or a second kick on the same school
+  -- (SPELL_UPDATE_COOLDOWN) changes the timer without a loss of control event
+  frame:SetScript("OnShow", function()
+    this:RegisterUnitEvent("UNIT_AURA", "player")
+    this:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+  end)
+  frame:SetScript("OnHide", function()
+    this:UnregisterAllEvents()
+  end)
+  frame:SetScript("OnEvent", function()
     this:Refresh()
   end)
 

@@ -45,5 +45,4 @@ pfUI_locale["esES"]["lossofcontrol"] = {
   LOSS_OF_CONTROL_DISPLAY_SCHOOL_INTERRUPT = "Interrumpido",
   LOSS_OF_CONTROL_DISPLAY_SILENCE = "Silenciado",
   LOSS_OF_CONTROL_DISPLAY_STUN = "Aturdido",
-  LOSS_OF_CONTROL_SECONDS = "segundos",
 }

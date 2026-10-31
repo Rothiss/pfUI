@@ -45,5 +45,4 @@ pfUI_locale["ruRU"]["lossofcontrol"] = {
   LOSS_OF_CONTROL_DISPLAY_SCHOOL_INTERRUPT = "Прерывание",
   LOSS_OF_CONTROL_DISPLAY_SILENCE = "Немота.",
   LOSS_OF_CONTROL_DISPLAY_STUN = "Оглушение",
-  LOSS_OF_CONTROL_SECONDS = "сек",
 }

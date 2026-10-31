@@ -45,5 +45,4 @@ pfUI_locale["deDE"]["lossofcontrol"] = {
   LOSS_OF_CONTROL_DISPLAY_SCHOOL_INTERRUPT = "Unterbrochen",
   LOSS_OF_CONTROL_DISPLAY_SILENCE = "Stille",
   LOSS_OF_CONTROL_DISPLAY_STUN = "Betäubt",
-  LOSS_OF_CONTROL_SECONDS = "Sek.",
 }

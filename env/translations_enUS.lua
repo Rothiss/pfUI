@@ -129,6 +129,7 @@ pfUI_translation["enUS"] = {
   ["Clear Rolls"] = nil,
   ["Click Action"] = nil,
   ["Click Casting"] = nil,
+  ["Click to undress"] = nil,
   ["Clock"] = nil,
   ["Close"] = nil,
   ["Collapse Empty Slots"] = nil,

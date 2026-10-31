@@ -123,6 +123,7 @@ pfUI_translation["frFR"] = {
   ["Clear Rolls"] = "Clear les roulements",
   ["Click Action"] = "Action au clic",
   ["Click Casting"] = "Clique sur le lancement de sort",
+  ["Click to undress"] = nil,
   ["Clock"] = "Horloge",
   ["Close"] = "Fermer",
   ["Collapse Empty Slots"] = nil,

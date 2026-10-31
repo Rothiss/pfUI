@@ -123,6 +123,7 @@ pfUI_translation["deDE"] = {
   ["Clear Rolls"] = nil,
   ["Click Action"] = nil,
   ["Click Casting"] = nil,
+  ["Click to undress"] = nil,
   ["Clock"] = nil,
   ["Close"] = nil,
   ["Collapse Empty Slots"] = nil,

@@ -60,7 +60,7 @@ pfUI:RegisterSkin("Inspect", function ()
     do -- Character Tab
       StripTextures(InspectPaperDollFrame)
 
-      EnableClickRotate(InspectModelFrame)
+      EnableModelControls(InspectModelFrame)
       local rotL = InspectModelRotateLeftButton or InspectModelFrameRotateLeftButton
       if rotL then rotL:Hide() end
       local rotR = InspectModelRotateRightButton or InspectModelFrameRotateRightButton

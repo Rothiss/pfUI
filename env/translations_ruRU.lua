@@ -123,6 +123,7 @@ pfUI_translation["ruRU"] = {
   ["Clear Rolls"] = "Очистить броски",
   ["Click Action"] = "Действие при нажатии",
   ["Click Casting"] = "Каст по нажатию",
+  ["Click to undress"] = nil,
   ["Clock"] = "Часы",
   ["Close"] = "Закрыть",
   ["Collapse Empty Slots"] = nil,

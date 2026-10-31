@@ -171,7 +171,7 @@ pfUI:RegisterSkin("Character", function ()
     StripTextures(CharacterAttributesFrame)
     StripTextures(CharacterResistanceFrame)
 
-    EnableClickRotate(CharacterModelFrame)
+    EnableModelControls(CharacterModelFrame)
     CharacterModelFrameRotateLeftButton:Hide()
     CharacterModelFrameRotateRightButton:Hide()
 
@@ -207,7 +207,7 @@ pfUI:RegisterSkin("Character", function ()
     PetNameText:ClearAllPoints()
     PetNameText:SetPoint("TOP", CharacterFrame.backdrop, "TOP", 0, -10)
 
-    EnableClickRotate(PetModelFrame)
+    EnableModelControls(PetModelFrame)
     PetModelFrameRotateLeftButton:Hide()
     PetModelFrameRotateRightButton:Hide()
 

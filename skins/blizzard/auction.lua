@@ -219,7 +219,7 @@ pfUI:RegisterSkin("Auctionhouse", function ()
       StripTextures(AuctionDressUpFrameCloseButton)
       SkinCloseButton(AuctionDressUpFrameCloseButton, AuctionDressUpFrame, -6, -6)
 
-      EnableClickRotate(AuctionDressUpModel)
+      EnableModelControls(AuctionDressUpModel)
       AuctionDressUpModelRotateLeftButton:Hide()
       AuctionDressUpModelRotateRightButton:Hide()
 

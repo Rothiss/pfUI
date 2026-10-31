@@ -23,7 +23,7 @@ pfUI:RegisterSkin("Guild Tabard", function ()
 
   StripTextures(TabardFrameCostFrame)
 
-  EnableClickRotate(TabardModel)
+  EnableModelControls(TabardModel)
   TabardCharacterModelRotateLeftButton:Hide()
   TabardCharacterModelRotateRightButton:Hide()
 

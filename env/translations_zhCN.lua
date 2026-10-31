@@ -123,6 +123,7 @@ pfUI_translation["zhCN"] = {
   ["Clear Rolls"] = "清除Roll点",
   ["Click Action"] = "点击操作",
   ["Click Casting"] = "点击施法",
+  ["Click to undress"] = nil,
   ["Clock"] = "时间",
   ["Close"] = "关闭",
   ["Collapse Empty Slots"] = nil,

@@ -186,34 +186,94 @@ function pfUI.api.CreateTextBox(name, parent)
   return f
 end
 
--- [ EnableClickRotate ]
--- Enables Modelframes to be rotated by click-drag
+-- [ EnableModelControls ]
+-- Gives a modelframe the controls of 4.3.4's ModelWithControlsTemplate:
+-- left-drag turns it, the mouse wheel zooms toward the face and right-drag
+-- pans it. Zoom and pan reset each time the frame is shown.
 -- 'frame'    [frame]         the modelframe that should be used
-function pfUI.api.EnableClickRotate(frame)
-  frame:EnableMouse(true)
-  frame:HookScript("OnUpdate", function()
-    if this.rotate then
-      local x,_ = GetCursorPosition()
-      if this.curx > x then
-        this.rotation = this.rotation - abs(x-this.curx) * 0.025
-      elseif this.curx < x then
-        this.rotation = this.rotation + abs(x-this.curx) * 0.025
-      end
-      this:SetRotation(this.rotation)
-      this.curx, this.cury = x, y
-    end
-  end)
+do
+  local ZOOM_STEP, MAX_ZOOM = .15, .7
 
-  frame:HookScript("OnMouseDown", function()
+  -- 4.3.4's pan speed and bounds for each player model (ModelFrames.lua)
+  local PAN_SETTINGS = {
+    HumanMale      = { panMaxLeft = -.4, panMaxRight = .4, panMaxTop = 1.2, panMaxBottom = -.3, panValue = 38 },
+    HumanFemale    = { panMaxLeft = -.3, panMaxRight = .3, panMaxTop = 1.2, panMaxBottom = -.2, panValue = 45 },
+    OrcMale        = { panMaxLeft = -.7, panMaxRight = .8, panMaxTop = 1.2, panMaxBottom = -.3, panValue = 30 },
+    OrcFemale      = { panMaxLeft = -.4, panMaxRight = .3, panMaxTop = 1.2, panMaxBottom = -.3, panValue = 37 },
+    DwarfMale      = { panMaxLeft = -.4, panMaxRight = .6, panMaxTop = .9,  panMaxBottom = -.2, panValue = 44 },
+    DwarfFemale    = { panMaxLeft = -.3, panMaxRight = .3, panMaxTop = .9,  panMaxBottom = -.2, panValue = 47 },
+    NightElfMale   = { panMaxLeft = -.5, panMaxRight = .5, panMaxTop = 1.5, panMaxBottom = -.4, panValue = 30 },
+    NightElfFemale = { panMaxLeft = -.4, panMaxRight = .4, panMaxTop = 1.4, panMaxBottom = -.4, panValue = 33 },
+    ScourgeMale    = { panMaxLeft = -.4, panMaxRight = .4, panMaxTop = 1.1, panMaxBottom = -.3, panValue = 35 },
+    ScourgeFemale  = { panMaxLeft = -.3, panMaxRight = .4, panMaxTop = 1.1, panMaxBottom = -.3, panValue = 36 },
+    TaurenMale     = { panMaxLeft = -.7, panMaxRight = .9, panMaxTop = 1.1, panMaxBottom = -.5, panValue = 31 },
+    TaurenFemale   = { panMaxLeft = -.5, panMaxRight = .6, panMaxTop = 1.3, panMaxBottom = -.4, panValue = 32 },
+    GnomeMale      = { panMaxLeft = -.3, panMaxRight = .3, panMaxTop = .5,  panMaxBottom = -.2, panValue = 52 },
+    GnomeFemale    = { panMaxLeft = -.3, panMaxRight = .3, panMaxTop = .5,  panMaxBottom = -.2, panValue = 60 },
+    TrollMale      = { panMaxLeft = -.5, panMaxRight = .6, panMaxTop = 1.3, panMaxBottom = -.4, panValue = 27 },
+    TrollFemale    = { panMaxLeft = -.4, panMaxRight = .4, panMaxTop = 1.5, panMaxBottom = -.4, panValue = 31 },
+    GoblinMale     = { panMaxLeft = -.3, panMaxRight = .4, panMaxTop = .7,  panMaxBottom = -.2, panValue = 43 },
+    GoblinFemale   = { panMaxLeft = -.3, panMaxRight = .3, panMaxTop = .7,  panMaxBottom = -.3, panValue = 43 },
+    BloodElfMale   = { panMaxLeft = -.5, panMaxRight = .4, panMaxTop = 1.3, panMaxBottom = -.3, panValue = 36 },
+    BloodElfFemale = { panMaxLeft = -.3, panMaxRight = .2, panMaxTop = 1.2, panMaxBottom = -.3, panValue = 38 },
+  }
+
+  local function OnUpdate()
+    if this.rotating then
+      local x = GetCursorPosition()
+      this.rotation = this.rotation + (x - this.cursorX) * .025
+      this.cursorX = x
+      this:SetRotation(this.rotation, false)
+    elseif this.panning then
+      local settings = this.panning
+      local x, y = GetCursorPosition()
+      local scale = UIParent:GetEffectiveScale()
+      local modelScale = this:GetModelScale()
+      -- moves the model with the cursor at any zoom (4.3.4's formula)
+      local ratio = settings.panValue * 2 ^ ((1 + this.zoom) * 2) * scale / modelScale
+      local bound = scale * modelScale
+      this:SetPosition(this.panX,
+        Clamp(this.panY + (x - this.cursorX) / ratio, settings.panMaxLeft * bound, settings.panMaxRight * bound),
+        Clamp(this.panZ + (y - this.cursorY) / ratio, settings.panMaxBottom * bound, settings.panMaxTop * bound))
+    end
+  end
+
+  local function OnMouseDown()
+    this.cursorX, this.cursorY = GetCursorPosition()
     if arg1 == "LeftButton" then
-      this.rotate = true
-      this.curx, this.cury = GetCursorPosition()
+      this.rotating = true
+    elseif arg1 == "RightButton" then
+      local _, race = UnitRace("player")
+      this.panning = PAN_SETTINGS[race .. (UnitSex("player") == 2 and "Male" or "Female")]
+      this.panX, this.panY, this.panZ = this:GetPosition()
     end
-  end)
+  end
 
-  frame:HookScript("OnMouseUp", function()
-    this.rotate, this.curx, this.cury = nil, nil, nil
-  end)
+  local function OnMouseUp()
+    this.rotating, this.panning = nil, nil
+  end
+
+  local function OnMouseWheel()
+    this.zoom = Clamp(this.zoom + arg1 * ZOOM_STEP, 0, MAX_ZOOM)
+    this:SetPortraitZoom(this.zoom)
+  end
+
+  local function OnShow()
+    this.zoom = 0
+    this:SetPortraitZoom(0)
+    this:SetPosition(0, 0, 0)
+  end
+
+  function pfUI.api.EnableModelControls(frame)
+    frame.zoom = 0
+    frame:EnableMouse(true)
+    frame:EnableMouseWheel(true)
+    frame:HookScript("OnUpdate", OnUpdate)
+    frame:HookScript("OnMouseDown", OnMouseDown)
+    frame:HookScript("OnMouseUp", OnMouseUp)
+    frame:HookScript("OnMouseWheel", OnMouseWheel)
+    frame:HookScript("OnShow", OnShow)
+  end
 end
 
 local function SetHighlightEnter()

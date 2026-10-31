@@ -1,10 +1,6 @@
 pfUI:RegisterModule("farmmode", function ()
   local function ToggleFarmMode()
-    if pfUI.farmmap:IsShown() then
-      pfUI.farmmap:Hide()
-    else
-      pfUI.farmmap:Show()
-    end
+    pfUI.farmmap:SetShown(not pfUI.farmmap:IsShown())
   end
 
   local function MoveNodes(layer)

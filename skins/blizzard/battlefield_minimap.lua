@@ -1,7 +1,7 @@
 pfUI:RegisterSkin("Battlefield Minimap", function ()
   local rawborder, border = GetBorderSize()
 
-  HookAddonOrVariable("Blizzard_BattlefieldMinimap", function()
+  HookAddon("Blizzard_BattlefieldMinimap", function()
     StripTextures(BattlefieldMinimap)
     CreateBackdrop(BattlefieldMinimap, nil, nil, 0)
     CreateBackdropShadow(BattlefieldMinimap)

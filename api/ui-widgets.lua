@@ -3,15 +3,19 @@ setfenv(1, pfUI:GetEnvironment())
 
 do -- statusbars
   local animations = {}
-  local stepsize, val
-  local width, height, point
+  local stepsize
+
+  -- native StatusBar methods the bar overrides
+  local statusbar = CreateFrame("StatusBar")
+  local SetValue, SetMinMaxValues = statusbar.SetValue, statusbar.SetMinMaxValues
+  local SetOrientation, SetFrameLevel = statusbar.SetOrientation, statusbar.SetFrameLevel
 
   local animate = CreateFrame("Frame", "pfStatusBarAnimation", UIParent)
   animate:SetScript("OnUpdate", function()
     stepsize = tonumber(pfUI_config.unitframes.animation_speed)
 
     for bar in pairs(animations) do
-      if not bar.val_ or abs(bar.val_ - bar.val) < stepsize or bar.instant then
+      if not bar.val_ or abs(bar.val_ - bar.val) < stepsize then
         bar:DisplayValue(bar.val)
       elseif bar.val ~= bar.val_ then
         bar:DisplayValue(bar.val_ + min((bar.val-bar.val_) / stepsize, max(bar.val-bar.val_, 30 / GetFramerate())))
@@ -21,7 +25,8 @@ do -- statusbars
 
   local handlers = {
     ["DisplayValue"] = function(self, val)
-      val = Clamp(val, self.min, self.max)
+      local smin, smax = self:GetMinMaxValues()
+      val = Clamp(val, smin, smax)
 
       -- remove animation queue
       if val == self.val_ then
@@ -30,53 +35,20 @@ do -- statusbars
 
       -- set current visible value
       self.val_ = val
+      SetValue(self, val)
 
-      if self.mode == "vertical" then
-        height = self:GetHeight()
-        height = height / self:GetEffectiveScale()
-        point = height / (self.max - self.min) * (val - self.min)
-
-        -- keep values in limits
-        point = Clamp(point, 0, height)
-
-        -- set point to zero if value and max is zero
-        if val == 0 then point = 0 end
-
-        -- set status bar position/size
-        self.bar:SetPoint("TOPLEFT", self, "TOPLEFT", 0, - height + point)
-        self.bar:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, 0)
-
-        -- set background bar position/size
-        self.bg:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
-        self.bg:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, point)
-      else
-        width = self:GetWidth()
-        width = width / self:GetEffectiveScale()
-        point = width / (self.max - self.min) * (val - self.min)
-
-        -- keep values in limits
-        point = Clamp(point, 0, width)
-
-        -- set point to zero if value and max is zero
-        if val == 0 then point = 0 end
-
-        -- set status bar position/size
-        self.bar:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
-        self.bar:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", - width + point, 0)
-
-        -- set background bar position/size
-        self.bg:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, 0)
-        self.bg:SetPoint("TOPLEFT", self, "TOPLEFT", point, 0)
-      end
+      -- the background fills the missing part, all of an empty range
+      self.bg:SetValue(smax > smin and (smax - val) / (smax - smin) or 1)
     end,
 
     ["SetMinMaxValues"] = function(self, smin, smax, smooth)
       -- smoothen the transition by keeping the value at the same percentage as before
-      if smooth and self.max and self.max > 0 and smax > 0 and self.max ~= smax then
-        self.val_ = (self.val_ or self.val) / self.max * smax
+      local _, oldmax = self:GetMinMaxValues()
+      if smooth and oldmax > 0 and smax > 0 and oldmax ~= smax then
+        self.val_ = (self.val_ or self.val) / oldmax * smax
       end
 
-      self.min, self.max = smin, smax
+      SetMinMaxValues(self, smin, smax)
       self:DisplayValue(self.val_ or self.val)
     end,
 
@@ -89,41 +61,35 @@ do -- statusbars
       end
     end,
 
-    ["SetStatusBarTexture"] = function(self, r, g, b, a)
-      self.bar:SetTexture(r, g, b, a)
-    end,
-
-    ["SetStatusBarColor"] = function(self, r, g, b, a)
-      self.bar:SetVertexColor(r, g, b, a)
-    end,
-
-    ["SetStatusBarBackgroundTexture"] = function(self, r, g, b, a)
-      self.bg:SetTexture(r, g, b, a)
-    end,
-
     ["SetStatusBarBackgroundColor"] = function(self, r, g, b, a)
-      self.bg:SetVertexColor(r, g, b, a)
+      self.bg:SetColorFill(r, g, b, a)
     end,
 
-    ["SetOrientation"] = function(self, mode)
-      self.mode = strlower(mode)
+    ["SetOrientation"] = function(self, orientation)
+      SetOrientation(self, orientation)
+      self.bg:SetOrientation(orientation)
+    end,
+
+    -- the background stays one level below the fill, under anything else
+    -- drawn on the fill's frame
+    ["SetFrameLevel"] = function(self, level)
+      SetFrameLevel(self, level)
+      self.bg:SetFrameLevel(level - 1)
     end,
   }
 
   function pfUI.api.CreateStatusBar(name, parent)
-    local f = CreateFrame("Button", name, parent)
-    f:EnableMouse(false)
+    local f = CreateFrame("StatusBar", name, parent)
+    SetMinMaxValues(f, 0, 100)
+    SetValue(f, 0)
+    f.val = 0
 
-    f.bar = f:CreateTexture(nil, "NORMAL")
-    f.bar:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
-    f.bar:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
-
-    f.bg = f:CreateTexture(nil, "BACKGROUND")
-    f.bg:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
-    f.bg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
-
-    -- set some default values
-    f.min, f.max, f.val = 0, 100, 0
+    f.bg = CreateFrame("StatusBar", nil, f)
+    f.bg:SetFrameLevel(f:GetFrameLevel() - 1)
+    f.bg:SetAllPoints(f)
+    f.bg:SetReverseFill(true)
+    f.bg:SetMinMaxValues(0, 1)
+    f.bg:SetValue(1)
 
     -- add all handler functions to the object
     for name, func in pairs(handlers) do
@@ -134,402 +100,78 @@ do -- statusbars
   end
 end
 
-do -- dropdown
-  local function ListEntryOnShow()
-    this.icon:SetShown(this.parent.id == this.id)
+-- [ pfUIMenuStyleMixin ]
+-- Style for ClassicAPI's menus: pfUI's backdrop behind the entries. A dropdown
+-- takes it as its menuMixin, and a context menu takes it from the menuMixin
+-- field of its owner.
+_G.pfUIMenuStyleMixin = CreateFromMixins(MenuStyleMixin)
+
+-- Menus share pooled frames that clear their backdrop on release, so the
+-- backdrop goes on the frame itself.
+function pfUIMenuStyleMixin:Generate()
+  CreateBackdrop(self, nil, true)
+end
+
+do
+  local inset = { left = 4, top = 4, right = 4, bottom = 4 }
+  function pfUIMenuStyleMixin:GetInset()
+    return inset
   end
 
-  local function ListEntryOnClick()
-    this.parent:SetSelection(this.id)
-
-    if this.parent.mode == "MULTISELECT" then
-      this.parent:ShowMenu()
-    else
-      this.parent:HideMenu()
-    end
-
-    if this.parent.menu[this.id].func then
-      this.parent.menu[this.id].func()
-    end
-  end
-
-  local function ListEntryOnEnter()
-    this.hover:Show()
-  end
-
-  local function ListEntryOnLeave()
-    this.hover:Hide()
-  end
-
-  local function ListButtonOnClick()
-    if this.ToggleMenu then
-      this:ToggleMenu()
-    else
-      this:GetParent():ToggleMenu()
-    end
-  end
-
-  local function MenuOnUpdate()
-    if not this:IsMouseOver(100, -100, -100, 100) then
-      this.button:HideMenu()
-    end
-  end
-
-  local function ListButtonOnEnter()
-    this.button:SetBackdropBorderColor(this.button.cr,this.button.cg,this.button.cb,(this.button.ca or 1))
-  end
-
-  local function ListButtonOnLeave()
-    this.button:SetBackdropBorderColor(this.button.rr,this.button.rg,this.button.rb,(this.button.ra or 1))
-  end
-
-  local handlers = {
-    ["SetSelection"] = function(self, id)
-      if id and self.menu and self.menu[id] then
-        self.text:SetText(self.menu[id].text)
-        self.id = id
-      end
-    end,
-    ["SetSelectionByText"] = function(self, name)
-      self:UpdateMenu()
-      for id, entry in pairs(self.menu) do
-        if entry.text == name then
-          self:SetSelection(id)
-          return true
-        end
-      end
-
-      self.text:SetText(name)
-      return nil
-    end,
-    ["GetSelection"] = function(self)
-      self:UpdateMenu()
-      if self.menu and self.menu[self.id] then
-        return self.id, self.menu[self.id].text, self.menu[self.id].func
-      end
-    end,
-    ["SetMenu"] = function(self, menu)
-      if type(menu) == "function" then
-        self.menu = menu()
-        self.menufunc = menu
-      else
-        self.menu = menu
-        self.menufunc = nil
-      end
-    end,
-    ["GetMenu"] = function(self)
-      self:UpdateMenu()
-      return self.menu
-    end,
-    ["ShowMenu"] = function(self)
-      self:UpdateMenu()
-      self.menuframe:SetFrameLevel(self:GetFrameLevel() + 8)
-      self.menuframe:SetHeight(table.getn(self.menu)*20+4)
-      self.menuframe:Show()
-    end,
-    ["HideMenu"] = function(self)
-      self.menuframe:Hide()
-    end,
-    ["ToggleMenu"] = function(self)
-      if self.menuframe:IsShown() then
-        self:HideMenu()
-      else
-        self:ShowMenu()
-      end
-    end,
-    ["UpdateMenu"] = function(self)
-      -- run/reload menu function if available
-      if self.menufunc then self.menu = self.menufunc() end
-      if not self.menu then return end
-
-      -- set caption to the current value
-      self.text:SetText(self.menu[self.id] and self.menu[self.id].text or "")
-
-      -- refresh menu buttons
-      for id, element in pairs(self.menuframe.elements) do
-        element:Hide()
-      end
-
-      for id, data in pairs(self.menu) do
-        self:CreateMenuEntry(id)
-      end
-    end,
-    ["CreateMenuEntry"] = function(self, id)
-      if not self.menu[id] then return end
-
-      local frame, entry
-      for count, existing in pairs(self.menuframe.elements) do
-        if not existing:IsShown() then
-          frame = existing
-          entry = count
-          break
-        end
-      end
-
-      if not frame and not entry then
-        entry = table.getn(self.menuframe.elements) + 1
-        frame = CreateFrame("Button", nil, self.menuframe)
-        frame:SetFrameStrata("FULLSCREEN")
-        frame:ClearAllPoints()
-        frame:SetPoint("TOPLEFT", self.menuframe, "TOPLEFT", 2, -(entry-1)*20-2)
-        frame:SetPoint("TOPRIGHT", self.menuframe, "TOPRIGHT", -2, -(entry-1)*20-2)
-        frame:SetHeight(20)
-        frame.parent = self
-
-        frame.icon = frame:CreateTexture(nil, "OVERLAY")
-        frame.icon:SetPoint("RIGHT", frame, "RIGHT", -2, 0)
-        frame.icon:SetSize(16, 16)
-        frame.icon:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
-
-        frame.text = frame:CreateFontString(nil, "OVERLAY")
-        frame.text:SetFontObject(GameFontWhite)
-        frame.text:SetFont(pfUI.font_default, pfUI_config.global.font_size-1, "OUTLINE")
-        frame.text:SetJustifyH("RIGHT")
-        frame.text:SetPoint("LEFT", frame, "LEFT", 2, 0)
-        frame.text:SetPoint("RIGHT", frame.icon, "LEFT", -2, 0)
-
-        frame.hover = frame:CreateTexture(nil, "BACKGROUND")
-        frame.hover:SetAllPoints(frame)
-        frame.hover:SetTexture(.4,.4,.4,.4)
-        frame.hover:Hide()
-
-        table.insert(self.menuframe.elements, frame)
-      end
-
-      frame.id = id
-      frame.text:SetText(self.menu[id].text)
-
-      frame:SetScript("OnShow",  ListEntryOnShow)
-      frame:SetScript("OnClick", ListEntryOnClick)
-      frame:SetScript("OnEnter", ListEntryOnEnter)
-      frame:SetScript("OnLeave", ListEntryOnLeave)
-      frame:Show()
-    end,
-  }
-  function pfUI.api.CreateDropDownButton(name, parent)
-    local frame = CreateFrame("Button", name, parent)
-    frame:SetScript("OnEnter", ListButtonOnEnter)
-    frame:SetScript("OnLeave", ListButtonOnLeave)
-    frame:SetScript("OnClick", ListButtonOnClick)
-    frame:SetHeight(20)
-    frame.id = nil
-
-    CreateBackdrop(frame, nil, true)
-
-    local button = CreateFrame("Button", nil, frame)
-    button:SetPoint("RIGHT", frame, "RIGHT", -2, 0)
-    button:SetSize(16, 16)
-    button:SetScript("OnClick", ListButtonOnClick)
-    SkinArrowButton(button, "down")
-    button.icon:SetVertexColor(1,.9,.1)
-
-    local text = frame:CreateFontString(nil, "OVERLAY")
-    text:SetFontObject(GameFontWhite)
-    text:SetFont(pfUI.font_default, pfUI_config.global.font_size-1, "OUTLINE")
-    text:SetPoint("RIGHT", button, "LEFT", -4, 0)
-    text:SetJustifyH("RIGHT")
-
-    local menuframe = CreateFrame("Frame", tostring(frame).."menu", parent)
-    menuframe.button = frame
-    menuframe.elements = {}
-    menuframe:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -2)
-    menuframe:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 2)
-    menuframe:SetScript("OnUpdate", MenuOnUpdate)
-    menuframe:Hide()
-    CreateBackdrop(menuframe, nil, true)
-
-    for name, func in pairs(handlers) do
-      frame[name] = func
-    end
-
-    frame.menuframe = menuframe
-    frame.button = button
-    frame.text = text
-
-    return frame
+  -- room for a submenu arrow or a color swatch, as in the stock styles
+  local padding = { width = 10, height = 0 }
+  function pfUIMenuStyleMixin:GetChildExtentPadding()
+    return padding
   end
 end
 
-function pfUI.api.CreateTabChild(self, title, bwidth, bheight, bottom, static)
-  -- create tab button
-  local b = CreateFrame("Button", "pfConfig" .. title .. "Button", self, "UIPanelButtonTemplate")
-  b:SetText(title)
+-- [ pfUIDropdownTemplate ]
+-- Mixin of the template in ui-widgets.xml: a dropdown that shows its selection
+-- as text, with pfUI's arrow box at the right.
+_G.pfUIDropdownMixin = CreateFromMixins(ButtonStateBehaviorMixin, DropdownSelectionTextMixin)
 
-  -- setup env
-  local childcount = table.getn(self.childs) + 1
-  local button_width = bwidth
-  local button_height = bheight or 20
-  local border = 4
+function pfUIDropdownMixin:OnLoad()
+  self.Text:SetFont(pfUI.font_default, pfUI_config.global.font_size - 1, "OUTLINE")
+  CreateBackdrop(self.Arrow, nil, true)
+  self.Arrow.Icon:SetTexture(pfUI.media["img:down"])
+  self.Arrow.Icon:SetVertexColor(.8, .8, .8)
+  self.Arrow.Icon:SetAlpha(.8)
 
-  if not button_width then
-    button_width = 150
-  elseif button_width == true then
-    button_width = _G["pfConfig" .. title .. "ButtonText"]:GetStringWidth() + 4 * border
-  end
+  ButtonStateBehaviorMixin.OnLoad(self)
+  DropdownSelectionTextMixin.OnLoad(self)
+end
 
-  -- set dimensions
-  b:SetSize(button_width, button_height)
-  b:SetID(childcount)
-
-  if not self.align or self.align == "LEFT" then
-    local outside = self.outside and -2 * border - button_width or 0
-    if bottom then
-      b:SetPoint("BOTTOMLEFT", self, "BOTTOMLEFT", border + outside, (self.bottomcount-1) * (button_height) + (self.bottomcount * border) )
-    else
-      b:SetPoint("TOPLEFT", self, "TOPLEFT", border + outside, -(childcount-1) * (button_height) - (childcount * border) )
-    end
-  elseif self.align == "TOP" then
-    local outside = self.outside and 2 * border + button_height or 0
-    local prev_button = self.buttons[getn(self.buttons)]
-    if prev_button then
-      b:SetPoint("TOPLEFT", prev_button, "TOPRIGHT", border, 0)
-    else
-      b:SetPoint("TOPLEFT", self, "TOPLEFT", border + (self.outside and -border), -border + outside )
-    end
-  end
-
-  SkinButton(b,.2,1,.8)
-
-  if childcount ~= 1 then
-    b:SetTextColor(.5,.5,.5)
+-- the arrow box takes the class color while the cursor is over the dropdown
+function pfUIDropdownMixin:OnButtonStateChanged()
+  if self:IsOver() then
+    self.Arrow:SetBackdropBorderColor(PFUI_CLASS_COLORS[UnitClassBase("player")]:GetRGB())
   else
-    b:SetTextColor(.2,1,.8)
+    self.Arrow:SetBackdropBorderColor(GetStringColor(pfUI_config.appearance.border.color))
   end
-
-  b:SetScript("OnClick", function()
-    for k,v in pairs(self.childs) do
-      v:Hide()
-    end
-    self.childs[this:GetID()]:Show()
-
-    for k,v in pairs(self.buttons) do
-      v.active = false
-      v:SetTextColor(.5,.5,.5)
-    end
-    self.buttons[this:GetID()]:SetTextColor(.2,1,.8)
-  end)
-
-  self.buttons[childcount] = b
-  self.bottomcount = bottom and self.bottomcount + 1 or self.bottomcount
-
-  -- create child frame
-  local child, scrollchild = nil, nil
-  if not static then
-    child = CreateScrollFrame("pfConfig" .. title .. "Frame", self)
-    scrollchild = CreateScrollChild("pfConfig" .. title .. "ScrollChild", child)
-  else
-    child = CreateFrame("Frame", "pfConfig" .. title .. "Frame", self)
-  end
-
-  if childcount ~= 1 then child:Hide() end
-
-  if not self.align or self.align == "LEFT" then
-    child:SetPoint("TOPLEFT", self, "TOPLEFT", button_width + 2*border + 5, -border -5)
-    child:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -border -5 , border + 5)
-  elseif self.align == "TOP" then
-    if self.outside then
-      child:SetPoint("TOPLEFT", self, "TOPLEFT", 5, -5)
-      child:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -5, 5)
-    end
-  end
-
-  CreateBackdrop(child)
-  SetAllPointsOffset(child.backdrop, child, -5,5)
-
-  local ret = scrollchild or child
-  ret.button = b
-  table.insert(self.childs, child)
-  return ret
 end
 
-function pfUI.api.CreateTabFrame(parent, align, outside)
-  local f = CreateFrame("Frame", nil, parent)
+-- [ pfUIScrollingEditBoxTemplate ]
+-- Mixin of the template in ui-widgets.xml: ClassicAPI's scrolling edit box
+-- with pfUI's scroll bar beside it.
+_G.pfUIScrollingEditBoxMixin = {}
 
-  f:SetPoint("TOPLEFT", parent, "TOPLEFT", -5, 5)
-  f:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", 5, -5)
-
-  -- setup env
-  f.childs = { }
-  f.buttons = { }
-  f.align = align
-  f.outside = outside
-  f.bottomcount = 1
-
-  -- Create Child Frame
-  f.CreateTabChild = pfUI.api.CreateTabChild
-
-  return f
+function pfUIScrollingEditBoxMixin:InitScrollBar()
+  local scrollBox = self:GetScrollBox()
+  scrollBox:ClearAllPoints()
+  scrollBox:SetPoint("TOPLEFT")
+  scrollBox:SetPoint("BOTTOMRIGHT", self.ScrollBar, "BOTTOMLEFT")
+  ScrollUtil.RegisterScrollBoxWithScrollBar(scrollBox, self.ScrollBar)
 end
 
-function pfUI.api.CreateScrollFrame(name, parent)
-  local f = CreateFrame("ScrollFrame", name, parent)
-
-  -- create slider
-  f.slider = CreateFrame("Slider", nil, f)
-  f.slider:SetOrientation('VERTICAL')
-  f.slider:SetPoint("TOPLEFT", f, "TOPRIGHT", -7, 0)
-  f.slider:SetPoint("BOTTOMRIGHT", 0, 0)
-  f.slider:SetThumbTexture(pfUI.media["img:col"])
-  f.slider.thumb = f.slider:GetThumbTexture()
-  f.slider.thumb:SetHeight(50)
-  f.slider.thumb:SetTexture(.3,1,.8,.5)
-
-  f.slider:SetScript("OnValueChanged", function()
-    f:SetVerticalScroll(this:GetValue())
-    f.UpdateScrollState()
-  end)
-
-  f.UpdateScrollState = function()
-    f.slider:SetMinMaxValues(0, f:GetVerticalScrollRange())
-    f.slider:SetValue(f:GetVerticalScroll())
-
-    local m = f:GetHeight()+f:GetVerticalScrollRange()
-    local v = f:GetHeight()
-    local ratio = v / m
-
-    if ratio < 1 then
-      local size = math.floor(v * ratio)
-      f.slider.thumb:SetHeight(size)
-      f.slider:Show()
-    else
-      f.slider:Hide()
-    end
+-- The edit box takes its font from a font object and sets that object again
+-- on every SetText, so a font path goes through a font object of the frame's own.
+function pfUIScrollingEditBoxMixin:SetFont(font, size, flags)
+  if not self.font then
+    self.font = CreateFont(self:GetName() .. "Font")
+    self:GetEditBox().fontName = self.font
   end
-
-  f.Scroll = function(self, step)
-    local step = step or 0
-
-    local current = f:GetVerticalScroll()
-    local max = f:GetVerticalScrollRange()
-    local new = current - step
-
-    f:SetVerticalScroll(Clamp(new, 0, max))
-
-    f:UpdateScrollState()
-  end
-
-  f:EnableMouseWheel(1)
-  f:SetScript("OnMouseWheel", function()
-    this:Scroll(arg1*10)
-  end)
-
-  return f
-end
-
-function pfUI.api.CreateScrollChild(name, parent)
-  local f = CreateFrame("Frame", name, parent)
-
-  -- dummy values required
-  f:SetSize(1, 1)
-  f:SetAllPoints(parent)
-
-  parent:SetScrollChild(f)
-
-  f:SetScript("OnUpdate", function()
-    this:GetParent():UpdateScrollState()
-  end)
-
-  return f
+  self.font:SetFont(font, size, flags)
+  self:SetFontObject(self.font)
 end
 
 -- [ CreateTextBox ]
@@ -544,34 +186,94 @@ function pfUI.api.CreateTextBox(name, parent)
   return f
 end
 
--- [ EnableClickRotate ]
--- Enables Modelframes to be rotated by click-drag
+-- [ EnableModelControls ]
+-- Gives a modelframe the controls of 4.3.4's ModelWithControlsTemplate:
+-- left-drag turns it, the mouse wheel zooms toward the face and right-drag
+-- pans it. Zoom and pan reset each time the frame is shown.
 -- 'frame'    [frame]         the modelframe that should be used
-function pfUI.api.EnableClickRotate(frame)
-  frame:EnableMouse(true)
-  frame:HookScript("OnUpdate", function()
-    if this.rotate then
-      local x,_ = GetCursorPosition()
-      if this.curx > x then
-        this.rotation = this.rotation - abs(x-this.curx) * 0.025
-      elseif this.curx < x then
-        this.rotation = this.rotation + abs(x-this.curx) * 0.025
-      end
-      this:SetRotation(this.rotation)
-      this.curx, this.cury = x, y
-    end
-  end)
+do
+  local ZOOM_STEP, MAX_ZOOM = .15, .7
 
-  frame:HookScript("OnMouseDown", function()
+  -- 4.3.4's pan speed and bounds for each player model (ModelFrames.lua)
+  local PAN_SETTINGS = {
+    HumanMale      = { panMaxLeft = -.4, panMaxRight = .4, panMaxTop = 1.2, panMaxBottom = -.3, panValue = 38 },
+    HumanFemale    = { panMaxLeft = -.3, panMaxRight = .3, panMaxTop = 1.2, panMaxBottom = -.2, panValue = 45 },
+    OrcMale        = { panMaxLeft = -.7, panMaxRight = .8, panMaxTop = 1.2, panMaxBottom = -.3, panValue = 30 },
+    OrcFemale      = { panMaxLeft = -.4, panMaxRight = .3, panMaxTop = 1.2, panMaxBottom = -.3, panValue = 37 },
+    DwarfMale      = { panMaxLeft = -.4, panMaxRight = .6, panMaxTop = .9,  panMaxBottom = -.2, panValue = 44 },
+    DwarfFemale    = { panMaxLeft = -.3, panMaxRight = .3, panMaxTop = .9,  panMaxBottom = -.2, panValue = 47 },
+    NightElfMale   = { panMaxLeft = -.5, panMaxRight = .5, panMaxTop = 1.5, panMaxBottom = -.4, panValue = 30 },
+    NightElfFemale = { panMaxLeft = -.4, panMaxRight = .4, panMaxTop = 1.4, panMaxBottom = -.4, panValue = 33 },
+    ScourgeMale    = { panMaxLeft = -.4, panMaxRight = .4, panMaxTop = 1.1, panMaxBottom = -.3, panValue = 35 },
+    ScourgeFemale  = { panMaxLeft = -.3, panMaxRight = .4, panMaxTop = 1.1, panMaxBottom = -.3, panValue = 36 },
+    TaurenMale     = { panMaxLeft = -.7, panMaxRight = .9, panMaxTop = 1.1, panMaxBottom = -.5, panValue = 31 },
+    TaurenFemale   = { panMaxLeft = -.5, panMaxRight = .6, panMaxTop = 1.3, panMaxBottom = -.4, panValue = 32 },
+    GnomeMale      = { panMaxLeft = -.3, panMaxRight = .3, panMaxTop = .5,  panMaxBottom = -.2, panValue = 52 },
+    GnomeFemale    = { panMaxLeft = -.3, panMaxRight = .3, panMaxTop = .5,  panMaxBottom = -.2, panValue = 60 },
+    TrollMale      = { panMaxLeft = -.5, panMaxRight = .6, panMaxTop = 1.3, panMaxBottom = -.4, panValue = 27 },
+    TrollFemale    = { panMaxLeft = -.4, panMaxRight = .4, panMaxTop = 1.5, panMaxBottom = -.4, panValue = 31 },
+    GoblinMale     = { panMaxLeft = -.3, panMaxRight = .4, panMaxTop = .7,  panMaxBottom = -.2, panValue = 43 },
+    GoblinFemale   = { panMaxLeft = -.3, panMaxRight = .3, panMaxTop = .7,  panMaxBottom = -.3, panValue = 43 },
+    BloodElfMale   = { panMaxLeft = -.5, panMaxRight = .4, panMaxTop = 1.3, panMaxBottom = -.3, panValue = 36 },
+    BloodElfFemale = { panMaxLeft = -.3, panMaxRight = .2, panMaxTop = 1.2, panMaxBottom = -.3, panValue = 38 },
+  }
+
+  local function OnUpdate()
+    if this.rotating then
+      local x = GetCursorPosition()
+      this.rotation = this.rotation + (x - this.cursorX) * .025
+      this.cursorX = x
+      this:SetRotation(this.rotation, false)
+    elseif this.panning then
+      local settings = this.panning
+      local x, y = GetCursorPosition()
+      local scale = UIParent:GetEffectiveScale()
+      local modelScale = this:GetModelScale()
+      -- moves the model with the cursor at any zoom (4.3.4's formula)
+      local ratio = settings.panValue * 2 ^ ((1 + this.zoom) * 2) * scale / modelScale
+      local bound = scale * modelScale
+      this:SetPosition(this.panX,
+        Clamp(this.panY + (x - this.cursorX) / ratio, settings.panMaxLeft * bound, settings.panMaxRight * bound),
+        Clamp(this.panZ + (y - this.cursorY) / ratio, settings.panMaxBottom * bound, settings.panMaxTop * bound))
+    end
+  end
+
+  local function OnMouseDown()
+    this.cursorX, this.cursorY = GetCursorPosition()
     if arg1 == "LeftButton" then
-      this.rotate = true
-      this.curx, this.cury = GetCursorPosition()
+      this.rotating = true
+    elseif arg1 == "RightButton" then
+      local _, race = UnitRace("player")
+      this.panning = PAN_SETTINGS[race .. (UnitSex("player") == 2 and "Male" or "Female")]
+      this.panX, this.panY, this.panZ = this:GetPosition()
     end
-  end)
+  end
 
-  frame:HookScript("OnMouseUp", function()
-    this.rotate, this.curx, this.cury = nil, nil, nil
-  end)
+  local function OnMouseUp()
+    this.rotating, this.panning = nil, nil
+  end
+
+  local function OnMouseWheel()
+    this.zoom = Clamp(this.zoom + arg1 * ZOOM_STEP, 0, MAX_ZOOM)
+    this:SetPortraitZoom(this.zoom)
+  end
+
+  local function OnShow()
+    this.zoom = 0
+    this:SetPortraitZoom(0)
+    this:SetPosition(0, 0, 0)
+  end
+
+  function pfUI.api.EnableModelControls(frame)
+    frame.zoom = 0
+    frame:EnableMouse(true)
+    frame:EnableMouseWheel(true)
+    frame:HookScript("OnUpdate", OnUpdate)
+    frame:HookScript("OnMouseDown", OnMouseDown)
+    frame:HookScript("OnMouseUp", OnMouseUp)
+    frame:HookScript("OnMouseWheel", OnMouseWheel)
+    frame:HookScript("OnShow", OnShow)
+  end
 end
 
 local function SetHighlightEnter()
@@ -641,7 +343,7 @@ function pfUI.api.SkinButton(button, cr, cg, cb, icon, disableHighlight)
   b:SetDisabledTexture("")
 
   if b.SetCheckedTexture and b:GetCheckedTexture() then
-    b:GetCheckedTexture():SetTexture(cr, cg, cb, .25)
+    b:GetCheckedTexture():SetColorTexture(cr, cg, cb, .25)
   end
 
   if not disableHighlight then
@@ -718,7 +420,7 @@ function pfUI.api.SkinRotateButton(button)
   button:GetNormalTexture():SetTexCoord(0.3, 0.29, 0.3, 0.65, 0.69, 0.29, 0.69, 0.65)
   button:GetPushedTexture():SetTexCoord(0.3, 0.29, 0.3, 0.65, 0.69, 0.29, 0.69, 0.65)
 
-  button:GetHighlightTexture():SetTexture(cr, cg, cb, .25)
+  button:GetHighlightTexture():SetColorTexture(cr, cg, cb, .25)
 
   button:GetPushedTexture():SetAllPoints(button:GetNormalTexture())
   button:GetHighlightTexture():SetAllPoints(button:GetNormalTexture())
@@ -749,6 +451,14 @@ function pfUI.api.SkinCloseButton(button, parentFrame, offsetX, offsetY)
   button.texture:SetVertexColor(1,.25,.25,1)
 end
 
+local function ArrowButtonOnEnable()
+  this.icon:SetVertexColor(.8,.8,.8,1)
+end
+
+local function ArrowButtonOnDisable()
+  this.icon:SetVertexColor(.2,.2,.2,1)
+end
+
 function pfUI.api.SkinArrowButton(button, dir, size)
   if not button then return end
 
@@ -773,19 +483,17 @@ function pfUI.api.SkinArrowButton(button, dir, size)
 
   button.icon:SetTexture(pfUI.media["img:"..dir])
 
-  if not button.pficonfade then
-    local button, state = button, nil
-    button.pficonfade = CreateFrame("Frame", nil, button)
-    button.pficonfade:SetScript("OnUpdate", function()
-      if state == button:IsEnabled() then return end
-      state = button:IsEnabled()
+  -- the icon dims while the button is disabled
+  if not button.pfArrowHooked then
+    button:HookScript("OnEnable", ArrowButtonOnEnable)
+    button:HookScript("OnDisable", ArrowButtonOnDisable)
+    button.pfArrowHooked = true
+  end
 
-      if state > 0 then
-        button.icon:SetVertexColor(.8,.8,.8,1)
-      else
-        button.icon:SetVertexColor(.2,.2,.2,1)
-      end
-    end)
+  if button:IsEnabled() > 0 then
+    button.icon:SetVertexColor(.8,.8,.8,1)
+  else
+    button.icon:SetVertexColor(.2,.2,.2,1)
   end
 end
 
@@ -809,14 +517,14 @@ function pfUI.api.SkinScrollbar(frame, always)
   if not frame.thumb then
     thumb:SetTexture(nil)
     frame.thumb = frame.bg:CreateTexture(nil, "ARTWORK")
-    frame.thumb:SetTexture(.8,.8,.8,.8)
+    frame.thumb:SetColorTexture(.8,.8,.8,.8)
     frame.thumb:SetPoint("TOPLEFT", thumb, "TOPLEFT", 1, -4)
     frame.thumb:SetPoint("BOTTOMRIGHT", thumb, "BOTTOMRIGHT", -1, 4)
   end
 
   -- always show parent frame
   if always then
-    RunOOC(function()
+    RunNextFrame(function()
       parent:HookScript("OnHide", function() this:Show() end)
     end)
   end
@@ -963,7 +671,7 @@ function pfUI.api.SkinSlider(frame)
   local thumb = frame:GetThumbTexture()
 
   CreateBackdrop(frame, nil, true)
-  thumb:SetTexture(1, .82, 0)
+  thumb:SetColorTexture(1, .82, 0)
 
   for i,region in ipairs({frame:GetRegions()}) do
     if region:GetObjectType() == 'FontString' then
@@ -999,148 +707,137 @@ function pfUI.api.SkinSlider(frame)
 end
 
 -- [ Question Dialog ]
--- Creates a pfUI user dialog popup:
+-- Shows the pfUI user dialog popup. A call while it is shown closes it.
 -- 'text'       [string]        text that will be displayed.
 -- 'yes'        [function]      function that is triggered on 'Okay' button.
 -- 'no'         [function]      function that is triggered on 'Cancel' button.
+--                              either can be { caption, function }.
 -- 'editbox'    [bool]          if set, a inputfield will be shown. it can be.
---                              accessed with "GetParent().input".
-function pfUI.api.CreateQuestionDialog(text, yes, no, editbox, onclose)
-  -- do not allow multiple instances of question dialogs
-  if _G["pfQuestionDialog"] and _G["pfQuestionDialog"]:IsShown() then
-    _G["pfQuestionDialog"]:Hide()
-    _G["pfQuestionDialog"] = nil
-    return
-  end
-
-  local yes, no = yes, no
-  local yescap, nocap = YES, NO
-
-  if yes and type(yes) == "table" then
-    yescap = yes[1]
-    yes = yes[2]
-  end
-
-  if no and type(no) == "table" then
-    nocap = no[1]
-    no = no[2]
-  end
-
-  if not text then text = "Are you sure?" end
-
-  local rawborder, border = GetBorderSize()
+--                              accessed with "this:GetParent().input".
+-- 'onclose'    [function]      runs once the dialog has closed.
+do
   local padding = 15
+  local question
 
-  -- frame
-  local question = CreateFrame("Frame", "pfQuestionDialog", UIParent)
-  question:ClearAllPoints()
-  question:SetPoint("CENTER", 0, 0)
-  question:SetFrameStrata("TOOLTIP")
-  question:SetMovable(true)
-  question:EnableMouse(true)
-  question:RegisterForDrag("LeftButton")
-  question:SetScript("OnDragStart",function()
-    this:StartMoving()
-  end)
-
-  question:SetScript("OnDragStop",function()
-    this:StopMovingOrSizing()
-  end)
-
-  question:SetScript("OnHide", onclose)
-
-  pfUI.api.CreateBackdrop(question, nil, nil, .85)
-  pfUI.api.CreateBackdropShadow(question)
-
-  -- text
-  question.text = question:CreateFontString("Status", "LOW", "GameFontNormal")
-  question.text:SetFontObject(GameFontWhite)
-  question.text:SetPoint("TOPLEFT", question, "TOPLEFT", padding, -padding)
-  question.text:SetPoint("TOPRIGHT", question, "TOPRIGHT", -padding, -padding)
-  question.text:SetText(text)
-
-  -- editbox
-  if editbox then
-    question.input = CreateFrame("EditBox", "pfQuestionDialogEdit", question)
-    pfUI.api.CreateBackdrop(question.input)
-    question.input:SetTextColor(.2,1,.8,1)
-    question.input:SetJustifyH("CENTER")
-    question.input:SetAutoFocus(false)
-    question.input:SetPoint("TOPLEFT", question.text, "BOTTOMLEFT", border, -padding)
-    question.input:SetPoint("TOPRIGHT", question.text, "BOTTOMRIGHT", -border, -padding)
-    question.input:SetHeight(20)
-
-    question.input:SetFontObject(GameFontNormal)
-    question.input:SetScript("OnEscapePressed", function() this:ClearFocus() end)
-    question.input:SetAutoFocus(true)
+  local function QuestionOnHide()
+    -- onclose may show the next question in this frame, so it runs once
+    -- the hide is over
+    if this.onclose then
+      RunNextFrame(this.onclose)
+      this.onclose = nil
+    end
   end
 
-  -- buttons
-  question.yes = CreateFrame("Button", "pfQuestionDialogYes", question, "UIPanelButtonTemplate")
-  pfUI.api.SkinButton(question.yes)
-  question.yes:SetSize(100, 22)
-  question.yes:SetText(yescap)
-  question.yes:SetScript("OnClick", function()
-    if yes then yes() end
+  -- the answer runs with 'this' on its button, where it finds the input
+  local function AnswerOnClick()
+    if this.answer then this.answer() end
     this:GetParent():Hide()
-  end)
-
-  if question.input then
-    question.yes:SetPoint("TOPRIGHT", question.input, "BOTTOM", -3*border, -padding)
-  else
-    question.yes:SetPoint("TOPRIGHT", question.text, "BOTTOM", -3*border, -padding)
   end
 
-  question.no = CreateFrame("Button", "pfQuestionDialogNo", question, "UIPanelButtonTemplate")
-  pfUI.api.SkinButton(question.no)
-  question.no:SetSize(100, 22)
-  question.no:SetText(nocap)
-  question.no:SetScript("OnClick", function()
-    if no then no() end
-    this:GetParent():Hide()
-  end)
+  local function CreateQuestion()
+    local _, border = GetBorderSize()
 
-  if question.input then
-    question.no:SetPoint("TOPLEFT", question.input, "BOTTOM", 3*border, -padding)
-  else
-    question.no:SetPoint("TOPLEFT", question.text, "BOTTOM", 3*border, -padding)
+    local f = CreateFrame("Frame", nil, UIParent)
+    f:SetFrameStrata("TOOLTIP")
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", function() this:StartMoving() end)
+    f:SetScript("OnDragStop", function() this:StopMovingOrSizing() end)
+    f:SetScript("OnHide", QuestionOnHide)
+    f:Hide()
+
+    CreateBackdrop(f, nil, nil, .85)
+    CreateBackdropShadow(f)
+
+    f.text = f:CreateFontString(nil, "LOW", "GameFontWhite")
+    f.text:SetPoint("TOP", 0, -padding)
+
+    f.input = CreateFrame("EditBox", nil, f)
+    CreateBackdrop(f.input)
+    f.input:SetTextColor(.2,1,.8,1)
+    f.input:SetJustifyH("CENTER")
+    f.input:SetPoint("TOPLEFT", f.text, "BOTTOMLEFT", border, -padding)
+    f.input:SetPoint("TOPRIGHT", f.text, "BOTTOMRIGHT", -border, -padding)
+    f.input:SetHeight(20)
+    f.input:SetFontObject(GameFontNormal)
+    f.input:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+    f.input:SetAutoFocus(true)
+
+    f.yes = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    SkinButton(f.yes)
+    f.yes:SetSize(100, 22)
+    f.yes:SetScript("OnClick", AnswerOnClick)
+
+    f.no = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    SkinButton(f.no)
+    f.no:SetSize(100, 22)
+    f.no:SetScript("OnClick", AnswerOnClick)
+
+    f.close = CreateFrame("Button", nil, f)
+    f.close:SetPoint("TOPRIGHT", -border, -border)
+    CreateBackdrop(f.close)
+    f.close:SetSize(10, 10)
+    f.close.texture = f.close:CreateTexture()
+    f.close.texture:SetTexture(pfUI.media["img:close"])
+    f.close.texture:SetAllPoints(f.close)
+    f.close.texture:SetVertexColor(1,.25,.25,1)
+    f.close:SetScript("OnEnter", function()
+      this.backdrop:SetBackdropBorderColor(1,.25,.25,1)
+    end)
+    f.close:SetScript("OnLeave", function()
+      CreateBackdrop(this)
+    end)
+    f.close:SetScript("OnClick", function()
+      this:GetParent():Hide()
+    end)
+
+    return f
   end
 
-  question.close = CreateFrame("Button", "pfQuestionDialogClose", question)
-  question.close:SetPoint("TOPRIGHT", -border, -border)
-  pfUI.api.CreateBackdrop(question.close)
-  question.close:SetSize(10, 10)
-  question.close.texture = question.close:CreateTexture("pfQuestionDialogCloseTex")
-  question.close.texture:SetTexture(pfUI.media["img:close"])
-  question.close.texture:ClearAllPoints()
-  question.close.texture:SetAllPoints(question.close)
-  question.close.texture:SetVertexColor(1,.25,.25,1)
-  question.close:SetScript("OnEnter", function ()
-    this.backdrop:SetBackdropBorderColor(1,.25,.25,1)
-  end)
+  function pfUI.api.CreateQuestionDialog(text, yes, no, editbox, onclose)
+    question = question or CreateQuestion()
 
-  question.close:SetScript("OnLeave", function ()
-    pfUI.api.CreateBackdrop(this)
-  end)
+    -- do not allow multiple instances of question dialogs
+    if question:IsShown() then
+      question:Hide()
+      return
+    end
 
-  question.close:SetScript("OnClick", function()
-   this:GetParent():Hide()
-  end)
+    local yescap, nocap = YES, NO
+    if type(yes) == "table" then yescap, yes = yes[1], yes[2] end
+    if type(no) == "table" then nocap, no = no[1], no[2] end
 
-  -- resize window
-  local textspace = question.text:GetHeight() + padding
-  local inputspace = 0
-  if question.input then inputspace = question.input:GetHeight() + padding end
-  local buttonspace = question.no:GetHeight() + padding
-  question:SetHeight(textspace + inputspace + buttonspace + padding)
+    question.onclose = onclose
+    question.yes.answer = yes
+    question.yes:SetText(yescap)
+    question.no.answer = no
+    question.no:SetText(nocap)
 
-  local width = 200
-
-  -- delay the auto sizing, to make sure the font rendering happened
-  RunNextFrame(function()
-    if question.text:GetStringWidth() > width then width = question.text:GetStringWidth() end
+    -- the dialog is as wide as the longest line of text, and at least 200
+    question.text:SetText(text or "Are you sure?")
+    local width = math.max(200, question.text:GetUnboundedStringWidth())
+    question.text:SetWidth(width)
     question:SetWidth(width + 2*padding)
-  end)
+
+    -- the buttons go below the input field when it is shown
+    local _, border = GetBorderSize()
+    local above = editbox and question.input or question.text
+    question.input:SetShown(editbox)
+    question.input:SetText("")
+    question.yes:ClearAllPoints()
+    question.yes:SetPoint("TOPRIGHT", above, "BOTTOM", -3*border, -padding)
+    question.no:ClearAllPoints()
+    question.no:SetPoint("TOPLEFT", above, "BOTTOM", 3*border, -padding)
+
+    local height = padding + question.text:GetStringHeight() + padding + question.no:GetHeight() + padding
+    if editbox then height = height + question.input:GetHeight() + padding end
+    question:SetHeight(height)
+
+    question:ClearAllPoints()
+    question:SetPoint("CENTER", 0, 0)
+    question:Show()
+  end
 end
 
 
@@ -1262,7 +959,7 @@ end
 -- survives filter changes -- a spell icon you picked still saves after you
 -- switch the filter to "Items" and it drops out of the visible grid.
 --
---   name          global-name prefix for the scroll frame and editboxes
+--   name          global-name prefix for the icon grid and editboxes
 --   parent        the popup frame to attach the widgets to
 --   extraType     IconDataProviderExtraType.* seed (Spellbook / Equipment)
 --   nameLabelText header shown above the name field
@@ -1332,24 +1029,20 @@ function pfUI.api.CreateIconPicker(name, parent, extraType, nameLabelText)
   parent.iconLabel:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, -86)
   parent.iconLabel:SetText(MACRO_POPUP_CHOOSE_ICON)
 
-  -- Icon grid + scroll
-  local iconScroll = CreateFrame("ScrollFrame", name.."Scroll", parent, "FauxScrollFrameTemplate")
-  iconScroll:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, -116)
-  iconScroll:SetWidth(ICON_GRID_COLS * (ICON_BTN_SIZE + ICON_BTN_PAD) - ICON_BTN_PAD)
-  iconScroll:SetHeight(ICON_GRID_ROWS * (ICON_BTN_SIZE + ICON_BTN_PAD) - ICON_BTN_PAD)
-
-  local scrollbar = _G[name.."ScrollScrollBar"]
-  scrollbar:ClearAllPoints()
-  scrollbar:SetPoint("TOPLEFT", iconScroll, "TOPRIGHT", 8, -16)
-  scrollbar:SetPoint("BOTTOMLEFT", iconScroll, "BOTTOMRIGHT", 8, 16)
-  SkinScrollbar(scrollbar)
+  -- Icon grid: the template keeps 5px around the grid and its 7px scroll bar,
+  -- and the grid leaves 4px before the bar
+  local gridWidth = ICON_GRID_COLS * (ICON_BTN_SIZE + ICON_BTN_PAD) - ICON_BTN_PAD
+  local gridHeight = ICON_GRID_ROWS * (ICON_BTN_SIZE + ICON_BTN_PAD) - ICON_BTN_PAD
+  local grid = CreateFrame("Frame", name.."Icons", parent, "pfUIScrollBoxListTemplate")
+  grid:SetPoint("TOPLEFT", parent, "TOPLEFT", 9, -111)
+  grid:SetSize(gridWidth + 4 + 7 + 10, gridHeight + 10)
 
   -- Filter dropdown: All / Spells / Items
-  local filterDropdown = CreateFrame("Frame", name.."Filter", parent, "UIDropDownMenuTemplate")
-  filterDropdown:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -80)
+  local function IsFilter(value)
+    return currentFilter == value
+  end
   local function ApplyFilter(value)
     currentFilter = value
-    UIDropDownMenu_SetSelectedValue(filterDropdown, value)
     if provider then
       if value == "spells" then provider:SetIconTypes({ IconDataProviderIconType.Spell })
       elseif value == "items" then provider:SetIconTypes({ IconDataProviderIconType.Item })
@@ -1358,56 +1051,63 @@ function pfUI.api.CreateIconPicker(name, parent, extraType, nameLabelText)
       RefreshIconGrid()
     end
   end
-  UIDropDownMenu_Initialize(filterDropdown, function()
-    local info
-    info = {}; info.text = ICON_FILTER_ALL; info.value = "all"
-    info.func = function() ApplyFilter("all") end
-    info.checked = currentFilter == "all"
-    UIDropDownMenu_AddButton(info)
-    info = {}; info.text = ICON_FILTER_SPELL; info.value = "spells"
-    info.func = function() ApplyFilter("spells") end
-    info.checked = currentFilter == "spells"
-    UIDropDownMenu_AddButton(info)
-    info = {}; info.text = ICON_FILTER_ITEM; info.value = "items"
-    info.func = function() ApplyFilter("items") end
-    info.checked = currentFilter == "items"
-    UIDropDownMenu_AddButton(info)
+  local filterDropdown = CreateFrame("DropdownButton", nil, parent, "pfUIDropdownTemplate")
+  filterDropdown:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -14, -84)
+  filterDropdown:SetWidth(140)
+  CreateBackdrop(filterDropdown, nil, true)
+  filterDropdown:SetupMenu(function(dropdown, rootDescription)
+    rootDescription:CreateRadio(ICON_FILTER_ALL, IsFilter, ApplyFilter, "all")
+    rootDescription:CreateRadio(ICON_FILTER_SPELL, IsFilter, ApplyFilter, "spells")
+    rootDescription:CreateRadio(ICON_FILTER_ITEM, IsFilter, ApplyFilter, "items")
   end)
-  UIDropDownMenu_SetWidth(120, filterDropdown)
-  UIDropDownMenu_SetSelectedValue(filterDropdown, "all")
-  SkinDropDown(filterDropdown)
 
-  local iconButtons = {}
-  for r = 1, ICON_GRID_ROWS do
-    for c = 1, ICON_GRID_COLS do
-      local i = (r - 1) * ICON_GRID_COLS + c
-      local btn = CreateFrame("Button", nil, parent)
-      btn:SetSize(ICON_BTN_SIZE, ICON_BTN_SIZE)
-      btn:SetPoint("TOPLEFT", iconScroll, "TOPLEFT", (c-1) * (ICON_BTN_SIZE + ICON_BTN_PAD), -(r-1) * (ICON_BTN_SIZE + ICON_BTN_PAD))
+  -- the selected icon gets a gold border in the grid and shows in the preview
+  local function UpdateSelection()
+    grid.ScrollBox:ReinitializeFrames()
+    parent.selectedPreview.tex:SetTexture(selectedIconPath)
+  end
+
+  local function IconOnClick()
+    local path = provider:GetIconByIndex(this.iconIndex)
+    if path then selectedIconPath = path end
+    UpdateSelection()
+  end
+
+  local function IconOnEnter()
+    local path = provider:GetIconByIndex(this.iconIndex)
+    if type(path) == "string" then
+      GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+      GameTooltip:SetText(IconKey(path), 1, 1, 1)
+      GameTooltip:Show()
+    end
+  end
+
+  local function InitIconButton(btn, icon)
+    -- one-time setup of a pooled button
+    if not btn.texture then
       CreateBackdrop(btn)
       btn.texture = btn:CreateTexture(nil, "ARTWORK")
       btn.texture:SetAllPoints(btn)
       btn.texture:SetTexCoord(.08, .92, .08, .92)
-      btn:SetScript("OnClick", function()
-        if this.iconIndex and provider then
-          local path = provider:GetIconByIndex(this.iconIndex)
-          if path then selectedIconPath = path end
-          RefreshIconGrid()
-        end
-      end)
-      btn:SetScript("OnEnter", function()
-        if not this.iconIndex or not provider then return end
-        local path = provider:GetIconByIndex(this.iconIndex)
-        if type(path) == "string" then
-          GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-          GameTooltip:SetText(IconKey(path), 1, 1, 1)
-          GameTooltip:Show()
-        end
-      end)
+      btn:SetScript("OnClick", IconOnClick)
+      btn:SetScript("OnEnter", IconOnEnter)
       btn:SetScript("OnLeave", GameTooltip_Hide)
-      iconButtons[i] = btn
+    end
+
+    btn.iconIndex = icon.index
+    local path = provider:GetIconByIndex(icon.index)
+    btn.texture:SetTexture(path)
+    if IconKey(path) == IconKey(selectedIconPath) then
+      btn.backdrop:SetBackdropBorderColor(1, 0.82, 0, 1)
+    else
+      btn.backdrop:SetBackdropBorderColor(pfUI.cache.er, pfUI.cache.eg, pfUI.cache.eb, pfUI.cache.ea)
     end
   end
+
+  local view = CreateScrollBoxListGridView(ICON_GRID_COLS, 0, 0, 0, 4, ICON_BTN_PAD, ICON_BTN_PAD)
+  view:SetElementSize(ICON_BTN_SIZE, ICON_BTN_SIZE)
+  view:SetElementInitializer("Button", InitIconButton)
+  ScrollUtil.InitScrollBoxListWithScrollBar(grid.ScrollBox, grid.ScrollBar, view)
 
   -- Rebuild the search-filtered index list (provider indices whose icon
   -- basename contains the search text); nil when the search box is empty.
@@ -1426,37 +1126,16 @@ function pfUI.api.CreateIconPicker(name, parent, extraType, nameLabelText)
     end
   end
 
+  -- one grid entry per provider index the filter lets through, scrolled to the top
   function RefreshIconGrid()
     EnsureProvider()
-    local numIcons = filtered and table.getn(filtered) or provider:GetNumIcons()
-    local numRows = math.ceil(numIcons / ICON_GRID_COLS)
-    FauxScrollFrame_Update(iconScroll, numRows, ICON_GRID_ROWS, ICON_BTN_SIZE + ICON_BTN_PAD)
-    local offset = FauxScrollFrame_GetOffset(iconScroll)
-    for i = 1, ICON_GRID_ROWS * ICON_GRID_COLS do
-      local listIdx = i + offset * ICON_GRID_COLS
-      local btn = iconButtons[i]
-      if listIdx <= numIcons then
-        btn:Show()
-        local providerIdx = filtered and filtered[listIdx] or listIdx
-        btn.iconIndex = providerIdx
-        local path = provider:GetIconByIndex(providerIdx)
-        btn.texture:SetTexture(path)
-        if IconKey(path) == IconKey(selectedIconPath) then
-          btn.backdrop:SetBackdropBorderColor(1, 0.82, 0, 1)
-        else
-          btn.backdrop:SetBackdropBorderColor(pfUI.cache.er, pfUI.cache.eg, pfUI.cache.eb, pfUI.cache.ea)
-        end
-      else
-        btn:Hide()
-        btn.iconIndex = nil
-      end
+    if filtered then
+      grid.ScrollBox:SetDataProvider(CreateDataProviderWithAssignedKey(filtered, "index"))
+    else
+      grid.ScrollBox:SetDataProvider(CreateDataProviderByIndexCount(provider:GetNumIcons()))
     end
     parent.selectedPreview.tex:SetTexture(selectedIconPath)
   end
-
-  iconScroll:SetScript("OnVerticalScroll", function()
-    FauxScrollFrame_OnVerticalScroll(ICON_BTN_SIZE + ICON_BTN_PAD, function() RefreshIconGrid() end)
-  end)
 
   -- Search box (bottom-left) filters the grid by icon name.
   parent.searchLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1472,13 +1151,14 @@ function pfUI.api.CreateIconPicker(name, parent, extraType, nameLabelText)
   parent.search:SetScript("OnTextChanged", function()
     searchText = strupper(strtrim(this:GetText()))
     RebuildFilter()
-    scrollbar:SetValue(0)
     RefreshIconGrid()
   end)
 
-  -- Release the provider when the popup closes so its icon cache GCs.
+  -- Release the provider when the popup closes so its icon cache GCs, and
+  -- the grid's entries that index into it.
   parent:HookScript("OnHide", function()
     if provider then provider:Release(); provider = nil end
+    grid.ScrollBox:RemoveDataProvider()
   end)
 
   local handle = { editbox = parent.editbox, search = parent.search }
@@ -1486,15 +1166,13 @@ function pfUI.api.CreateIconPicker(name, parent, extraType, nameLabelText)
   function handle.SetIcon(path) selectedIconPath = path or QUESTION_MARK end
   function handle.Refresh() RefreshIconGrid() end
   function handle.SetIconAreaShown(shown)
-    local method = shown and "Show" or "Hide"
-    iconScroll[method](iconScroll)
-    for _, b in ipairs(iconButtons) do b[method](b) end
-    parent.iconLabel[method](parent.iconLabel)
-    parent.selectedLabel[method](parent.selectedLabel)
-    parent.selectedPreview[method](parent.selectedPreview)
-    filterDropdown[method](filterDropdown)
-    parent.searchLabel[method](parent.searchLabel)
-    parent.search[method](parent.search)
+    grid:SetShown(shown)
+    parent.iconLabel:SetShown(shown)
+    parent.selectedLabel:SetShown(shown)
+    parent.selectedPreview:SetShown(shown)
+    filterDropdown:SetShown(shown)
+    parent.searchLabel:SetShown(shown)
+    parent.search:SetShown(shown)
   end
   return handle
 end

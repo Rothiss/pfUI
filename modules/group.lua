@@ -35,7 +35,7 @@ pfUI:RegisterModule("group", function ()
       end
 
       if C.unitframes.grouptarget.visible == "1" and active then
-        pfUI.uf.group[i].target = pfUI.uf.group[i].target or pfUI.uf:CreateUnitFrame("Party" .. i .. "Target", nil, C.unitframes.grouptarget, 0.2)
+        pfUI.uf.group[i].target = pfUI.uf.group[i].target or pfUI.uf:CreateUnitFrame("Party" .. i .. "Target", nil, C.unitframes.grouptarget)
         pfUI.uf.group[i].target:UpdateFrameSize()
         pfUI.uf.group[i].target:SetPoint("TOPLEFT", pfUI.uf.group[i], "TOPRIGHT", 3*default_border, 0)
         pfUI.uf.group[i].target:UpdateConfig()

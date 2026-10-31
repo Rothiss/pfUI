@@ -150,8 +150,8 @@ pfUI:RegisterModule("castbar", function ()
   -- One-shot poll: read C_Spell for the bar's unit, stamp or clear. Called
   -- from event handlers (cast start, target/focus change), never per-frame.
   local function RefreshBar(cb, rank)
-    local query = cb.unitstr ~= "" and cb.unitstr or cb.unitname
-    if not query or (cb.unitstr ~= "" and not UnitExists(cb.unitstr)) then
+    local query = cb.unitstr
+    if not UnitExists(query) then
       ClearBar(cb)
       return
     end
@@ -178,7 +178,7 @@ pfUI:RegisterModule("castbar", function ()
     end
   end
 
-  local function CreateCastbar(name, parent, unitstr, unitname)
+  local function CreateCastbar(name, parent, unitstr)
     local cb = CreateFrame("Frame", name, parent or UIParent)
 
     cb:SetHeight(C.global.font_size * 1.5)
@@ -186,7 +186,6 @@ pfUI:RegisterModule("castbar", function ()
     cb:SetFrameLevel(8)
 
     cb.unitstr = unitstr
-    cb.unitname = unitname
 
     -- icon
     cb.icon = CreateFrame("Frame", nil, cb)
@@ -235,14 +234,14 @@ pfUI:RegisterModule("castbar", function ()
     cb.bar.lag = cb.bar:CreateTexture(nil, "OVERLAY")
     cb.bar.lag:SetPoint("TOPRIGHT", cb.bar, "TOPRIGHT", 0, 0)
     cb.bar.lag:SetPoint("BOTTOMRIGHT", cb.bar, "BOTTOMRIGHT", 0, 0)
-    cb.bar.lag:SetTexture(1,.2,.2,.2)
+    cb.bar.lag:SetColorTexture(1,.2,.2,.2)
 
     -- Per-craft progress spark for tradeskill merge — a thin vertical line
     -- that crosses the bar once per craft in the chain (so on a 5-stack it
     -- moves 5x faster than the main fill). Position is updated by OnUpdate
     -- while a merge is active; hidden otherwise.
     cb.bar.spark = cb.bar:CreateTexture(nil, "OVERLAY")
-    cb.bar.spark:SetTexture(1, 1, 1, 0.8)
+    cb.bar.spark:SetColorTexture(1, 1, 1, 0.8)
     cb.bar.spark:SetWidth(2)
     cb.bar.spark:SetPoint("TOP", cb.bar, "TOPLEFT", 0, 0)
     cb.bar.spark:SetPoint("BOTTOM", cb.bar, "BOTTOMLEFT", 0, 0)
@@ -277,7 +276,7 @@ pfUI:RegisterModule("castbar", function ()
 
       -- Non-player bars: if the unit disappears (target died / detarget),
       -- drop the bar immediately.
-      if this.unitstr ~= "" and this.unitstr ~= "player" and not UnitExists(this.unitstr) then
+      if this.unitstr ~= "player" and not UnitExists(this.unitstr) then
         ClearBar(this)
         return
       end
@@ -423,13 +422,12 @@ pfUI:RegisterModule("castbar", function ()
         -- endMs. delay is a positive magnitude; OnUpdate signs it "+" for casts
         -- and "-" for channels. Skipped during a tradeskill merge.
         if this.endTime and not this.tradeskillTotal then
-          local query = this.unitstr ~= "" and this.unitstr or this.unitname
           local startMs, endMs
           if this.isChannel then
-            local _, _, _, s, e = C_Spell.UnitChannelInfo(query)
+            local _, _, _, s, e = C_Spell.UnitChannelInfo(unit)
             startMs, endMs = s, e
           else
-            local _, _, _, s, e = C_Spell.UnitCastingInfo(query)
+            local _, _, _, s, e = C_Spell.UnitCastingInfo(unit)
             startMs, endMs = s, e
           end
           if startMs and endMs then
@@ -543,9 +541,6 @@ pfUI:RegisterModule("castbar", function ()
     if C.castbar.focus.height ~= "-1" then
       pfUI.castbar.focus:SetHeight(C.castbar.focus.height)
     end
-
-    -- bind castbar to the "focus" unit token; the GUID resolves at read time
-    pfUI.castbar.focus.unitstr = "focus"
 
     UpdateMovable(pfUI.castbar.focus)
   end

@@ -161,112 +161,82 @@ pfUI:RegisterModule("actionbar", function ()
     [12] = "Pet",
   }
 
+  -- Button animations scale and fade a copy of the icon through keyframes of
+  -- { duration, scale, alpha, smoothing }. Styles with hideicon hide the icon
+  -- while the copy plays.
   local button_animations = {
-    ["none"] = function()
-      this.active = nil
-      this:Hide()
-    end,
-    ["zoomfade"] = function()
-      if this.active == 0 then
-        -- init animation
-        this:SetSize(this.parent:GetSize())
-        this:SetScale(this.parent:GetScale())
-        this.tex:SetTexture(this.parent.icon:GetTexture())
-        this.tex:SetVertexColor(this.parent.icon:GetVertexColor())
-        this:SetAlpha(1)
-        this.active = 1
-        return
-      elseif this.active == 1 then
-        -- run animation
-        local fade = 30/GetFramerate()*0.05
-        this:SetAlpha(this:GetAlpha() - fade)
-        this:SetScale(this:GetScale() + fade)
-        if this:GetAlpha() > 0 then return end
-      end
-
-      -- stop animation
-      this.active = nil
-      this:Hide()
-    end,
-    ["shrinkreturn"] = function()
-      if this.active == 0 then
-        -- init animation
-        this:SetSize(this.parent:GetSize())
-        this:SetScale(this.parent:GetScale())
-        this.tex:SetTexture(this.parent.icon:GetTexture())
-        this.tex:SetVertexColor(this.parent.icon:GetVertexColor())
-        this:SetAlpha(1)
-        this.parent.icon:Hide()
-        this.active = 1
-        this.time = 0
-        return
-      elseif this.active == 1 then
-        -- run animation
-        this.time = this.time + 30/GetFramerate()*0.1
-        local fade = 1 -math.exp(-this.time)*math.sin(this.time*math.pi)
-        this:SetAlpha(fade)
-        this:SetScale(fade)
-        if this.time < 1 then return end
-      end
-
-      -- stop animation
-      this.active = nil
-      this:Hide()
-      this.parent.icon:Show()
-    end,
-    ["elasticzoom"] = function()
-      if this.active == 0 then
-        -- init animation
-        this:SetSize(this.parent:GetSize())
-        this:SetScale(this.parent:GetScale())
-        this.tex:SetTexture(this.parent.icon:GetTexture())
-        this.tex:SetVertexColor(this.parent.icon:GetVertexColor())
-        this:SetAlpha(1)
-        this.parent.icon:Hide()
-        this.active = 1
-        this.time = 0
-        return
-      elseif this.active == 1 then
-        -- run animation
-        this.time = this.time + 30/GetFramerate()*0.03
-        local fade = 1 -math.exp(-this.time*6)*math.sin(this.time*4*math.pi)
-        this:SetAlpha(fade)
-        this:SetScale(fade)
-        if this.time < 1 then return end
-      end
-
-      -- stop animation
-      this.active = nil
-      this:Hide()
-      this.parent.icon:Show()
-    end,
-    ["wobblezoom"] = function()
-      if this.active == 0 then
-        -- init animation
-        this:SetSize(this.parent:GetSize())
-        this:SetScale(this.parent:GetScale())
-        this.tex:SetTexture(this.parent.icon:GetTexture())
-        this.tex:SetVertexColor(this.parent.icon:GetVertexColor())
-        this:SetAlpha(1)
-        this.parent.icon:Hide()
-        this.active = 1
-        this.time = 0
-        return
-      elseif this.active == 1 then
-        -- run animation
-        this.time = this.time + 30/GetFramerate()*0.02
-        local fade = 1 -math.exp(-this.time*6)*math.sin(this.time*10*math.pi)
-        this:SetAlpha(fade)
-        this:SetScale(fade)
-        if this.time < 1 then return end
-      end
-
-      -- stop animation
-      this.active = nil
-      this:Hide()
-      this.parent.icon:Show()
-    end,
+    ["zoomfade"] = {
+      { .67, 2, 0, "NONE" },
+    },
+    ["shrinkreturn"] = { hideicon = true,
+      { .13, .36, .36, "OUT" },
+      { .2, 1, 1, "IN" },
+    },
+    ["elasticzoom"] = { hideicon = true,
+      { .1, .47, .47, "OUT" },
+      { .28, 1.12, 1, "IN_OUT" },
+      { .28, .97, .97, "IN_OUT" },
+      { .46, 1, 1, "IN_OUT" },
+    },
+    ["wobblezoom"] = { hideicon = true,
+      { .07, .25, .25, "OUT" },
+      { .17, 1.41, 1, "IN_OUT" },
+      { .17, .77, .77, "IN_OUT" },
+      { .17, 1.12, 1, "IN_OUT" },
+      { .17, .93, .93, "IN_OUT" },
+      { .17, 1.04, 1, "IN_OUT" },
+      { .17, .98, .98, "IN_OUT" },
+      { .59, 1, 1, "IN_OUT" },
+    },
   }
+
+  local function CreateButtonAnimation(button, style)
+    local group = button.animation.tex:CreateAnimationGroup()
+    group:SetIgnoreFramerateThrottle(true)
+
+    local scale, alpha = 1, 1
+    for order, key in ipairs(style) do
+      local duration, nextscale, nextalpha, smoothing = unpack(key)
+
+      local zoom = group:CreateAnimation("Scale")
+      zoom:SetOrder(order)
+      zoom:SetDuration(duration)
+      zoom:SetSmoothing(smoothing)
+      zoom:SetScale(nextscale / scale, nextscale / scale)
+
+      local fade = group:CreateAnimation("Alpha")
+      fade:SetOrder(order)
+      fade:SetDuration(duration)
+      fade:SetSmoothing(smoothing)
+      fade:SetChange(nextalpha - alpha)
+
+      scale, alpha = nextscale, nextalpha
+    end
+
+    local function Done()
+      button.animation:Hide()
+      button.icon:Show()
+    end
+    group:SetScript("OnFinished", Done)
+    group:SetScript("OnStop", Done)
+
+    return group
+  end
+
+  local function PlayButtonAnimation(button)
+    local style = button_animations[C.bars.animation]
+    if not style then return end
+
+    local animation = button.animation
+    animation.groups[style] = animation.groups[style] or CreateButtonAnimation(button, style)
+
+    animation.tex:StopAnimating()
+    animation.tex:SetTexture(button.icon:GetTexture())
+    animation.tex:SetVertexColor(button.icon:GetVertexColor())
+    animation:Show()
+    if style.hideicon then button.icon:Hide() end
+    animation.groups[style]:Play()
+  end
 
   local function GetActiveBar()
     if CURRENT_ACTIONBAR_PAGE == 1 and GetBonusBarOffset() ~= 0 then
@@ -310,8 +280,7 @@ pfUI:RegisterModule("actionbar", function ()
     -- trigger action animation
     if ( pfUI_config.bars.keydown == "1" and keystate == "down" ) or (pfUI_config.bars.keydown == "0" and keystate == "up" ) or self.bar == 11 or mouse then
       if C.bars.animmode == "keypress" and ( self:GetAlpha() > .1  or C.bars.animalways == "1" ) then
-        self.animation.active = 0
-        self.animation:Show()
+        PlayButtonAnimation(self)
       end
     end
 
@@ -382,8 +351,6 @@ pfUI:RegisterModule("actionbar", function ()
       end
     elseif self.spellID then
       GameTooltip:SetSpellByID(self.spellID)
-    elseif self.spellslot and self.booktype then
-      GameTooltip:SetSpell(self.spellslot, self.booktype)
     else
       GameTooltip:SetAction(self.id)
     end
@@ -416,11 +383,7 @@ pfUI:RegisterModule("actionbar", function ()
     end
 
     -- equipped item
-    if IsEquippedAction(sid) and C.bars.showequipped == "1" then
-      self.equipped:Show()
-    else
-      self.equipped:Hide()
-    end
+    self.equipped:SetShown(IsEquippedAction(sid) and C.bars.showequipped == "1")
   end
 
   local start, duration, enable, castable, autocast, token
@@ -456,11 +419,6 @@ pfUI:RegisterModule("actionbar", function ()
       id = self.bar == 1 and self.slot or sid-((self.bar)-1)*12
     end
 
-    -- overwrite with spell macro texture where possible
-    if self.spellslot and self.booktype then
-      texture = GetSpellTexture(self.spellslot, self.booktype)
-    end
-
     if not self.showempty and self.backdrop and not texture and grid == 0 then
       self.backdrop:Hide()
       self.hide = true
@@ -472,8 +430,7 @@ pfUI:RegisterModule("actionbar", function ()
     -- active border
     if active then
       if C.bars.animmode == "statechange" and not self.active:IsShown() then
-        self.animation.active = 0
-        self.animation:Show()
+        PlayButtonAnimation(self)
       end
 
       self.backdrop:SetBackdropBorderColor(cr,cg,cb,1)
@@ -513,11 +470,7 @@ pfUI:RegisterModule("actionbar", function ()
         self.autocast:Hide()
       end
 
-      if castable and C.bars.showcastable == "1" then
-        self.autocastable:Show()
-      else
-        self.autocastable:Hide()
-      end
+      self.autocastable:SetShown(castable and C.bars.showcastable == "1")
     end
 
     -- keybinds
@@ -590,9 +543,6 @@ pfUI:RegisterModule("actionbar", function ()
       start, duration, enable = GetShapeshiftFormCooldown(button.id)
     elseif button.bar == 12 then
       start, duration, enable = GetPetActionCooldown(button.id)
-    elseif button.spellslot and button.booktype then
-      start, duration = GetSpellCooldown(button.spellslot, button.booktype)
-      enable = 1
     else
       start, duration, enable = GetActionCooldown(button.id)
     end
@@ -1045,6 +995,7 @@ pfUI:RegisterModule("actionbar", function ()
       -- cooldown
       f.cd = CreateFrame("Cooldown", f:GetName() .. "Cooldown", f, "CooldownFrameTemplate")
       f.cd.pfCooldownStyleAnimation = 1
+      f.cd:SetReverse(C.bars.cooldown_reverse == "1")
       f.cd.pfCooldownType = "NOGCD"
       f.cd.pfCooldownSize = cd_size
 
@@ -1055,8 +1006,8 @@ pfUI:RegisterModule("actionbar", function ()
 
       -- animation
       f.animation = CreateFrame("Frame", button_name .. "Animation", f)
-      f.animation.parent = f
-      f.animation:SetPoint("CENTER", 0, 0)
+      f.animation.groups = {}
+      f.animation:SetAllPoints()
       f.animation:Hide()
       f.animation.tex = f.animation:CreateTexture(button_name .. "AnimationTexture", "BACKGROUND")
       f.animation.tex:SetTexCoord(.08, .92, .08, .92)
@@ -1115,9 +1066,6 @@ pfUI:RegisterModule("actionbar", function ()
       f:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     end
 
-    -- set animation
-    f.animation:SetScript("OnUpdate", button_animations[C.bars.animation])
-
     -- pet autocast
     if bar == 12 then
       f.autocast:SetScale(C.bars["bar"..bar].icon_size / 25)
@@ -1125,7 +1073,7 @@ pfUI:RegisterModule("actionbar", function ()
     end
 
     -- macro options
-    if showmacro == "1" then f.macro:Show() else f.macro:Hide() end
+    f.macro:SetShown(showmacro == "1")
     SetAllPointsOffset(f.macro, f, font_offset, -font_offset)
     f.macro:SetFont(font, macro_size, "OUTLINE")
     f.macro:SetTextColor(unpack(macro_color))
@@ -1133,7 +1081,7 @@ pfUI:RegisterModule("actionbar", function ()
     f.macro:SetJustifyV("BOTTOM")
 
     -- keybind options
-    if showkybind == "1" then f.keybind:Show() else f.keybind:Hide() end
+    f.keybind:SetShown(showkybind == "1")
     SetAllPointsOffset(f.keybind, f, font_offset, -font_offset)
     f.keybind:SetFont(font, bind_size, "OUTLINE")
     f.keybind:SetTextColor(unpack(bind_color))
@@ -1142,14 +1090,12 @@ pfUI:RegisterModule("actionbar", function ()
     f.keybind:SetNonSpaceWrap(false)
 
     -- item count options
-    if showcount == "1" then f.count:Show() else f.count:Hide() end
+    f.count:SetShown(showcount == "1")
     SetAllPointsOffset(f.count, f, font_offset, -font_offset)
     f.count:SetFont(font, count_size, "OUTLINE")
     f.count:SetTextColor(unpack(count_color))
     f.count:SetJustifyH("RIGHT")
     f.count:SetJustifyV("BOTTOM")
-
-    f.scanmacro, f.spellslot, f.booktype = nil, nil, nil
 
     -- range glow color
     f.rangeColor = GetStringColorObject(C.bars.rangecolor)
@@ -1162,7 +1108,7 @@ pfUI:RegisterModule("actionbar", function ()
 
     -- equipped color
     if f.equipped then
-      f.equipped:SetTexture(GetStringColor(C.bars.eqcolor))
+      f.equipped:SetColorTexture(GetStringColor(C.bars.eqcolor))
     end
 
     -- general appearance
@@ -1217,8 +1163,7 @@ pfUI:RegisterModule("actionbar", function ()
     end
 
     -- the stored layout is invalid, temporary fallback
-    local _, _, fcols, frows = string.find(tostring(formfactor or ""), "(%d+)%s*x%s*(%d+)")
-    if not ((fcols and frows) or pfGridmath[buttons][BarLayoutFormfactor(formfactor)]) then
+    if not fcols2 or not frows2 then
       formfactor = BarLayoutOptions(buttons)[1]
     end
 
@@ -1244,11 +1189,7 @@ pfUI:RegisterModule("actionbar", function ()
       -- handle pet bar
       if i == 12 then
         -- only show when pet actions exists
-        if PetHasActionBar() or pfUI.unlock and pfUI.unlock:IsShown() then
-          bars[i]:Show()
-        else
-          bars[i]:Hide()
-        end
+        bars[i]:SetShown(PetHasActionBar() or pfUI.unlock and pfUI.unlock:IsShown())
 
         -- show/hide petbar on petbar updates
         if init then
@@ -1268,11 +1209,7 @@ pfUI:RegisterModule("actionbar", function ()
       -- handle shapeshift bar
       elseif i == 11 then
         -- only show when shapeshifts exist
-        if GetNumShapeshiftForms() > 0 then
-          bars[i]:Show()
-        else
-          bars[i]:Hide()
-        end
+        bars[i]:SetShown(GetNumShapeshiftForms() > 0)
 
         -- update shapeshift bar when amount of spells changes
         if init then
@@ -1514,23 +1451,10 @@ pfUI:RegisterModule("actionbar", function ()
   _G.ShapeshiftBar_ChangeForm = function(slot) pfActionButton(slot, nil, "ShapeShiftBar") end
 
   -- handle drag-drop grid
-  local grid = CreateFrame("Frame")
-  grid:RegisterEvent("ACTIONBAR_SHOWGRID")
-  grid:RegisterEvent("ACTIONBAR_HIDEGRID")
-  grid:RegisterEvent("PET_BAR_SHOWGRID")
-  grid:RegisterEvent("PET_BAR_HIDEGRID")
-
-  grid:SetScript("OnEvent", function()
-    if event == "ACTIONBAR_SHOWGRID" then
-      pfUI.bars:UpdateGrid(1)
-    elseif event == "ACTIONBAR_HIDEGRID" then
-      pfUI.bars:UpdateGrid(0)
-    elseif event == "PET_BAR_SHOWGRID" then
-      pfUI.bars:UpdateGrid(1, "PET")
-    elseif event == "PET_BAR_HIDEGRID" then
-      pfUI.bars:UpdateGrid(0, "PET")
-    end
-  end)
+  pfUI.events:RegisterFrameEventAndCallback("ACTIONBAR_SHOWGRID", function() pfUI.bars:UpdateGrid(1) end)
+  pfUI.events:RegisterFrameEventAndCallback("ACTIONBAR_HIDEGRID", function() pfUI.bars:UpdateGrid(0) end)
+  pfUI.events:RegisterFrameEventAndCallback("PET_BAR_SHOWGRID", function() pfUI.bars:UpdateGrid(1, "PET") end)
+  pfUI.events:RegisterFrameEventAndCallback("PET_BAR_HIDEGRID", function() pfUI.bars:UpdateGrid(0, "PET") end)
 
   -- reagent counter
   if C.bars.reagents == "1" then

@@ -128,7 +128,7 @@ pfUI:RegisterModule("addoncompat", function ()
         {T["Yes"], function()
           ReloadUI()
         end},
-        {T["No"], function() end},
+        {T["No"], nop},
         nil)
     end
   end

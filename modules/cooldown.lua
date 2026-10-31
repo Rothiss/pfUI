@@ -59,18 +59,14 @@ pfUI:RegisterModule("cooldown", function ()
     end
   end
 
-  local height, size
-  local textcount = 0
-  local function pfCreateCoolDown(cooldown, start, duration)
-    textcount = textcount + 1
-    local name = cooldown.GetName and cooldown:GetName() or "pfCooldown" .. textcount
+  local function GetCooldownHeight(cooldown)
+    return cooldown:GetParent() and cooldown:GetParent():GetHeight() or cooldown:GetHeight() or 0
+  end
 
-    cooldown.pfCooldownText = CreateFrame("Frame", name .. "Text", cooldown:GetParent())
-    cooldown.pfCooldownText.cooldown = cooldown
-    cooldown.pfCooldownText:SetAllPoints(cooldown)
-    cooldown.pfCooldownText:SetFrameLevel(cooldown:GetParent():GetFrameLevel() + 2)
-    cooldown.pfCooldownText.text = cooldown.pfCooldownText:CreateFontString(name .. "TextString", "OVERLAY")
-
+  -- sizes the text to the cooldown's current height; the dynamic size follows
+  -- the frame, so SetCooldown calls this again whenever that height changes
+  local function pfUpdateCooldownFont(cooldown)
+    local size
     if not cooldown.pfCooldownType then
       size = tonumber(C.appearance.cd.font_size_foreign)
     elseif cooldown.pfCooldownType == "BLIZZARD" then
@@ -82,12 +78,27 @@ pfUI:RegisterModule("cooldown", function ()
     end
 
     -- enforce dynamic font size
-    if C.appearance.cd.dynamicsize == "1" and cooldown.GetParent then
-      height = cooldown:GetParent() and cooldown:GetParent():GetHeight() or cooldown:GetHeight() or 0
+    if C.appearance.cd.dynamicsize == "1" then
+      local height = GetCooldownHeight(cooldown)
+      cooldown.pfCooldownText.height = height
       size = math.max((height > 0 and height * .64 or 16), size)
     end
 
     cooldown.pfCooldownText.text:SetFont(pfUI.media[C.appearance.cd.font], size, "OUTLINE")
+  end
+
+  local textcount = 0
+  local function pfCreateCoolDown(cooldown, start, duration)
+    textcount = textcount + 1
+    local name = cooldown.GetName and cooldown:GetName() or "pfCooldown" .. textcount
+
+    cooldown.pfCooldownText = CreateFrame("Frame", name .. "Text", cooldown:GetParent())
+    cooldown.pfCooldownText.cooldown = cooldown
+    cooldown.pfCooldownText:SetAllPoints(cooldown)
+    cooldown.pfCooldownText:SetFrameLevel(cooldown:GetParent():GetFrameLevel() + 2)
+    cooldown.pfCooldownText.text = cooldown.pfCooldownText:CreateFontString(name .. "TextString", "OVERLAY")
+
+    pfUpdateCooldownFont(cooldown)
     cooldown.pfCooldownText.text:SetPoint("CENTER", cooldown.pfCooldownText, "CENTER", 0, 0)
     cooldown.pfCooldownText:SetScript("OnUpdate", pfCooldownOnUpdate)
   end
@@ -124,10 +135,9 @@ pfUI:RegisterModule("cooldown", function ()
       start, duration = 0, 0
     end
 
-    -- hide animation
-    if this.pfCooldownStyleAnimation == 0 then
-      this:SetAlpha(0)
-    elseif not this.pfCooldownStyleAnimation and C.appearance.cd.hideanim == "1" then
+    -- hide foreign animations; frames that set pfCooldownStyleAnimation
+    -- configure their own sweep (SetDrawSwipe, SetReverse)
+    if not this.pfCooldownStyleAnimation and C.appearance.cd.hideanim == "1" then
       this:SetAlpha(0)
     end
 
@@ -136,6 +146,8 @@ pfUI:RegisterModule("cooldown", function ()
     and start > 0 and duration > 0 and (not enable or enable > 0) then
       if( not this.pfCooldownText ) then
         pfCreateCoolDown(this, start, duration)
+      elseif C.appearance.cd.dynamicsize == "1" and GetCooldownHeight(this) ~= this.pfCooldownText.height then
+        pfUpdateCooldownFont(this)
       end
 
       this.pfCooldownText.start = start

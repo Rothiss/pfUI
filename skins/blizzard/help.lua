@@ -20,8 +20,8 @@ pfUI:RegisterSkin("Help", function ()
   -- HelpFrameHome
   StripTextures(HelpFrameHomeIssues)
   SkinButton(HelpFrameHomeIssues)
-  HelpFrameHomeIssues:SetScript("OnMouseUp", function() end)
-  HelpFrameHomeIssues:SetScript("OnMouseDown", function() end)
+  HelpFrameHomeIssues:SetScript("OnMouseUp", nop)
+  HelpFrameHomeIssues:SetScript("OnMouseDown", nop)
 
   SkinButton(HelpFrameHomeCancel)
 
@@ -49,13 +49,13 @@ pfUI:RegisterSkin("Help", function ()
   -- HelpFrameGeneral
   StripTextures(HelpFrameGeneralButton)
   SkinButton(HelpFrameGeneralButton)
-  HelpFrameGeneralButton:SetScript("OnMouseUp", function() end)
-  HelpFrameGeneralButton:SetScript("OnMouseDown", function() end)
+  HelpFrameGeneralButton:SetScript("OnMouseUp", nop)
+  HelpFrameGeneralButton:SetScript("OnMouseDown", nop)
 
   StripTextures(HelpFrameGeneralButton2)
   SkinButton(HelpFrameGeneralButton2)
-  HelpFrameGeneralButton2:SetScript("OnMouseUp", function() end)
-  HelpFrameGeneralButton2:SetScript("OnMouseDown", function() end)
+  HelpFrameGeneralButton2:SetScript("OnMouseUp", nop)
+  HelpFrameGeneralButton2:SetScript("OnMouseDown", nop)
 
   SkinButton(HelpFrameGeneralCancel)
 
@@ -69,13 +69,13 @@ pfUI:RegisterSkin("Help", function ()
 
   StripTextures(HelpFrameVerbalHarassmentButton)
   SkinButton(HelpFrameVerbalHarassmentButton)
-  HelpFrameVerbalHarassmentButton:SetScript("OnMouseUp", function() end)
-  HelpFrameVerbalHarassmentButton:SetScript("OnMouseDown", function() end)
+  HelpFrameVerbalHarassmentButton:SetScript("OnMouseUp", nop)
+  HelpFrameVerbalHarassmentButton:SetScript("OnMouseDown", nop)
 
   StripTextures(HelpFramePhysicalHarassmentButton)
   SkinButton(HelpFramePhysicalHarassmentButton)
-  HelpFramePhysicalHarassmentButton:SetScript("OnMouseUp", function() end)
-  HelpFramePhysicalHarassmentButton:SetScript("OnMouseDown", function() end)
+  HelpFramePhysicalHarassmentButton:SetScript("OnMouseUp", nop)
+  HelpFramePhysicalHarassmentButton:SetScript("OnMouseDown", nop)
 
   SkinButton(HelpFrameHarassmentCancel)
 

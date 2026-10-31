@@ -1,9 +1,9 @@
 pfUI:RegisterModule("loothistory", function ()
   local rawborder, border = GetBorderSize()
 
-  -- Layout
-  local ITEM_H, PLAYER_H = 24, 18
-  local ITEM_W, PLAYER_W = 350, 330
+  -- Layout (rows are 2px apart)
+  local ITEM_H, PLAYER_H = 24, 16
+  local PLAYER_INDENT = 18
 
   -- rollType constants returned by C_LootHistory.GetPlayerInfo (0/1/2; vanilla
   -- has no disenchant roll).
@@ -86,30 +86,24 @@ pfUI:RegisterModule("loothistory", function ()
   pfUI.loothistory.clear:SetText(T["Clear"])
   pfUI.loothistory.clear:SetScript("OnClick", function() C_LootHistory.Clear() end)
 
-  -- scroll frame
-  pfUI.loothistory.scroll = CreateScrollFrame("pfLootHistoryScroll", pfUI.loothistory)
-  pfUI.loothistory.scroll:SetSize(360, 440)
-  pfUI.loothistory.scroll:SetPoint("BOTTOM", 0, 10)
-
-  pfUI.loothistory.scroll.backdrop = CreateFrame("Frame", nil, pfUI.loothistory.scroll)
-  pfUI.loothistory.scroll.backdrop:SetFrameLevel(1)
-  pfUI.loothistory.scroll.backdrop:SetPoint("TOPLEFT", pfUI.loothistory.scroll, "TOPLEFT", -5, 5)
-  pfUI.loothistory.scroll.backdrop:SetPoint("BOTTOMRIGHT", pfUI.loothistory.scroll, "BOTTOMRIGHT", 5, -5)
-  CreateBackdrop(pfUI.loothistory.scroll.backdrop, nil, true)
-
-  local list = CreateScrollChild("pfLootHistoryList", pfUI.loothistory.scroll)
+  -- ==========================================================================
+  -- List: a row per item and, under an expanded item, a row per player
+  -- ==========================================================================
+  local list = CreateFrame("Frame", "pfLootHistoryList", pfUI.loothistory, "pfUIScrollBoxListTemplate")
+  list:SetSize(370, 450)
+  list:SetPoint("BOTTOM", 0, 5)
+  CreateBackdrop(list, nil, true)
   pfUI.loothistory.list = list
-
-  -- ==========================================================================
-  -- Frame pools
-  -- ==========================================================================
-  local itemFrames = {}
 
   local FullUpdate -- forward declaration (toggle handlers call it)
 
-  local function CreateItemFrame()
-    local f = CreateFrame("Button", nil, list)
-    f:SetSize(ITEM_W, ITEM_H)
+  local function ToggleExpanded(f)
+    local id = f.rollID
+    if id then expanded[id] = not expanded[id]; FullUpdate() end
+  end
+
+  -- one-time setup of a pooled item row
+  local function SetupItemRow(f)
     f:SetBackdrop(pfUI.backdrop_hover)
     f:SetBackdropBorderColor(1, 1, 1, .04)
     f:EnableMouse(1)
@@ -118,10 +112,7 @@ pfUI:RegisterModule("loothistory", function ()
     f.toggle = CreateFrame("Button", nil, f)
     f.toggle:SetSize(14, 14)
     f.toggle:SetPoint("LEFT", 4, 0)
-    f.toggle:SetScript("OnClick", function()
-      local id = f.rollID
-      if id then expanded[id] = not expanded[id]; FullUpdate() end
-    end)
+    f.toggle:SetScript("OnClick", function() ToggleExpanded(f) end)
 
     -- icon + quality-colored border
     f.iconbg = CreateFrame("Frame", nil, f)
@@ -138,18 +129,18 @@ pfUI:RegisterModule("loothistory", function ()
     f.winicon:SetSize(14, 14)
     f.winicon:SetPoint("RIGHT", f, "RIGHT", -6, 0)
 
-    f.winroll = f:CreateFontString("Status", "OVERLAY", "GameFontNormal")
+    f.winroll = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     f.winroll:SetFont(pfUI.font_default, C.global.font_size, "OUTLINE")
     f.winroll:SetPoint("RIGHT", f.winicon, "LEFT", -2, 0)
     f.winroll:SetTextColor(1, 1, 1, 1)
 
-    f.winname = f:CreateFontString("Status", "OVERLAY", "GameFontNormal")
+    f.winname = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     f.winname:SetFont(pfUI.font_default, C.global.font_size, "OUTLINE")
     f.winname:SetPoint("RIGHT", f.winroll, "LEFT", -4, 0)
     f.winname:SetJustifyH("RIGHT")
 
     -- item name (leaves room on the right for the winner block)
-    f.name = f:CreateFontString("Status", "OVERLAY", "GameFontNormal")
+    f.name = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     f.name:SetFont(pfUI.font_default, C.global.font_size, "OUTLINE")
     f.name:SetPoint("LEFT", f.iconbg, "RIGHT", 5, 0)
     f.name:SetPoint("RIGHT", f, "RIGHT", -100, 0)
@@ -167,20 +158,13 @@ pfUI:RegisterModule("loothistory", function ()
       this:SetBackdropBorderColor(1, 1, 1, .04)
       GameTooltip:Hide()
     end)
-    f:SetScript("OnClick", function()
-      local id = this.rollID
-      if id then expanded[id] = not expanded[id]; FullUpdate() end
-    end)
-
-    return f
+    f:SetScript("OnClick", function() ToggleExpanded(f) end)
   end
 
-  local function CreatePlayerFrame()
-    local f = CreateFrame("Frame", nil, list)
-    f:SetSize(PLAYER_W, PLAYER_H)
-
+  -- one-time setup of a pooled player row
+  local function SetupPlayerRow(f)
     -- name is indented to leave room for the winner checkmark on its left
-    f.name = f:CreateFontString("Status", "OVERLAY", "GameFontNormal")
+    f.name = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     f.name:SetFont(pfUI.font_default, C.global.font_size, "OUTLINE")
     f.name:SetPoint("LEFT", 20, 0)
     f.name:SetJustifyH("LEFT")
@@ -189,7 +173,7 @@ pfUI:RegisterModule("loothistory", function ()
     f.rollicon:SetSize(16, 16)
     f.rollicon:SetPoint("RIGHT", -4, 0)
 
-    f.rolltext = f:CreateFontString("Status", "OVERLAY", "GameFontNormal")
+    f.rolltext = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     f.rolltext:SetFont(pfUI.font_default, C.global.font_size, "OUTLINE")
     f.rolltext:SetPoint("RIGHT", f.rollicon, "LEFT", -3, 0)
     f.rolltext:SetTextColor(1, 1, 1, 1)
@@ -199,14 +183,7 @@ pfUI:RegisterModule("loothistory", function ()
     f.winmark:SetSize(16, 16)
     f.winmark:SetTexture(WINMARK)
     f.winmark:SetPoint("RIGHT", f.name, "LEFT", -1, 0)
-
-    return f
   end
-
-  local playerPool = CreateObjectPool(CreatePlayerFrame, function(_, pf)
-    pf:Hide()
-    pf:ClearAllPoints()
-  end)
 
   local function SetToggleTexture(toggle, isExpanded)
     if isExpanded then
@@ -221,34 +198,28 @@ pfUI:RegisterModule("loothistory", function ()
   -- ==========================================================================
   -- Rendering
   -- ==========================================================================
-  local function UpdateItemFrame(f, i)
-    local rollID, itemLink, numPlayers, isDone, winnerIdx = C_LootHistory.GetItem(i)
+  local function InitItemRow(f, row)
+    if not f.toggle then SetupItemRow(f) end
+
+    local i = row.item
+    local rollID, itemLink, _, isDone, winnerIdx = C_LootHistory.GetItem(i)
     f.rollID = rollID
-    f.itemIdx = i
     f.itemLink = itemLink
-    f.numPlayers = numPlayers or 0
-    f.isDone = isDone
 
     local isExpanded = rollID and expanded[rollID]
     SetToggleTexture(f.toggle, isExpanded)
 
-    -- Item icon/name/quality via the ClassicAPI Item mixin. When the item
-    -- isn't cached yet, show a placeholder and re-paint this row from the
-    -- ContinueOnItemLoad callback (guarded on rollID: rows are pooled, so the
+    -- Item icon/name/quality via the ClassicAPI Item mixin. The row shows a
+    -- placeholder until ContinueOnItemLoad paints it, which happens at once
+    -- when the item is cached (guarded on rollID: rows are pooled, so the
     -- callback must no-op if the row has since been reused for another roll).
-    local item = itemLink and Item:CreateFromItemLink(itemLink)
-    if item and not item:IsItemEmpty() then
-      if item:IsItemDataCached() then
-        RenderItemVisual(f, item)
-      else
-        ShowRetrieving(f)
-        local pending = rollID
-        item:ContinueOnItemLoad(function()
-          if f.rollID == pending then RenderItemVisual(f, item) end
-        end)
-      end
-    else
-      ShowRetrieving(f)
+    ShowRetrieving(f)
+    if itemLink then
+      local item = Item:CreateFromItemLink(itemLink)
+      local pending = rollID
+      item:ContinueOnItemLoad(function()
+        if f.rollID == pending then RenderItemVisual(f, item) end
+      end)
     end
 
     -- winner summary only on a decided, collapsed row
@@ -279,15 +250,34 @@ pfUI:RegisterModule("loothistory", function ()
     end
   end
 
-  local function RenderPlayerFrame(pf, name, class, rollType, roll, isWinner)
+  local function InitPlayerRow(pf, row)
+    if not pf.name then SetupPlayerRow(pf) end
+
+    local name, class, rollType, roll, isWinner = C_LootHistory.GetPlayerInfo(row.item, row.player)
     pf.name:SetText(name or UNKNOWN)
     pf.name:SetTextColor(PFUI_CLASS_COLORS[class]:GetRGB())
 
     pf.rollicon:SetTexture(ROLL_TEX[rollType] or ROLL_TEX[ROLL_PASS])
     if roll and roll > 0 then pf.rolltext:SetText(roll) else pf.rolltext:SetText("") end
 
-    if isWinner then pf.winmark:Show() else pf.winmark:Hide() end
+    pf.winmark:SetShown(isWinner)
   end
+
+  local view = CreateScrollBoxListLinearView(2, 2, 4, 4, 2)
+  view:SetElementFactory(function(factory, row)
+    if row.player then
+      factory("Frame", InitPlayerRow)
+    else
+      factory("Button", InitItemRow)
+    end
+  end)
+  view:SetElementExtentCalculator(function(_, row)
+    return row.player and PLAYER_H or ITEM_H
+  end)
+  view:SetElementIndentCalculator(function(row)
+    return row.player and PLAYER_INDENT or 0
+  end)
+  ScrollUtil.InitScrollBoxListWithScrollBar(list.ScrollBox, list.ScrollBar, view)
 
   -- A player row is worth showing while the roll is undecided (see everyone),
   -- or afterwards only if they actually rolled or it's you (hide the passers'
@@ -298,46 +288,23 @@ pfUI:RegisterModule("loothistory", function ()
 
   function FullUpdate()
     if not pfUI.loothistory:IsShown() then return end
-    playerPool:ReleaseAll()
 
-    local num = C_LootHistory.GetNumItems()
-    local y = -2
+    local rows = {}
+    for i = 1, C_LootHistory.GetNumItems() do
+      local rollID, _, numPlayers, isDone = C_LootHistory.GetItem(i)
+      table.insert(rows, { item = i })
 
-    for i = 1, num do
-      local f = itemFrames[i] or CreateItemFrame()
-      itemFrames[i] = f
-      UpdateItemFrame(f, i)
-      f:ClearAllPoints()
-      f:SetPoint("TOPLEFT", list, "TOPLEFT", 4, y)
-      f:Show()
-      y = y - ITEM_H - 2
-
-      if f.rollID and expanded[f.rollID] then
-        for p = 1, f.numPlayers do
-          local name, class, rollType, roll, isWinner, isMe = C_LootHistory.GetPlayerInfo(i, p)
-          if ShouldDisplayPlayer(f.isDone, roll, isMe) then
-            local pf = playerPool:Acquire()
-            RenderPlayerFrame(pf, name, class, rollType, roll, isWinner)
-            pf:ClearAllPoints()
-            pf:SetPoint("TOPLEFT", list, "TOPLEFT", 22, y)
-            pf:Show()
-            y = y - PLAYER_H
+      if rollID and expanded[rollID] then
+        for p = 1, numPlayers or 0 do
+          local _, _, _, roll, _, isMe = C_LootHistory.GetPlayerInfo(i, p)
+          if ShouldDisplayPlayer(isDone, roll, isMe) then
+            table.insert(rows, { item = i, player = p })
           end
         end
-        y = y - 2
       end
     end
 
-    for i = num + 1, table.getn(itemFrames) do
-      itemFrames[i]:Hide()
-    end
-
-    -- Resize the scroll child and re-attach it: SetHeight alone on a
-    -- SetAllPoints'd child doesn't make the ScrollFrame recompute its scroll
-    -- range, so a dynamically-grown list wouldn't scroll until a /reload.
-    list:SetHeight(math.max(1, -y + 2))
-    pfUI.loothistory.scroll:SetScrollChild(list)
-    pfUI.loothistory.scroll:UpdateScrollState()
+    list.ScrollBox:SetDataProvider(CreateDataProvider(rows), ScrollBoxConstants.RetainScrollPosition)
   end
 
   pfUI.loothistory:SetScript("OnShow", function() FullUpdate() end)
@@ -345,20 +312,18 @@ pfUI:RegisterModule("loothistory", function ()
   -- ==========================================================================
   -- Events
   -- ==========================================================================
-  local events = CreateFrame("Frame")
-  events:RegisterEvent("LOOT_HISTORY_FULL_UPDATE")
-  events:RegisterEvent("LOOT_HISTORY_ROLL_CHANGED")
-  events:RegisterEvent("LOOT_HISTORY_ROLL_COMPLETE")
-  events:SetScript("OnEvent", function()
-    -- auto-show on a new roll opening / completing, if enabled
-    if C.loothistory.autoshow == "1"
-        and (event == "LOOT_HISTORY_FULL_UPDATE" or event == "LOOT_HISTORY_ROLL_COMPLETE")
-        and not pfUI.loothistory:IsShown() then
+  -- auto-show on a new roll opening / completing, if enabled
+  local function AutoShow()
+    if C.loothistory.autoshow == "1" and not pfUI.loothistory:IsShown() then
       pfUI.loothistory:Show() -- OnShow runs FullUpdate
       return
     end
     FullUpdate() -- no-op while hidden
-  end)
+  end
+
+  pfUI.events:RegisterFrameEventAndCallback("LOOT_HISTORY_FULL_UPDATE", AutoShow)
+  pfUI.events:RegisterFrameEventAndCallback("LOOT_HISTORY_ROLL_COMPLETE", AutoShow)
+  pfUI.events:RegisterFrameEventAndCallback("LOOT_HISTORY_ROLL_CHANGED", FullUpdate)
 
   -- ==========================================================================
   -- Slash command

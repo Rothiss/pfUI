@@ -145,7 +145,7 @@ pfUI:RegisterModule("chat", function ()
     ["URL"] = function(a1,a2,a3) return pfUI.chat:FormatLink(pfUI.chat.URLPattern.URL.fm,a1,a2,a3) end,
   }
 
-  -- url copy dialog
+  -- url links
   function pfUI.chat:FormatLink(formatter,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10)
     if not (formatter and a1) then return end
     local newtext = string.format(formatter,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10)
@@ -185,73 +185,10 @@ pfUI:RegisterModule("chat", function ()
     return text
   end
 
-  pfUI.chat.urlcopy = CreateFrame("Frame", "pfURLCopy", UIParent)
-  pfUI.chat.urlcopy:Hide()
-  pfUI.chat.urlcopy:SetWidth(270)
-  pfUI.chat.urlcopy:SetHeight(65)
-  pfUI.chat.urlcopy:SetFrameStrata("FULLSCREEN")
-  pfUI.chat.urlcopy:SetPoint("CENTER", 0, 0)
-  CreateBackdrop(pfUI.chat.urlcopy, nil, nil, 0.8)
-
-  pfUI.chat.urlcopy:SetMovable(true)
-  pfUI.chat.urlcopy:EnableMouse(true)
-  pfUI.chat.urlcopy:RegisterForDrag("LeftButton")
-  pfUI.chat.urlcopy:SetScript("OnDragStart",function()
-    this:StartMoving()
+  -- clicking a url link copies it
+  LinkUtil.RegisterLinkHandler("url", function(link, text, linkData)
+    CopyText(linkData.options)
   end)
-
-  pfUI.chat.urlcopy:SetScript("OnDragStop",function()
-    this:StopMovingOrSizing()
-  end)
-
-  pfUI.chat.urlcopy:SetScript("OnShow", function()
-    this.text:HighlightText()
-  end)
-
-  pfUI.chat.urlcopy.text = CreateFrame("EditBox", "pfURLCopyEditBox", pfUI.chat.urlcopy)
-  pfUI.chat.urlcopy.text:SetTextColor(.2,1,.8,1)
-  pfUI.chat.urlcopy.text:SetJustifyH("CENTER")
-
-  pfUI.chat.urlcopy.text:SetWidth(250)
-  pfUI.chat.urlcopy.text:SetHeight(20)
-  pfUI.chat.urlcopy.text:SetPoint("TOP", pfUI.chat.urlcopy, "TOP", 0, -10)
-  pfUI.chat.urlcopy.text:SetFontObject(GameFontNormal)
-  CreateBackdrop(pfUI.chat.urlcopy.text)
-
-  pfUI.chat.urlcopy.text:SetScript("OnEscapePressed", function(self)
-    pfUI.chat.urlcopy:Hide()
-  end)
-
-  pfUI.chat.urlcopy.text:SetScript("OnEditFocusLost", function(self)
-    pfUI.chat.urlcopy:Hide()
-  end)
-
-  pfUI.chat.urlcopy.close = CreateFrame("Button", "pfURLCopyClose", pfUI.chat.urlcopy, "UIPanelButtonTemplate")
-  pfUI.api.SkinButton(pfUI.chat.urlcopy.close)
-  pfUI.chat.urlcopy.close:SetWidth(70)
-  pfUI.chat.urlcopy.close:SetHeight(18)
-  pfUI.chat.urlcopy.close:SetPoint("BOTTOMRIGHT", pfUI.chat.urlcopy, "BOTTOMRIGHT", -10, 10)
-
-  pfUI.chat.urlcopy.close:SetText(T["Close"])
-  pfUI.chat.urlcopy.close:SetScript("OnClick", function()
-    pfUI.chat.urlcopy:Hide()
-  end)
-
-  pfUI.chat.urlcopy.SetItemRef = SetItemRef
-  pfUI.chat.urlcopy.CopyText = function(text)
-    pfUI.chat.urlcopy.text:SetText(text)
-    pfUI.chat.urlcopy:Show()
-  end
-
-  function _G.SetItemRef(link, text, button)
-    if (strsub(link, 1, 3) == "url") then
-      if string.len(link) > 4 and string.sub(link,1,4) == "url:" then
-        pfUI.chat.urlcopy.CopyText(string.sub(link,5, string.len(link)))
-      end
-      return
-    end
-    pfUI.chat.urlcopy.SetItemRef(link, text, button)
-  end
 
   pfUI.chat.right = CreateFrame("Frame", "pfChatRight", UIParent)
   pfUI.chat.right:SetFrameStrata("BACKGROUND")
@@ -278,22 +215,14 @@ pfUI:RegisterModule("chat", function ()
   pfUI.chat:RegisterEvent("UI_SCALE_CHANGED")
 
   local function ChatOnMouseWheel()
-    if (arg1 > 0) then
-      if IsShiftKeyDown() then
-        this:ScrollToTop()
-      else
-        for i=1, C.chat.global.scrollspeed do
-          this:ScrollUp()
-        end
-      end
-    elseif (arg1 < 0) then
-      if IsShiftKeyDown() then
-        this:ScrollToBottom()
-      else
-        for i=1, C.chat.global.scrollspeed do
-          this:ScrollDown()
-        end
-      end
+    if not IsShiftKeyDown() then
+      this:ScrollByAmount(arg1 * C.chat.global.scrollspeed)
+    elseif arg1 > 0 then
+      -- stops with the oldest line on top, as the wheel does; ScrollToTop
+      -- would leave it alone on the bottom line
+      this:ScrollByAmount(this:GetMaxScrollRange())
+    else
+      this:ScrollToBottom()
     end
   end
 
@@ -376,7 +305,8 @@ pfUI:RegisterModule("chat", function ()
     CreateBackdrop(LanguageMenu)
     CreateBackdrop(VoiceMacroMenu)
 
-    local combatlogpanel = (CombatLogQuickButtonFrame_Custom and CombatLogQuickButtonFrame_Custom:GetHeight() or 0)
+    -- the combatlog module's quick button bar sits above the docked log
+    local combatlogpanel = (ChatFrame2.CombatLogQuickButtonFrame and ChatFrame2.CombatLogQuickButtonFrame:GetHeight() or 0)
 
     for i=1, NUM_CHAT_WINDOWS do
       local frame = _G["ChatFrame"..i]
@@ -389,7 +319,7 @@ pfUI:RegisterModule("chat", function ()
         end
       end
 
-      if combat > 5 then
+      if frame.CombatLogQuickButtonFrame or combat > 5 then
         frame.pfCombatLog = true
       else
         frame.pfCombatLog = nil
@@ -456,7 +386,7 @@ pfUI:RegisterModule("chat", function ()
 
       -- hide textures
       for j,v in ipairs({tab:GetRegions()}) do
-        if j==5 then v:SetTexture(0,0,0,0) end
+        if j==5 then v:SetColorTexture(0,0,0,0) end
         v:SetHeight(C.global.font_size+default_border*2)
       end
 
@@ -779,6 +709,20 @@ pfUI:RegisterModule("chat", function ()
   local r,g,b,a = GetStringColor(C.chat.text.timecolor)
   local timecolorhex = rgbhex(r,g,b,a)
 
+  -- AddMessage puts the time between these at the start of each line
+  local timestampStart = timecolorhex .. tleft
+  local timestampEnd = tright .. "|r "
+
+  -- [ StripTimestamp ]
+  -- Returns a chat line without the timestamp AddMessage put before it.
+  function pfUI.chat.StripTimestamp(text)
+    if C.chat.text.time ~= "1" or text:sub(1, #timestampStart) ~= timestampStart then
+      return text
+    end
+    local _, last = text:find(timestampEnd, #timestampStart + 1, true)
+    return last and text:sub(last + 1) or text
+  end
+
   local r,g,b = GetStringColor(C.chat.text.unknowncolor)
   local unknowncolorhex = rgbhex(r,g,b)
 
@@ -788,12 +732,14 @@ pfUI:RegisterModule("chat", function ()
     return pfUI_playerDB[name].level
   end
 
-  local function AddMessage(frame, text, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17)
+  -- Passes every argument after the text on: GetMessageInfo returns them all,
+  -- and a hook that drops some loses them for every frame after it.
+  local function AddMessage(frame, text, ...)
     if not text then return end
 
     -- skip chat parsing on combat log
     if frame.pfCombatLog then
-      return frame:HookAddMessage(text, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17)
+      return frame:HookAddMessage(text, ...)
     end
 
     -- payload of the CHAT_MSG event printing this line; nil for lines
@@ -879,24 +825,25 @@ pfUI:RegisterModule("chat", function ()
     -- pushes the whisper colour code off position 1 and the find below fails
     local isWhisper = C.chat.global.whispermod == "1" and string.find(text, wcol, 1) == 1
 
+    if isWhisper then
+      -- patch incoming whisper string to match the colors, before the
+      -- timestamp so it keeps the form StripTimestamp looks for
+      text = string.gsub(text, "|r", "|r" .. wcol)
+    end
+
     -- show timestamp in chat
     if C.chat.text.time == "1" then
-      text = timecolorhex .. tleft .. date(C.chat.text.timeformat) .. tright .. "|r " .. text
+      text = timestampStart .. date(C.chat.text.timeformat) .. timestampEnd .. text
     end
 
     -- save chat history
     if isWhisper then
       SaveChatHistory(frame:GetID(), string.gsub(text, wcol, ""), cr, cg, cb)
     else
-      SaveChatHistory(frame:GetID(), text, a1, a2, a3)
+      SaveChatHistory(frame:GetID(), text, ...)
     end
 
-    if isWhisper then
-      -- patch incoming whisper string to match the colors
-      text = string.gsub(text, "|r", "|r" .. wcol)
-    end
-
-    frame:HookAddMessage(text, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17)
+    frame:HookAddMessage(text, ...)
   end
 
   for i=1,NUM_CHAT_WINDOWS do
@@ -906,12 +853,9 @@ pfUI:RegisterModule("chat", function ()
 
     if not _G["ChatFrame"..i].HookAddMessage then
       if C.chat.text.history == "1" then
-        -- write history to chat
-        local history = GetChatHistory(i)
-        for j=30,0,-1 do
-          if history[j] then
-            _G["ChatFrame"..i]:AddMessage(history[j], .7,.7,.7)
-          end
+        -- write history to chat, newest first, above the lines already there
+        for _, msg in ipairs(GetChatHistory(i)) do
+          _G["ChatFrame"..i]:BackFillMessage(msg, .7,.7,.7)
         end
       end
 

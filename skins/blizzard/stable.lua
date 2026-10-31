@@ -15,7 +15,7 @@ pfUI:RegisterSkin("Pet Stable Master", function ()
   PetStableTitleLabel:ClearAllPoints()
   PetStableTitleLabel:SetPoint("TOP", PetStableFrame.backdrop, "TOP", 0, -10)
 
-  EnableClickRotate(PetStableModel)
+  EnableModelControls(PetStableModel)
   PetStableModelRotateLeftButton:Hide()
   PetStableModelRotateRightButton:Hide()
 

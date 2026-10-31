@@ -46,22 +46,17 @@ pfUI:RegisterModule("innervatecall", function ()
     end)
   end
 
-  local frame = CreateFrame("Frame")
-  frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-  frame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
-  frame:SetScript("OnEvent", function()
-    if event == "SPELL_UPDATE_COOLDOWN" then
-      if pending then ScheduleReady() end
-      return
-    end
+  pfUI.events:RegisterFrameEventAndCallback("SPELL_UPDATE_COOLDOWN", function()
+    if pending then ScheduleReady() end
+  end)
 
+  pfUI.events:RegisterFrameEventAndCallback("COMBAT_LOG_EVENT_UNFILTERED", function()
     -- Innervate is instant, so it logs SPELL_CAST_SUCCESS with its target
-    -- arg2=subevent, arg4=sourceGUID, arg9=destName, arg12=spellId
-    if arg2 ~= "SPELL_CAST_SUCCESS" or arg12 ~= INNERVATE_SPELLID then return end
+    local _, subevent, _, sourceGUID, _, _, _, _, destName, _, _, spellId = CombatLogGetCurrentEventInfo()
+    if subevent ~= "SPELL_CAST_SUCCESS" or spellId ~= INNERVATE_SPELLID then return end
 
     -- Only announce our own casts
-    if not IsPlayerGuid(arg4) then return end
-    local destName = arg9
+    if not IsPlayerGuid(sourceGUID) then return end
 
     -- Determine channel
     local channel = GetAnnounceChannel()

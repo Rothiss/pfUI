@@ -3,7 +3,7 @@ pfUI:RegisterModule("raid", function ()
   if C.unitframes.disable == "1" then return end
 
   -- tell RaidFrame.lua pfUI replaces party frames
-  HookAddonOrVariable("Blizzard_RaidUI", function()
+  HookAddon("Blizzard_RaidUI", function()
     -- must reach _G: RaidFrame.lua reads this global, and pfUI.env has
     -- __index but no __newindex, so a bare assignment stays in the sandbox
     _G.GROUP_REPLACE_PARTY = "1"

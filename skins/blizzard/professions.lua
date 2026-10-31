@@ -16,7 +16,7 @@ pfUI:RegisterSkin("Profession", function ()
     local maxreagents = ext[4]
     local frame       = name .. "Frame"
 
-    HookAddonOrVariable(addon, function()
+    HookAddon(addon, function()
       local SetSelection = frame.."_SetSelection"
       -- Turtle WoW uses "SkillIcon"/"SkillName" instead of "Icon"/"Name"
       local icon = _G[template.."Icon"] or _G[template.."SkillIcon"]

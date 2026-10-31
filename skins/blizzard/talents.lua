@@ -2,7 +2,7 @@ pfUI:RegisterSkin("Talents", function ()
   local rawborder, border = GetBorderSize()
   local bpad = rawborder > 1 and border - GetPerfectPixel() or GetPerfectPixel()
 
-  HookAddonOrVariable("Blizzard_TalentUI", function()
+  HookAddon("Blizzard_TalentUI", function()
     -- Compatibility
     local TALENT_FRAME, TALENT_FRAME_NAME = _G.TalentFrame, _G.TalentFrame:GetName()
 

@@ -30,4 +30,19 @@ pfUI_locale["koKR"]["resurrections"] = {
 
 -- custom entries not detected by DBC extractor
 
-
+-- Classic Era GlobalStrings (KR) that the loss of control alert
+-- reads and the 1.12 client lacks.
+pfUI_locale["koKR"]["lossofcontrol"] = {
+  LOSS_OF_CONTROL_DISPLAY_CHARM = "현혹",
+  LOSS_OF_CONTROL_DISPLAY_CONFUSE = "혼란",
+  LOSS_OF_CONTROL_DISPLAY_DISARM = "무장 해제",
+  LOSS_OF_CONTROL_DISPLAY_FEAR = "공포",
+  LOSS_OF_CONTROL_DISPLAY_INTERRUPT_SCHOOL = "%s 계열 차단됨",
+  LOSS_OF_CONTROL_DISPLAY_PACIFY = "평정",
+  LOSS_OF_CONTROL_DISPLAY_PACIFYSILENCE = "무력화",
+  LOSS_OF_CONTROL_DISPLAY_POSSESS = "빙의",
+  LOSS_OF_CONTROL_DISPLAY_ROOT = "이동 불가",
+  LOSS_OF_CONTROL_DISPLAY_SCHOOL_INTERRUPT = "차단",
+  LOSS_OF_CONTROL_DISPLAY_SILENCE = "침묵",
+  LOSS_OF_CONTROL_DISPLAY_STUN = "기절",
+}

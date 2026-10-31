@@ -23,7 +23,12 @@ pfUI:RegisterModule("swingtimer", function ()
     useSpellQueueEvent = false,
     swingThrottle = 0,
     onSwingCache = {},
+    outOfRange = {},  -- by Enum.PlayerSwingType
   }
+
+  local MAINHAND = Enum.PlayerSwingType.MainHand
+  local OFFHAND  = Enum.PlayerSwingType.OffHand
+  local RANGED   = Enum.PlayerSwingType.Ranged
 
   -- On-next-swing spells replace the next auto-attack swing.
   -- Covers Raptor Strike, Maul, Mongoose Bite, Holy Strike, etc. automatically.
@@ -63,6 +68,7 @@ pfUI:RegisterModule("swingtimer", function ()
   local ohR, ohG, ohB, ohA = ParseColor(C.unitframes.swingtimerohcolor, 0.3, 0.8, 0.3, 1)
   local raR, raG, raB, raA = ParseColor(C.unitframes.swingtimerrangedcolor, 0.3, 0.6, 1.0, 1)
   local rwR, rwG, rwB, rwA = ParseColor(C.unitframes.swingtimerrangedwarncolor, 0.9, 0.0, 0.0, 1)
+  local orR, orG, orB = ParseColor(C.unitframes.swingtimeroutrangecolor, 0.5, 0.5, 0.5, 1)
   local isHunter = UnitClassBase("player") == "HUNTER"
   local mhDefaultR, mhDefaultG, mhDefaultB = mhR, mhG, mhB
 
@@ -108,14 +114,14 @@ pfUI:RegisterModule("swingtimer", function ()
 
 
   pfUI.swingtimer.mainhand.marker = pfUI.swingtimer.mainhand:CreateTexture(nil, "OVERLAY")
-  pfUI.swingtimer.mainhand.marker:SetTexture(1, 1, 1, 1.0)
+  pfUI.swingtimer.mainhand.marker:SetColorTexture(1, 1, 1, 1.0)
   pfUI.swingtimer.mainhand.marker:SetWidth(2)
   pfUI.swingtimer.mainhand.marker:SetHeight(sw_height)
   pfUI.swingtimer.mainhand.marker:Hide()
 
   -- Left glow: fades from transparent to white (right edge = marker)
   pfUI.swingtimer.mainhand.markerGlowL = pfUI.swingtimer.mainhand:CreateTexture(nil, "OVERLAY")
-  pfUI.swingtimer.mainhand.markerGlowL:SetTexture(1, 1, 1, 1)
+  pfUI.swingtimer.mainhand.markerGlowL:SetColorTexture(1, 1, 1, 1)
   pfUI.swingtimer.mainhand.markerGlowL:SetGradientAlpha("HORIZONTAL", 1, 1, 1, 0, 1, 1, 1, 0.35)
   pfUI.swingtimer.mainhand.markerGlowL:SetWidth(10)
   pfUI.swingtimer.mainhand.markerGlowL:SetHeight(sw_height)
@@ -123,7 +129,7 @@ pfUI:RegisterModule("swingtimer", function ()
 
   -- Right glow: fades from white to transparent (left edge = marker)
   pfUI.swingtimer.mainhand.markerGlowR = pfUI.swingtimer.mainhand:CreateTexture(nil, "OVERLAY")
-  pfUI.swingtimer.mainhand.markerGlowR:SetTexture(1, 1, 1, 1)
+  pfUI.swingtimer.mainhand.markerGlowR:SetColorTexture(1, 1, 1, 1)
   pfUI.swingtimer.mainhand.markerGlowR:SetGradientAlpha("HORIZONTAL", 1, 1, 1, 0.35, 1, 1, 1, 0)
   pfUI.swingtimer.mainhand.markerGlowR:SetWidth(10)
   pfUI.swingtimer.mainhand.markerGlowR:SetHeight(sw_height)
@@ -166,14 +172,14 @@ pfUI:RegisterModule("swingtimer", function ()
 
 
   pfUI.swingtimer.offhand.marker = pfUI.swingtimer.offhand:CreateTexture(nil, "OVERLAY")
-  pfUI.swingtimer.offhand.marker:SetTexture(1, 1, 1, 1.0)
+  pfUI.swingtimer.offhand.marker:SetColorTexture(1, 1, 1, 1.0)
   pfUI.swingtimer.offhand.marker:SetWidth(2)
   pfUI.swingtimer.offhand.marker:SetHeight(sw_height)
   pfUI.swingtimer.offhand.marker:Hide()
 
   -- Left glow: fades from transparent to white (right edge = marker)
   pfUI.swingtimer.offhand.markerGlowL = pfUI.swingtimer.offhand:CreateTexture(nil, "OVERLAY")
-  pfUI.swingtimer.offhand.markerGlowL:SetTexture(1, 1, 1, 1)
+  pfUI.swingtimer.offhand.markerGlowL:SetColorTexture(1, 1, 1, 1)
   pfUI.swingtimer.offhand.markerGlowL:SetGradientAlpha("HORIZONTAL", 1, 1, 1, 0, 1, 1, 1, 0.35)
   pfUI.swingtimer.offhand.markerGlowL:SetWidth(10)
   pfUI.swingtimer.offhand.markerGlowL:SetHeight(sw_height)
@@ -181,7 +187,7 @@ pfUI:RegisterModule("swingtimer", function ()
 
   -- Right glow: fades from white to transparent (left edge = marker)
   pfUI.swingtimer.offhand.markerGlowR = pfUI.swingtimer.offhand:CreateTexture(nil, "OVERLAY")
-  pfUI.swingtimer.offhand.markerGlowR:SetTexture(1, 1, 1, 1)
+  pfUI.swingtimer.offhand.markerGlowR:SetColorTexture(1, 1, 1, 1)
   pfUI.swingtimer.offhand.markerGlowR:SetGradientAlpha("HORIZONTAL", 1, 1, 1, 0.35, 1, 1, 1, 0)
   pfUI.swingtimer.offhand.markerGlowR:SetWidth(10)
   pfUI.swingtimer.offhand.markerGlowR:SetHeight(sw_height)
@@ -227,14 +233,14 @@ pfUI:RegisterModule("swingtimer", function ()
 
 
   pfUI.swingtimer.ranged.marker = pfUI.swingtimer.ranged:CreateTexture(nil, "OVERLAY")
-  pfUI.swingtimer.ranged.marker:SetTexture(1, 1, 1, 1.0)
+  pfUI.swingtimer.ranged.marker:SetColorTexture(1, 1, 1, 1.0)
   pfUI.swingtimer.ranged.marker:SetWidth(2)
   pfUI.swingtimer.ranged.marker:SetHeight(sw_height)
   pfUI.swingtimer.ranged.marker:Hide()
 
   -- Left glow: fades from transparent to white (right edge = marker)
   pfUI.swingtimer.ranged.markerGlowL = pfUI.swingtimer.ranged:CreateTexture(nil, "OVERLAY")
-  pfUI.swingtimer.ranged.markerGlowL:SetTexture(1, 1, 1, 1)
+  pfUI.swingtimer.ranged.markerGlowL:SetColorTexture(1, 1, 1, 1)
   pfUI.swingtimer.ranged.markerGlowL:SetGradientAlpha("HORIZONTAL", 1, 1, 1, 0, 1, 1, 1, 0.35)
   pfUI.swingtimer.ranged.markerGlowL:SetWidth(10)
   pfUI.swingtimer.ranged.markerGlowL:SetHeight(sw_height)
@@ -242,7 +248,7 @@ pfUI:RegisterModule("swingtimer", function ()
 
   -- Right glow: fades from white to transparent (left edge = marker)
   pfUI.swingtimer.ranged.markerGlowR = pfUI.swingtimer.ranged:CreateTexture(nil, "OVERLAY")
-  pfUI.swingtimer.ranged.markerGlowR:SetTexture(1, 1, 1, 1)
+  pfUI.swingtimer.ranged.markerGlowR:SetColorTexture(1, 1, 1, 1)
   pfUI.swingtimer.ranged.markerGlowR:SetGradientAlpha("HORIZONTAL", 1, 1, 1, 0.35, 1, 1, 1, 0)
   pfUI.swingtimer.ranged.markerGlowR:SetWidth(10)
   pfUI.swingtimer.ranged.markerGlowR:SetHeight(sw_height)
@@ -258,12 +264,8 @@ pfUI:RegisterModule("swingtimer", function ()
   -- weapons (22); main-hand-only (21) can never sit there.
   local OH_WEAPON_TYPES = { [13]=true, [22]=true }
   local function HasOffhandWeapon()
-    local l = GetInventoryItemLink("player", 17)
-    if not l then return false end
-    local _, _, id = string.find(l, "item:(%d+)")
-    id = tonumber(id)
-    if not id then return false end
-    return OH_WEAPON_TYPES[C_Item.GetItemInventoryTypeByID(id)] == true
+    local invType = C_Item.GetItemInventoryType({ equipmentSlotIndex = INVSLOT_OFFHAND })
+    return OH_WEAPON_TYPES[invType] == true
   end
 
   local function UpdateWeaponSpeeds()
@@ -503,6 +505,10 @@ pfUI:RegisterModule("swingtimer", function ()
     end
 
     -- Render MH
+    if S.outOfRange[MAINHAND] then
+      curR, curG, curB = orR, orG, orB
+    end
+
     if S.mhActive then
       local progress = 1 - (S.mhTimer / S.mhTimerMax)
       pfUI.swingtimer.mainhand:SetValue(progress)
@@ -542,6 +548,11 @@ pfUI:RegisterModule("swingtimer", function ()
     if sw_showoh and S.ohActive then
       local progress = 1 - (S.ohTimer / S.ohTimerMax)
       pfUI.swingtimer.offhand:SetValue(progress)
+      if S.outOfRange[OFFHAND] then
+        pfUI.swingtimer.offhand:SetStatusBarColor(orR, orG, orB, ohA)
+      else
+        pfUI.swingtimer.offhand:SetStatusBarColor(ohR, ohG, ohB, ohA)
+      end
       if S.ohTimer <= 0 then
         if S.lastOhMarkerX ~= -1 then
           S.lastOhMarkerX = -1
@@ -577,13 +588,13 @@ pfUI:RegisterModule("swingtimer", function ()
     -- Render Ranged
     if sw_showranged and S.raActive then
       local remaining = S.raTimer
+      local r, g, b, a = raR, raG, raB, raA
       if isHunter then
         local DEADZONE = 0.5
         if remaining > DEADZONE then
-          pfUI.swingtimer.ranged:SetStatusBarColor(raR, raG, raB, raA)
           pfUI.swingtimer.ranged:SetValue((remaining - DEADZONE) / (S.raTimerMax - DEADZONE))
         else
-          pfUI.swingtimer.ranged:SetStatusBarColor(rwR, rwG, rwB, rwA)
+          r, g, b, a = rwR, rwG, rwB, rwA
           pfUI.swingtimer.ranged:SetValue(1 - (remaining / DEADZONE))
         end
         if sw_showtext then
@@ -599,6 +610,10 @@ pfUI:RegisterModule("swingtimer", function ()
           pfUI.swingtimer.ranged.text:SetFormattedText("%.1f", math.floor(remaining * 10) / 10)
         end
       end
+      if S.outOfRange[RANGED] then
+        r, g, b = orR, orG, orB
+      end
+      pfUI.swingtimer.ranged:SetStatusBarColor(r, g, b, a)
       if sw_showspeed and S.raSpeed > 0 then
         pfUI.swingtimer.ranged.speed:SetFormattedText("%.2f", S.raSpeed)
       end
@@ -637,6 +652,7 @@ pfUI:RegisterModule("swingtimer", function ()
 
   local events = CreateFrame("Frame")
   events:RegisterEvent("PLAYER_SWING")
+  events:RegisterEvent("PLAYER_SWING_RANGE_UPDATE")
   events:RegisterEvent("PLAYER_ENTERING_WORLD")
   events:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")  -- ClassicAPI: per-slot, equipment-only
   events:RegisterEvent("PLAYER_REGEN_DISABLED")
@@ -654,13 +670,18 @@ pfUI:RegisterModule("swingtimer", function ()
       -- ClassicAPI tracks the server's swing clock (white hits, on-next-swing
       -- abilities, swing-reset casts, parry haste, extra attacks, weapon
       -- swaps) and hands over the seconds left until the next swing.
-      if arg2 == Enum.PlayerSwingType.MainHand then
+      if arg2 == MAINHAND then
         StartMH(arg1)
-      elseif arg2 == Enum.PlayerSwingType.OffHand then
+      elseif arg2 == OFFHAND then
         StartOH(arg1)
-      elseif arg2 == Enum.PlayerSwingType.Ranged then
+      elseif arg2 == RANGED then
         StartRanged(arg1)
       end
+
+    elseif event == "PLAYER_SWING_RANGE_UPDATE" then
+      -- arg1 = swingType, arg2 = isInRange, arg3 = checksRange; no check
+      -- (no target, nothing to attack, no weapon) is not out of range
+      S.outOfRange[arg1] = arg3 and not arg2
 
     elseif event == "UNIT_SPELLCAST_SENT" then
       -- arg4 = spellID: an on-next-swing ability (HS / Cleave / Maul) queued
@@ -772,6 +793,15 @@ pfUI:RegisterModule("swingtimer", function ()
     IsCleaveQueued    = function() return S.cleaveQueued end,
     IsMaulQueued      = function() return S.maulQueued end,
   }
+
+  -- the range event fires only on a change, so read the state once
+  local function EnableRangeCheck(swingType)
+    C_SwingTimer.EnableRangeCheck(swingType, true)
+    S.outOfRange[swingType] = C_SwingTimer.IsTargetWithinSwingRange(swingType) == false
+  end
+  EnableRangeCheck(MAINHAND)
+  if sw_showoh then EnableRangeCheck(OFFHAND) end
+  if sw_showranged then EnableRangeCheck(RANGED) end
 
   UpdateWeaponSpeeds()
 end)

@@ -24,7 +24,7 @@ pfUI:RegisterSkin("Inspect", function ()
   local rawborder, border = GetBorderSize()
   local bpad = rawborder > 1 and border - GetPerfectPixel() or GetPerfectPixel()
 
-  HookAddonOrVariable("Blizzard_InspectUI", function()
+  HookAddon("Blizzard_InspectUI", function()
     local cache = {}
 
     CreateBackdrop(InspectFrame, nil, nil, .75)
@@ -60,7 +60,7 @@ pfUI:RegisterSkin("Inspect", function ()
     do -- Character Tab
       StripTextures(InspectPaperDollFrame)
 
-      EnableClickRotate(InspectModelFrame)
+      EnableModelControls(InspectModelFrame)
       local rotL = InspectModelRotateLeftButton or InspectModelFrameRotateLeftButton
       if rotL then rotL:Hide() end
       local rotR = InspectModelRotateRightButton or InspectModelFrameRotateRightButton

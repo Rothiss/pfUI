@@ -130,8 +130,8 @@ pfUI:RegisterModule("nameplates", function ()
     cfg.targetcastbar = C.nameplates["targetcastbar"] == "1"
     cfg.notargalpha = tonumber(C.nameplates.notargalpha) or 0.5
     if cfg.notargalpha > 1 then cfg.notargalpha = cfg.notargalpha / 100 end
-    -- Clamp to 0.99 so non-target plates never reach 1.0 (used for target detection)
-    if cfg.notargalpha > 0.99 then cfg.notargalpha = 0.99 end
+    -- Clamp to 1.0 so a 100% setting yields full opacity (target detection is GUID-based)
+    if cfg.notargalpha > 1 then cfg.notargalpha = 1 end
     cfg.namefightcolor = C.nameplates.namefightcolor == "1"
     cfg.spellname = C.nameplates.spellname == "1"
     cfg.showhp = C.nameplates.showhp == "1"
@@ -157,8 +157,6 @@ pfUI:RegisterModule("nameplates", function ()
     cfg.hptextformat = C.nameplates.hptextformat
     -- NEW: Cache debuff config
     cfg.debufftimers = C.nameplates.debufftimers == "1"
-    cfg.debuffanim = tonumber(C.nameplates.debuffanim) or 0
-    cfg.debufftext = tonumber(C.nameplates.debufftext) or 1
 
     -- Throttle delays, resolved once instead of per plate per tick.
     -- libthrottle:Get walks the saved-variable table, a defaults fallback and a
@@ -431,7 +429,7 @@ pfUI:RegisterModule("nameplates", function ()
     plate.debuffs[index]:SetFrameLevel(4)
 
     plate.debuffs[index].icon = plate.debuffs[index]:CreateTexture(nil, "BACKGROUND")
-    plate.debuffs[index].icon:SetTexture(.3,1,.8,1)
+    plate.debuffs[index].icon:SetColorTexture(.3,1,.8,1)
     plate.debuffs[index].icon:SetAllPoints(plate.debuffs[index])
 
     plate.debuffs[index].stacks = plate.debuffs[index]:CreateFontString(nil, "OVERLAY")
@@ -442,10 +440,8 @@ pfUI:RegisterModule("nameplates", function ()
 
     plate.debuffs[index].cd = CreateFrame("Cooldown", plate.platename.."Debuff"..index.."Cooldown", plate.debuffs[index], "CooldownFrameTemplate")
     plate.debuffs[index].cd:SetFrameLevel(6)
-
-    -- Set initial config flags (will be cached per-cooldown later)
-    plate.debuffs[index].cd.pfCooldownStyleAnimation = cfg.debuffanim
-    plate.debuffs[index].cd.pfCooldownStyleText = cfg.debufftext
+    -- the display settings come from UpdateDebuffConfig, which runs for
+    -- every new icon before its first timer
     plate.debuffs[index].cd.pfCooldownType = "ALL"
   end
 
@@ -481,13 +477,14 @@ pfUI:RegisterModule("nameplates", function ()
     nameplate.debuffs[i]:SetSize(debuffsize, debuffsize)
     
     -- Update cooldown display settings
-    if nameplate.debuffs[i].cd then
-      local cooldown_text = tonumber(C.nameplates.debufftext) or 1
-      local cooldown_anim = tonumber(C.nameplates.debuffanim) or 0
-      nameplate.debuffs[i].cd.pfCooldownStyleText = cooldown_text
-      nameplate.debuffs[i].cd.pfCooldownStyleAnimation = cooldown_anim
-      
-    end
+    local cd = nameplate.debuffs[i].cd
+    cd.pfCooldownStyleText = tonumber(C.nameplates.debufftext) or 1
+    cd.pfCooldownStyleAnimation = tonumber(C.nameplates.debuffanim) or 0
+    -- the draw flags, not alpha: the plate's SetAlpha copies its alpha down
+    -- to every child (ClassicAPI keeps 1.12's alpha under default plates)
+    cd:SetDrawSwipe(C.nameplates.debuffanim == "1")
+    cd:SetDrawBling(C.nameplates.debuffanim == "1")
+    cd:SetReverse(C.nameplates.debreverse == "1")
   end
 
   -- create nameplate core
@@ -519,14 +516,13 @@ nameplates:RegisterUnitEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "target", "focu
       this:UnregisterAllEvents()
       this:SetScript("OnEvent", nil)
       this:SetScript("OnUpdate", nil)
-      if nameplates.mouselook then
-        nameplates.mouselook:SetScript("OnUpdate", nil)
-      end
       -- The plates hold their own unit subscriptions now, so silencing this
       -- frame alone would leave them dispatching through logout -- exactly what
-      -- this branch exists to prevent.
+      -- this branch exists to prevent. Leaving the world destroys the units
+      -- before PLAYER_LOGOUT fires, and a destroyed plate already dropped its
+      -- events and lost its methods, so only the live ones need silencing.
       for plate in pairs(registry) do
-        if plate.nameplate then
+        if plate.nameplate and plate.nameplate.UnregisterAllEvents then
           plate.nameplate:UnregisterAllEvents()
           plate.nameplate:SetScript("OnEvent", nil)
         end
@@ -612,6 +608,7 @@ nameplates:RegisterUnitEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "target", "focu
         -- RegisterUnitEvent on an already-filtered registration swaps the units.
         plate.nameplate:RegisterUnitEvent("UNIT_AURA", arg1)
         plate.nameplate:RegisterUnitEvent("UNIT_FLAGS", arg1)
+        plate.nameplate:RegisterUnitEvent("UNIT_TARGET", arg1)
         plate.nameplate:RegisterUnitEvent("UNIT_SPELLCAST_START", arg1)
         plate.nameplate:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", arg1)
         plate.nameplate:RegisterUnitEvent("UNIT_SPELLCAST_STOP", arg1)
@@ -769,6 +766,14 @@ nameplates:RegisterUnitEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "target", "focu
         this.auraUpdate = true
       elseif event == "UNIT_FLAGS" then
         this.eventcache = true
+      elseif event == "UNIT_TARGET" then
+        -- the unit turned to someone else: recolour its combat state now
+        -- rather than once the colour cache and the data tick run out
+        if cfg.outcombatstate or cfg.barcombatstate then
+          local cached = this.cachedGuid and combatColorCache[this.cachedGuid]
+          if cached then cached.expires = 0 end
+          this.eventcache = true
+        end
       elseif event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START" then
         -- the payload carries no timing, so poll it (PollCastInfo picks cast
         -- vs channel)
@@ -863,15 +868,15 @@ nameplates:RegisterUnitEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "target", "focu
         combopoints[i] = CreateFrame("Frame", nil, nameplate)
         combopoints[i]:Hide()
         combopoints[i]:SetFrameLevel(8)
-        combopoints[i].tex = combopoints[i]:CreateTexture("OVERLAY")
+        combopoints[i].tex = combopoints[i]:CreateTexture(nil, "OVERLAY")
         combopoints[i].tex:SetAllPoints()
 
         if i < 3 then
-          combopoints[i].tex:SetTexture(1, .3, .3, .75)
+          combopoints[i].tex:SetColorTexture(1, .3, .3, .75)
         elseif i < 4 then
-          combopoints[i].tex:SetTexture(1, 1, .3, .75)
+          combopoints[i].tex:SetColorTexture(1, 1, .3, .75)
         else
-          combopoints[i].tex:SetTexture(.3, 1, .3, .75)
+          combopoints[i].tex:SetColorTexture(.3, 1, .3, .75)
         end
       end
       nameplate.combopoints = combopoints
@@ -1394,14 +1399,6 @@ nameplates:RegisterUnitEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "target", "focu
             local cd = plate.debuffs[index].cd
             cd:Show()
             if not cachedStart or abs(cachedStart - newStart) > 0.5 then
-              if not cd.configCached or cd.cachedAnim ~= cfg.debuffanim or cd.cachedText ~= cfg.debufftext then
-                cd.pfCooldownStyleAnimation = cfg.debuffanim
-                cd.pfCooldownStyleText = cfg.debufftext
-                cd:SetAlpha(cfg.debuffanim == 1 and 1 or 0)
-                cd.cachedAnim = cfg.debuffanim
-                cd.cachedText = cfg.debufftext
-                cd.configCached = true
-              end
               CooldownFrame_SetTimer(cd, newStart, effDuration, 1)
               plate.cdCache[index] = plate.cdCache[index] or {}
               plate.cdCache[index].effect = effect
@@ -1443,11 +1440,10 @@ nameplates:RegisterUnitEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "target", "focu
     if not hasEventUpdate and (nameplate.lasttick or 0) + cfg.throttle_min > now then return end
 
     -- PERF: Intelligent throttling based on target/castbar status and plate count
-    -- Use GUID comparison as primary target detection: instant, immune to alpha transitions,
+    -- Use GUID comparison for target detection: instant, immune to alpha transitions,
     -- and immediately correct on de-target (unlike istarget which updates one tick later)
     local targetGuid = state and state.targetGuid
-    local target = (targetGuid and nameplate.cachedGuid and targetGuid == nameplate.cachedGuid) or
-                   (state and state.targetGuid and frame:GetAlpha() >= 0.99) or nil
+    local target = (targetGuid and nameplate.cachedGuid and targetGuid == nameplate.cachedGuid) or nil
     -- Target plate castbar runs on its own dedicated frame (nameplates.castbarFrame).
     -- For non-target plates with castbar active, use castbar throttle to ensure
     -- smooth animation without overloading the central loop.
@@ -1928,9 +1924,7 @@ nameplates:RegisterUnitEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "target", "focu
   end
 
   -- enable mouselook on rightbutton down
-  nameplates.mouselook = CreateFrame("Frame", nil, UIParent)
-  nameplates.mouselook.time = nil
-  nameplates.mouselook.frame = nil
+  nameplates.mouselook = {}
   nameplates.mouselook.OnMouseDown = function()
     if arg1 and arg1 == "RightButton" then
       MouselookStart()
@@ -1938,30 +1932,23 @@ nameplates:RegisterUnitEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "target", "focu
       -- start detection of the rightclick emulation
       nameplates.mouselook.time = GetTime()
       nameplates.mouselook.frame = this
-      nameplates.mouselook:Show()
     end
   end
 
-  nameplates.mouselook:SetScript("OnUpdate", function()
-    -- break here if nothing to do
-    if not this.time or not this.frame then
-      this:Hide()
-      return
-    end
+  -- releasing the button ends the mouselook. GLOBAL_MOUSE_UP fires for every
+  -- release, while PLAYER_STOPPED_LOOKING needs the camera to have moved, and
+  -- a click doesn't move it.
+  pfUI.events:RegisterFrameEventAndCallback("GLOBAL_MOUSE_UP", function(_, button)
+    local mouselook = nameplates.mouselook
+    if button ~= "RightButton" or not mouselook.frame then return end
 
-    -- if threshold is reached (0.5 second) no click action will follow
-    if not IsMouselooking() and this.time + tonumber(C.nameplates["clickthreshold"]) < GetTime() then
-      this:Hide()
-      return
-    end
-
-    -- run a usual nameplate rightclick action
-    if not IsMouselooking() then
-      this.frame:Click("LeftButton")
+    -- past the threshold (0.5 second) it was a drag, so no click action follows
+    if mouselook.time + tonumber(C.nameplates["clickthreshold"]) >= GetTime() then
+      -- run a usual nameplate rightclick action
+      mouselook.frame:Click("LeftButton")
       if UnitCanAttack("player", "target") and not nameplates.combat.inCombat then AttackTarget() end
-      this:Hide()
-      return
     end
+    mouselook.frame = nil
   end)
 
   pfUI.nameplates = nameplates

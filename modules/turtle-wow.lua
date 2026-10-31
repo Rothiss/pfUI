@@ -61,7 +61,7 @@ pfUI:RegisterModule("turtle-wow", function ()
       end
     end
 
-    HookAddonOrVariable("GroupFrame", function()
+    HookAddon("Turtle_GroupUI", function()
       -- After Turtle's own init, hide frames if pfUI handles them
       hooksecurefunc("GroupFrame_Toggle", function()
         if pfUIHandlesGroupOrRaid() then
@@ -247,11 +247,7 @@ pfUI:RegisterModule("turtle-wow", function ()
   local STEADY_SHOT_DURATION_MS = 1400  -- not haste-scaled; close enough for the visual cue
   local ON_SWING_QUEUED, ON_SWING_QUEUE_POPPED = 0, 1
 
-  local steadyShot = CreateFrame("Frame")
-  steadyShot:RegisterEvent("SPELL_QUEUE_EVENT")
-  steadyShot:SetScript("OnEvent", function()
-    if event ~= "SPELL_QUEUE_EVENT" then return end
-    local eventCode, spellId = arg1, arg2
+  pfUI.events:RegisterFrameEventAndCallback("SPELL_QUEUE_EVENT", function(_, eventCode, spellId)
     if eventCode ~= ON_SWING_QUEUED and eventCode ~= ON_SWING_QUEUE_POPPED then return end
     if C_Spell.GetSpellName(spellId) ~= steadyShotName then return end
     if eventCode == ON_SWING_QUEUED then
@@ -272,7 +268,7 @@ pfUI:RegisterModule("turtle-wow", function ()
   if pfUI.skin["Inspect"] and pfUI_config["disabled"]["skin_Inspect"] ~= "1" then
     local initialized = false
 
-    HookAddonOrVariable("Blizzard_InspectUI", function()
+    HookAddon("Blizzard_InspectUI", function()
       hooksecurefunc("InspectFrame_Show", function()
         -- break if theres nothing left to do
         if initialized then return end
@@ -330,7 +326,7 @@ pfUI:RegisterModule("turtle-wow", function ()
   end
 
   -- rearrange twow's profession window additions
-  HookAddonOrVariable("Blizzard_TradeSkillUI", function()
+  HookAddon("Blizzard_TradeSkillUI", function()
     if TradeSkillSkillCheckButton and pfUI.skin["Profession"] and pfUI_config["disabled"]["skin_Profession"] ~= "1" then
       SkinCheckbox(TradeSkillSkillCheckButton)
       TradeSkillSkillCheckButton:SetWidth(24)
@@ -352,7 +348,7 @@ pfUI:RegisterModule("turtle-wow", function ()
   end)
 
   if C.disabled["macroicons"] == "1" then
-    HookAddonOrVariable("Blizzard_MacroUI", function()
+    HookAddon("Blizzard_MacroUI", function()
       if type(UpdateMacroIconFilenames) ~= "function" then return end
       function _G.UpdateMacroIconFilenames()
         wipe(MACRO_ICON_FILENAMES)

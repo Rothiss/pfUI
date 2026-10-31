@@ -16,51 +16,26 @@ pfUI:RegisterModule("focus", function ()
 
   -- PLAYER_FOCUS_CHANGED drives immediate refresh on focus assign / clear.
   -- Between events, ClassicAPI fires UNIT_* (health/mana/aura/...) with
-  -- arg1 == "focus" and arg1 == "focustarget", so both frames update
-  -- event-driven like target and need no polling tick.
-  local refresher = CreateFrame("Frame")
-  refresher:RegisterEvent("PLAYER_FOCUS_CHANGED")
-  refresher:SetScript("OnEvent", function()
-    pfUI.uf.focus.instantRefresh = true
+  -- arg1 == "focus", so the bars update event-driven like target.
+  -- focustarget is a chained unit like targettarget: UNIT_TARGET follows the
+  -- focus retargeting, and a new focus only needs its visibility re-checked,
+  -- which queues the full refresh when its target is a different unit.
+  pfUI.events:RegisterFrameEventAndCallback("PLAYER_FOCUS_CHANGED", function()
     pfUI.uf:RefreshUnit(pfUI.uf.focus, "all")
-    pfUI.uf.focustarget.instantRefresh = true
-    pfUI.uf:RefreshUnit(pfUI.uf.focustarget, "all")
+    pfUI.uf.focustarget:UpdateVisibility()
   end)
 end)
 
 -- /focus and /clearfocus live in ClassicAPI's SlashCommandsRegistry now.
--- /focusname is pfUI-specific because the engine has no name→GUID
--- lookup for off-screen units — we resolve via a short target-swap.
+-- `/focus Name` takes the nearest prefix match; /focusname tries the exact
+-- name first, so "Bob" still wins over a nearer "Bobby".
 
 pfUI.api.RegisterSlashCommand("PFFOCUSNAME", { '/focusname', '/pffocusname' }, function(msg)
   if msg == "" then return end
 
-  local prevGUID = UnitGUID("target")
-  local prevPlayer = UnitIsUnit("target", "player")
-
-  -- Suppress async "Unknown unit" errors fired by TargetByName misses.
-  UIErrorsFrame:UnregisterEvent("UI_ERROR_MESSAGE")
-
-  -- Try exact match first, then prefix match via /target.
-  TargetByName(msg, true)
-  if not UnitExists("target") then
-    SlashCmdList.TARGET(msg)
-  end
-
-  if UnitExists("target") then
-    FocusUnit("target")
-  end
-
-  RunNextFrame(function()
-    UIErrorsFrame:RegisterEvent("UI_ERROR_MESSAGE")
-  end)
-
-  if prevGUID and prevGUID ~= "0x0000000000000000" then
-    TargetUnit(prevGUID)
-  elseif prevPlayer then
-    TargetUnit("player")
-  else
-    ClearTarget()
+  local unit = UnitTokenFromName(msg, true) or UnitTokenFromName(msg)
+  if unit then
+    FocusUnit(unit)
   end
 end, true)
 

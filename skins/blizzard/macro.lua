@@ -2,7 +2,7 @@ pfUI:RegisterSkin("Macro", function ()
   local rawborder, border = GetBorderSize()
   local bpad = rawborder > 1 and border - GetPerfectPixel() or GetPerfectPixel()
 
-  HookAddonOrVariable("Blizzard_MacroUI", function()
+  HookAddon("Blizzard_MacroUI", function()
     StripTextures(MacroFrame)
     CreateBackdrop(MacroFrame, nil, nil, .75)
     CreateBackdropShadow(MacroFrame)

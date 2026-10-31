@@ -33,6 +33,14 @@ pfUI:RegisterSkin("Spellbook", function ()
     StripTextures(button)
     SkinButton(button, nil, nil, nil, texture)
 
+    -- native cooldown frame in place of the template's indicator Model.
+    -- SpellButton_UpdateButton reads the "<button>Cooldown" global on every
+    -- update. 1.12 binds a frame's name only while that global is unset, so
+    -- the global is rebound by hand; the Model starts hidden and nothing
+    -- reaches it after that
+    local cdname = "SpellButton"..i.."Cooldown"
+    _G[cdname] = CreateFrame("Cooldown", cdname, button, "CooldownFrameTemplate")
+
     _G["SpellButton"..i.."SubSpellName"]:SetTextColor(1, 1, 1)
     _G["SpellButton"..i.."AutoCastable"]:SetTexture("Interface\\Buttons\\UI-AutoCastableOverlay")
     _G["SpellButton"..i.."Highlight"]:SetTexture("")

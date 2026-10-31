@@ -86,6 +86,12 @@ pfUI:RegisterModule("eqcompare", function ()
     end
   end
 
+  local function HideCompareItem(self)
+    local shoppingTooltip1, shoppingTooltip2 = unpack(self.shoppingTooltips or { ShoppingTooltip1, ShoppingTooltip2 })
+    shoppingTooltip1:Hide()
+    shoppingTooltip2:Hide()
+  end
+
   local prevMerchant = ShoppingTooltip1.SetMerchantCompareItem
   local function SetMerchantCompareItem(self, index, compareItem)
     if compareItem == 1 then
@@ -135,15 +141,22 @@ pfUI:RegisterModule("eqcompare", function ()
   -- spot. Reading the rect inside the Set* call picks the side against the
   -- position the tooltip is about to leave, so place the compare a frame later.
   local deferred
-  if C_AddOns.DoesAddOnExist("Guda") then
-    EventUtil.ContinueOnAddOnLoaded("Guda", function()
-      deferred = true
-    end)
+  HookAddon("Guda", function()
+    deferred = true
+  end)
+
+  -- the item each hooked tooltip shows, for MODIFIER_STATE_CHANGED. Every Set*
+  -- clears the tooltip before it builds, so OnTooltipCleared drops the link
+  -- of the previous content before the hook stores the new one.
+  local links = {}
+  local function forget()
+    links[this] = nil
   end
 
   local function makeHook(getter)
     return function(tooltip, arg1, arg2, arg3)
       local link = getter(arg1, arg2, arg3)
+      links[tooltip] = link
       if not deferred then
         return ShowCompareItem(tooltip, link)
       end
@@ -159,7 +172,28 @@ pfUI:RegisterModule("eqcompare", function ()
     for setter, getter in pairs(TooltipHooks) do
       hooksecurefunc(tooltip, setter, makeHook(getter))
     end
+    tooltip:HookScript("OnTooltipCleared", forget)
+    tooltip:HookScript("OnHide", forget)
   end
+
+  -- pressing or releasing shift over an item toggles its comparison at once.
+  -- Merchant and auction comparisons show regardless of shift and never set
+  -- a link, so they stay up.
+  pfUI.events:RegisterFrameEventAndCallback("MODIFIER_STATE_CHANGED", function(_, key)
+    if key ~= "LSHIFT" and key ~= "RSHIFT" then return end
+
+    local shift = IsShiftKeyDown()
+    for tooltip, link in pairs(links) do
+      -- a hidden tooltip got its item from a scan, not a hover
+      if tooltip:IsShown() then
+        if shift then
+          ShowCompareItem(tooltip, link, shift)
+        elseif C.tooltip.compare.showalways ~= "1" or C_Item.IsEquippedItem(link) then
+          HideCompareItem(tooltip)
+        end
+      end
+    end
+  end)
 
   HookTooltip(GameTooltip)
 

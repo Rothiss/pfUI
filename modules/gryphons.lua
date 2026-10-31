@@ -37,11 +37,7 @@ pfUI:RegisterModule("gryphons", function ()
         frame.texture:SetTexCoord(1, 0, 0, 1)
       end
 
-      if texture then
-        frame:Show()
-      else
-        frame:Hide()
-      end
+      frame:SetShown(texture)
     end
   end
 

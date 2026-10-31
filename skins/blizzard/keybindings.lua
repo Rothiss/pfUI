@@ -2,7 +2,7 @@ pfUI:RegisterSkin("KeyBindings", function ()
   local rawborder, border = GetBorderSize()
   local bpad = rawborder > 1 and border - GetPerfectPixel() or GetPerfectPixel()
 
-  HookAddonOrVariable("Blizzard_BindingUI", function()
+  HookAddon("Blizzard_BindingUI", function()
     StripTextures(KeyBindingFrame)
     CreateBackdrop(KeyBindingFrame, nil, nil, .75)
     CreateBackdropShadow(KeyBindingFrame)
@@ -34,8 +34,8 @@ pfUI:RegisterSkin("KeyBindings", function ()
         local button = _G["KeyBindingFrameBinding"..key.."Key"..btn.."Button"]
         StripTextures(button)
         SkinButton(button)
-        button:SetScript("OnMouseDown", function() end)
-        button:SetScript("OnMouseUp", function() end)
+        button:SetScript("OnMouseDown", nop)
+        button:SetScript("OnMouseUp", nop)
       end
     end
   end)

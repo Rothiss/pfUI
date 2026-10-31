@@ -69,6 +69,35 @@ local function LayoutAuras(unit, unitstr)
   end
 end
 
+-- Returns the cooldown start and duration of an aura, 0, 0 when it has none.
+-- Start is capped to now: talent-extended auras run past their Spell.dbc base
+-- duration, and a start in the future trips the cooldown text's 2^32
+-- wraparound branch.
+local function AuraTimer(duration, expirationTime)
+  if expirationTime <= 0 then return 0, 0 end
+
+  local now = GetTime()
+  local start, dur = expirationTime - duration, duration
+  if start > now or dur <= 0 then
+    start, dur = now, expirationTime - now
+  end
+
+  if dur <= 0 then return 0, 0 end
+  return start, dur
+end
+
+-- Starts the timers RefreshUnit stored on the shown icons of an aura block.
+local function StartAuraTimers(icons)
+  if not icons then return end
+
+  local i = 1
+  while icons[i] and icons[i]:IsShown() do
+    local dur = icons[i].auraDuration
+    CooldownFrame_SetTimer(icons[i].cd, icons[i].auraStart, dur, dur > 0 and 1 or 0)
+    i = i + 1
+  end
+end
+
 -- ============================================================================
 -- GUID-based Roster Tracking for Smart Updates
 -- Only updates frames where the unit actually changed, not ALL 40 frames
@@ -87,6 +116,7 @@ end
 pfUI.api.RegisterSlashCommand("PFTEST", { "/pftest", "/pfuftest" }, function()
   pfUI.uf.showall = not pfUI.uf.showall
   if pfUI.uf.raid and pfUI.uf.raid.LayoutPets then pfUI.uf.raid:LayoutPets() end
+  pfUI.uf:UpdateAllVisibility()
 end, true)
 
 -- Buff indicators are identified by a spell id, resolved once into the aura's
@@ -185,12 +215,33 @@ local function DebuffOnClick()
   end
 end
 
-local visibilityscan = CreateFrame("Frame", "pfUnitFrameVisibility", UIParent)
-visibilityscan.frames = {}
-visibilityscan:SetScript("OnUpdate", function()
-  if ( this.limit or 1) > GetTime() then return else this.limit = GetTime() + .2 end
-  for frame in pairs(this.frames) do frame:UpdateVisibility() end
+-- Every enabled unit frame. Group, target and pet events re-check a frame's
+-- visibility in OnEvent, and UNIT_TARGET does for a chained unit (another
+-- unit's target). No event reports a unit going out of sight, though, and a
+-- pet (the frames with a tick) or a chained unit can, so a timer re-checks
+-- those frames, hidden ones included.
+local visibilityframes = {}
+C_Timer.NewTicker(.2, function()
+  for frame in pairs(visibilityframes) do
+    if frame.tick or frame.chain then frame:UpdateVisibility() end
+  end
 end)
+
+-- Re-check every unit frame, for the changes no event reports: unlock mode
+-- and /pftest.
+function pfUI.uf:UpdateAllVisibility()
+  for frame in pairs(visibilityframes) do frame:UpdateVisibility() end
+end
+
+-- the events that can bring a frame's unit into or out of existence
+local VISIBILITY_EVENTS = {
+  PLAYER_ENTERING_WORLD = true,
+  PARTY_MEMBERS_CHANGED = true,
+  RAID_ROSTER_UPDATE = true,
+  PLAYER_TARGET_CHANGED = true,
+  UNIT_PET = true,
+  UNIT_TARGET = true, -- a link of a chained frame's unit retargeted
+}
 
 -- ============================================================================
 -- GetUnitStats - health + power for a unit token.
@@ -206,7 +257,50 @@ function pfUI.api.GetUnitStats(unitstr)
 end
 
 local aggrodata = { }
-local aggroScan = nil -- static { u, t, tt } triples, built once so the hot scan allocates nothing
+
+-- every unit whose target or target's target UnitHasAggro checks, as static
+-- { u, t, tt } triples so the hot scan allocates nothing
+local aggroScan = { }
+do
+  local function add(u)
+    local t = u .. "target"
+    table.insert(aggroScan, { u = u, t = t, tt = t .. "target" })
+  end
+
+  add("pet")
+  add("player")
+  add("target")
+  add("mouseover")
+
+  add("focus")
+  add("focustarget")
+  add("focustargettarget")
+
+  add("pettarget")
+  add("playertarget")
+  add("targettarget")
+  add("mouseovertarget")
+  add("targettargettarget")
+
+  for i=1,4 do
+    add("party" .. i)
+    add("party" .. i .. "target")
+    add("partypet" .. i)
+    add("partypet" .. i .. "target")
+  end
+
+  for i=1,40 do
+    add("raid" .. i)
+    add("raid" .. i .. "target")
+
+    add("raidpet" .. i)
+    add("raidpet" .. i .. "target")
+
+    add("nameplate" .. i)
+    add("nameplate" .. i .. "target")
+  end
+end
+
 function pfUI.api.UnitHasAggro(unit)
   local now = GetTime()
   local data = aggrodata[unit]
@@ -219,18 +313,9 @@ function pfUI.api.UnitHasAggro(unit)
   if not data then data = { }; aggrodata[unit] = data end
   data.check = now
   data.state = 0
+  data.guid = UnitGUID(unit)
 
   if UnitExists(unit) and UnitIsFriend(unit, "player") then
-    -- pfValidUnits never changes after load, so precompute the "<u>target" /
-    -- "<u>targettarget" token strings once instead of concatenating per call.
-    if not aggroScan then
-      aggroScan = {}
-      for u in pairs(pfValidUnits) do
-        local t = u .. "target"
-        table.insert(aggroScan, { u = u, t = t, tt = t .. "target" })
-      end
-    end
-
     for i = 1, table.getn(aggroScan) do
       local s = aggroScan[i]
       if UnitExists(s.t) and UnitIsUnit(s.t, unit) and UnitCanAttack(s.u, unit) then
@@ -244,6 +329,21 @@ function pfUI.api.UnitHasAggro(unit)
 
   return data.state
 end
+
+-- A unit turned to someone else, so two kinds of cached answer may be stale:
+-- every unit that had aggro (the attacker may have left it) and the new
+-- target. Those recompute on their next read instead of riding out the
+-- cache; the rest stay cached, since the retarget changes nothing for them.
+-- Units without a token of their own (a raid member's target) still fire it
+-- with their GUID, which composes with "target" like any token.
+pfUI.events:RegisterFrameEventAndCallback("UNIT_TARGET", function(_, unit)
+  local target = UnitGUID(unit .. "target")
+  for _, data in pairs(aggrodata) do
+    if data.state > 0 or (target and data.guid == target) then
+      data.check = 0
+    end
+  end
+end)
 
 function pfUI.uf:UpdateVisibility()
   local self = self or this
@@ -318,13 +418,12 @@ function pfUI.uf:UpdateVisibility()
     self._label, self._id = nil, nil
   end
 
-  -- this runs for every frame five times a second, so only touch the
-  -- attribute when the unit actually changed
-  local unitstr = (self.label or "") .. (self.id or "")
-  local unit = unitstr ~= "" and unitstr or nil
-  if unit ~= self.unitstr then
-    self.unitstr = unit
-    self:SetAttribute("unit", unit)
+  -- this runs on every refresh, so only touch the attribute when the unit
+  -- actually changed
+  local unitstr = self.label .. self.id
+  if unitstr ~= self.unitstr then
+    self.unitstr = unitstr
+    self:SetAttribute("unit", unitstr)
   end
   -- anything but "show"/"hide" means "show if the unit exists"
   local visibility = "exists"
@@ -361,14 +460,28 @@ function pfUI.uf:UpdateVisibility()
   -- unit's events, and OnEvent compares against the cached string instead of
   -- rebuilding label..id -- and calling UnitGUID -- for every unit event fired
   -- by anything, anywhere. A frame that is not in use drops them entirely; the
-  -- roster events that would bring it back are registered plainly, and
-  -- visibilityscan re-runs this every 0.2s regardless, so it recovers on its own.
-  self:RegisterUnitEvents(visibility ~= "hide" and self.unitstr or nil)
+  -- VISIBILITY_EVENTS that bring it back are registered plainly.
+  --
+  -- A chained unit -- another unit's target, "targettarget" or "party1target"
+  -- -- has no token that unit events name, so the frame follows it by GUID,
+  -- which every unit event also fires with. It follows the unit only while
+  -- the client has it: a link's target can be out of sight, and its coming
+  -- back is then a new unit too. The unit changes with no event of its own
+  -- whenever a link of the chain retargets; UNIT_TARGET on every link reports
+  -- that (RegisterChainEvents), and the GUID compare turns it into the full
+  -- refresh a new unit needs.
+  self.chain = visibility ~= "hide" and unitstr:match("^(.+)target$") or nil
+  if self.chain then
+    local guid = UnitName(unitstr) and UnitGUID(unitstr)
+    if guid ~= self.eventunit then self.update_full = true end
+    self:RegisterUnitEvents(guid)
+  else
+    self:RegisterUnitEvents(visibility ~= "hide" and unitstr or nil)
+  end
+  self:RegisterChainEvents(self.chain)
 
   -- vanilla visibility
-  if self.unitname then
-    self:Show()
-  elseif visibility == "hide" then
+  if visibility == "hide" then
     self:Hide()
   elseif visibility == "show" then
     self:Show()
@@ -441,6 +554,7 @@ function pfUI.uf:UpdateConfig()
 
   local cooldown_text = tonumber(f.config.cooldown_text)
   local cooldown_anim = tonumber(f.config.cooldown_anim)
+  local cooldown_reverse = f.config.cooldown_reverse == "1"
 
   local relative_point = "BOTTOM"
   if f.config.panchor == "TOPLEFT" then
@@ -478,6 +592,8 @@ function pfUI.uf:UpdateConfig()
   if tonumber(f.config.height) < 0 then f.hp:Hide() end
   pfUI.api.CreateBackdrop(f.hp, default_border)
 
+  -- one level above the backdrop for the bar's background, one more for its fill
+  f.hp.bar:SetFrameLevel(f.hp.backdrop:GetFrameLevel() + 2)
   f.hp.bar:SetStatusBarTexture(pfUI.media[f.config.bartexture])
   f.hp.bar:SetAllPoints(f.hp)
   if f.config.verticalbar == "1" then
@@ -492,7 +608,7 @@ function pfUI.uf:UpdateConfig()
   if custombg == "1" then
     local cr, cg, cb, ca = GetStringColor(custombgcolor)
     cr, cg, cb, ca = tonumber(cr), tonumber(cg), tonumber(cb), tonumber(ca)
-    f.hp.bar:SetStatusBarBackgroundTexture(cr,cg,cb,ca)
+    f.hp.bar:SetStatusBarBackgroundColor(cr,cg,cb,ca)
   end
 
   f.power:ClearAllPoints()
@@ -501,7 +617,7 @@ function pfUI.uf:UpdateConfig()
   if tonumber(f.config.pheight) < 0 then f.power:Hide() end
 
   pfUI.api.CreateBackdrop(f.power, default_border)
-  f.power.bar:SetFrameLevel(f.power.backdrop:GetFrameLevel() + 1)
+  f.power.bar:SetFrameLevel(f.power.backdrop:GetFrameLevel() + 2)
   f.power.bar:SetStatusBarTexture(pfUI.media[f.config.pbartexture])
   f.power.bar:SetAllPoints(f.power)
 
@@ -511,7 +627,7 @@ function pfUI.uf:UpdateConfig()
   if custompbg == "1" then
     local cr, cg, cb, ca = GetStringColor(custompbgcolor)
     cr, cg, cb, ca = tonumber(cr), tonumber(cg), tonumber(cb), tonumber(ca)
-    f.power.bar:SetStatusBarBackgroundTexture(cr,cg,cb,ca)
+    f.power.bar:SetStatusBarBackgroundColor(cr,cg,cb,ca)
   end
 
   local fontname, fontsize, fontstyle
@@ -800,7 +916,9 @@ function pfUI.uf:UpdateConfig()
       f.buffs[i].cd.pfCooldownType = "ALL"
       f.buffs[i].cd.pfCooldownStyleText = cooldown_text
       f.buffs[i].cd.pfCooldownStyleAnimation = cooldown_anim
-      f.buffs[i].cd:SetAlpha(cooldown_anim == 1 and 1 or 0)
+      f.buffs[i].cd:SetDrawSwipe(cooldown_anim == 1)
+      f.buffs[i].cd:SetDrawBling(cooldown_anim == 1)
+      f.buffs[i].cd:SetReverse(cooldown_reverse)
       
       -- immediately show/hide existing cooldown text
       if f.buffs[i].cd.pfCooldownText then
@@ -860,7 +978,9 @@ function pfUI.uf:UpdateConfig()
       f.debuffs[i].cd.pfCooldownType = "ALL"
       f.debuffs[i].cd.pfCooldownStyleText = cooldown_text
       f.debuffs[i].cd.pfCooldownStyleAnimation = cooldown_anim
-      f.debuffs[i].cd:SetAlpha(cooldown_anim == 1 and 1 or 0)
+      f.debuffs[i].cd:SetDrawSwipe(cooldown_anim == 1)
+      f.debuffs[i].cd:SetDrawBling(cooldown_anim == 1)
+      f.debuffs[i].cd:SetReverse(cooldown_reverse)
       
       -- immediately show/hide existing cooldown text
       if f.debuffs[i].cd.pfCooldownText then
@@ -885,9 +1005,10 @@ function pfUI.uf:UpdateConfig()
     f:UpdateFrameSize()
   else
     f:UnregisterAllEvents()
-    -- that dropped the unit filters along with the registrations, so the cache
-    -- has to go too or the next UpdateVisibility believes they are still set
-    f.eventunit = nil
+    -- that dropped the unit filters along with the registrations, so the
+    -- caches have to go too or the next UpdateVisibility believes they are
+    -- still set
+    f.eventunit, f.chainkey = nil, nil
     f:Hide()
   end
 end
@@ -903,10 +1024,10 @@ function pfUI.uf.OnEvent()
     this:UnregisterAllEvents()
     this:SetScript("OnEvent", nil)
     this:SetScript("OnUpdate", nil)
-    -- visibilityscan is a separate frame and keeps ticking, so leaving this one
-    -- on its list would have UpdateVisibility re-register the unit events we
-    -- just dropped -- straight back into the crash 132 this branch prevents
-    visibilityscan.frames[this] = nil
+    -- the visibility timer keeps ticking, so leaving this frame on its list
+    -- would have UpdateVisibility re-register the unit events we just
+    -- dropped -- straight back into the crash 132 this branch prevents
+    visibilityframes[this] = nil
     return
   end
   
@@ -924,12 +1045,18 @@ function pfUI.uf.OnEvent()
   -- abort on broken unitframes (e.g focus)
   if not this.label then return end
 
+  -- a hidden frame runs no OnUpdate, so its unit coming into existence has to
+  -- show it from here
+  if VISIBILITY_EVENTS[event] then
+    this:UpdateVisibility()
+  end
+
   -- update regular frames
   if event == "PLAYER_ENTERING_WORLD" then
     this.update_full = true
     -- Clear GUID tracking on zone change for full rebuild
     if pfUI.uf.ClearGuidTracking then pfUI.uf.ClearGuidTracking() end
-  elseif this.label == "target" and event == "PLAYER_TARGET_CHANGED" and not pfScanActive == true then
+  elseif this.label == "target" and event == "PLAYER_TARGET_CHANGED" then
     this.update_full = true
     -- immediately update raid icon to avoid delay on target swap
     if this.raidIcon and this.config and this.config.raidicon == "1" then
@@ -973,12 +1100,12 @@ function pfUI.uf.OnEvent()
     this.update_aura = true
   elseif this.label == "pet" and event == "UNIT_HAPPINESS" then
     this.update_full = true
-  -- UNIT_XXX Events. RegisterUnitEvents means arg1 can only be this frame's own
-  -- unit; the compare is kept for the case the filter sits out, which is when
-  -- arg1 is not a string. The old GUID alternative is gone: these events fire
-  -- once per token that resolves to the unit AND once with the raw GUID, so the
-  -- token form always arrives and the GUID form was only ever a duplicate wake.
-  elseif arg1 and arg1 == this.unitstr then
+  -- UNIT_XXX Events. RegisterUnitEvents means arg1 can only be the unit this
+  -- frame follows -- its token, or a chained unit's GUID; the compare is kept
+  -- for the case the filter sits out, which is when arg1 is not a string. These
+  -- events fire once per token that resolves to the unit AND once with the raw
+  -- GUID, so filtering on one of the two never wakes the frame twice.
+  elseif arg1 and arg1 == this.eventunit then
     if event == "UNIT_PORTRAIT_UPDATE" or event == "UNIT_MODEL_CHANGED" then
       this.update_portrait = true
     elseif event == "UNIT_AURA" then
@@ -987,6 +1114,8 @@ function pfUI.uf.OnEvent()
       this.update_pvp = true
     elseif event == "UNIT_COMBAT" then
       CombatFeedback_OnCombatEvent(arg2, arg3, arg4, arg5)
+    elseif event == "INCOMING_RESURRECT_CHANGED" then
+      this.update_indicators = true
     else
       this.update_base = true
     end
@@ -1029,10 +1158,10 @@ function pfUI.uf.OnUpdate()
       this.lastCombatCheck = now + 0.2
       
       if this.config and this.config.squareaggro == "1" and pfUI.api.UnitHasAggro(this.label .. this.id) > 0 then
-        this.combat.tex:SetTexture(1,.2,0)
+        this.combat.tex:SetColorTexture(1,.2,0)
         this.combat:Show()
       elseif this.config and this.config.squarecombat == "1" and UnitAffectingCombat(this.label .. this.id) then
-        this.combat.tex:SetTexture(1,1,.2)
+        this.combat.tex:SetColorTexture(1,1,.2)
         this.combat:Show()
       elseif this.combat then
         this.combat:Hide()
@@ -1055,31 +1184,18 @@ function pfUI.uf.OnUpdate()
       local unitstr = this.label .. this.id
       this.lastTick = now + (tickInterval or .5)
 
-      -- target target has a huge delay, make sure to not tick during range checks
-      if this.label == "targettarget" or this.label == "targettargettarget" then
-        local name = UnitName(this.label)
-        if name ~= this.namebuf1 then
-          this.namebuf1 = name
-        elseif name ~= this.namebuf2 then
-          this.namebuf2 = name
-        else
-          pfUI.uf:RefreshUnitState(this)
+      pfUI.uf:RefreshUnitState(this)
+      -- group frames get their leader/loot/raid mark icons refreshed by
+      -- events through update_indicators, so polling them is only a safety
+      -- net; the other frames keep polling per tick
+      local label = this.label
+      if label == "raid" or label == "party" or label == "raidpet" or label == "partypet" then
+        if (this.lastIndicatorPoll or 0) < now then
+          this.lastIndicatorPoll = now + 3
           pfUI.uf:RefreshIndicators(this)
         end
       else
-        pfUI.uf:RefreshUnitState(this)
-        -- group frames get their leader/loot/raid mark icons refreshed by
-        -- events through update_indicators, so polling them is only a safety
-        -- net; frames whose unit changes without events keep polling per tick
-        local label = this.label
-        if label == "raid" or label == "party" or label == "raidpet" or label == "partypet" then
-          if (this.lastIndicatorPoll or 0) < now then
-            this.lastIndicatorPoll = now + 3
-            pfUI.uf:RefreshIndicators(this)
-          end
-        else
-          pfUI.uf:RefreshIndicators(this)
-        end
+        pfUI.uf:RefreshIndicators(this)
       end
 
       if this.config and this.config.glowaggro == "1" and pfUI.api.UnitHasAggro(unitstr) > 0 then
@@ -1092,9 +1208,10 @@ function pfUI.uf.OnUpdate()
         this.glow:Hide()
       end
 
-      -- update eventless frames (targettarget, etc). A full refresh rescans
-      -- every aura and the portrait, so only do it when the unit behind the
-      -- frame changes or once a second; other ticks refresh the bars only.
+      -- update polled frames (the pets, created with a tick). A full refresh
+      -- rescans every aura and the portrait, so only do it when the unit
+      -- behind the frame changes or once a second; other ticks refresh the
+      -- bars only.
       if this.tick then
         local guid = UnitGUID(unitstr)
         if guid ~= this.tickGuid or (this.tickFull or 0) < now then
@@ -1157,10 +1274,6 @@ function pfUI.uf.OnUpdate()
             this.incHeal:Hide()
           end
         end
-        
-        -- update ressurections
-        local ress = libpredict:UnitHasIncomingResurrection(unit)
-        this.ressIcon:SetShown(ress and UnitIsDeadOrGhost(unit))
       end
     end
   end
@@ -1212,8 +1325,6 @@ function pfUI.uf.OnUpdate()
     end
   end
 
-  if not this.label or this.label == "" then return end
-
   -- update portrait on first visible frame
   if this.portrait and this.portrait.model and this.portrait.model.update then
     this.portrait.model.lastUnit = UnitName(this.portrait.model.update)
@@ -1240,19 +1351,20 @@ local UNIT_EVENTS = {
   "UNIT_PORTRAIT_UPDATE", "UNIT_MODEL_CHANGED",
   "UNIT_FACTION",
   "UNIT_AURA", -- frame=buff, frame=debuff
+  "INCOMING_RESURRECT_CHANGED", -- frame=ressIcon
 }
 
--- Point this frame's unit-event subscriptions at `unitstr`, or drop them when
--- the frame has no unit. Cheap to call repeatedly: it no-ops unless the unit
--- actually changed, which matters because visibilityscan runs UpdateVisibility
--- for every frame five times a second.
-function pfUI.uf:RegisterUnitEvents(unitstr)
-  if self.eventunit == unitstr then return end
-  self.eventunit = unitstr
+-- Point this frame's unit-event subscriptions at `unit` (a token, or a chained
+-- unit's GUID), or drop them when the frame has no unit. Cheap to call
+-- repeatedly: it no-ops unless the unit actually changed, which matters
+-- because every refresh runs UpdateVisibility.
+function pfUI.uf:RegisterUnitEvents(unit)
+  if self.eventunit == unit then return end
+  self.eventunit = unit
 
   for i = 1, table.getn(UNIT_EVENTS) do
-    if unitstr then
-      self:RegisterUnitEvent(UNIT_EVENTS[i], unitstr)
+    if unit then
+      self:RegisterUnitEvent(UNIT_EVENTS[i], unit)
     else
       self:UnregisterEvent(UNIT_EVENTS[i])
     end
@@ -1261,10 +1373,39 @@ function pfUI.uf:RegisterUnitEvents(unitstr)
   -- UNIT_COMBAT rides along only while the frame draws combat feedback text.
   -- UpdateConfig clears eventunit when it toggles that, so the next
   -- UpdateVisibility re-runs this.
-  if unitstr and self.combatfeedback then
-    self:RegisterUnitEvent("UNIT_COMBAT", unitstr)
+  if unit and self.combatfeedback then
+    self:RegisterUnitEvent("UNIT_COMBAT", unit)
   else
     self:UnregisterEvent("UNIT_COMBAT")
+  end
+end
+
+-- Point this frame's UNIT_TARGET subscription at every link of its chained
+-- unit, whose `owner` is the unit it is the target of -- for
+-- "targettargettarget" the links are "targettarget" and "target" -- or drop it
+-- when `owner` is nil. By GUID, since the inner links are no token that events
+-- name. Cheap to call repeatedly: it re-registers only when a link changed.
+local chainlinks = {}
+function pfUI.uf:RegisterChainEvents(owner)
+  local n, key = 0, nil
+  while owner do
+    local guid = UnitGUID(owner)
+    if guid then
+      n = n + 1
+      chainlinks[n] = guid
+      key = key and key .. guid or guid
+    end
+    owner = owner:match("^(.+)target$")
+  end
+
+  if key == self.chainkey then return end
+  self.chainkey = key
+
+  if key then
+    for i = table.getn(chainlinks), n + 1, -1 do chainlinks[i] = nil end
+    self:RegisterUnitEvent("UNIT_TARGET", unpack(chainlinks))
+  else
+    self:UnregisterEvent("UNIT_TARGET")
   end
 end
 
@@ -1300,11 +1441,7 @@ end
 -- ============================================================
 
 function pfUI.uf.OnClick()
-  if not this.label and this.unitname then
-    TargetByName(this.unitname, true)
-  else
-    pfUI.uf:ClickAction(arg1)
-  end
+  pfUI.uf:ClickAction(arg1)
 end
 
 function pfUI.uf:ClickAction(button)
@@ -1356,8 +1493,7 @@ function pfUI.uf:EnableScripts()
   f:SetScript("OnEvent", pfUI.uf.OnEvent)
   f:SetScript("OnUpdate", pfUI.uf.OnUpdate)
 
-  -- add frame to visibility refresh handler
-  visibilityscan.frames[f] = true
+  visibilityframes[f] = true
 end
 
 function pfUI.uf:CreateUnitFrame(unit, id, config, tick)
@@ -1391,6 +1527,7 @@ function pfUI.uf:CreateUnitFrame(unit, id, config, tick)
   f.EnableScripts    = pfUI.uf.EnableScripts
   f.EnableEvents     = pfUI.uf.EnableEvents
   f.RegisterUnitEvents = pfUI.uf.RegisterUnitEvents
+  f.RegisterChainEvents = pfUI.uf.RegisterChainEvents
   f.EnableClickCast  = pfUI.uf.EnableClickCast
   f.GetColor         = pfUI.uf.GetColor
 
@@ -1400,13 +1537,6 @@ function pfUI.uf:CreateUnitFrame(unit, id, config, tick)
   f.id = id
   f.config = config or pfUI_config.unitframes.fallback
   f.tick = tick
-
-  -- disable events for unknown unitstrings
-  if not pfValidUnits[strlower(unit) .. id] then
-    f.unitname = unit
-    f.label, f.id = "", ""
-    f.RegisterEvent = function() return end
-  end
 
   CreateBackdropShadow(f)
 
@@ -1458,7 +1588,7 @@ function pfUI.uf:CreateUnitFrame(unit, id, config, tick)
 
   f.incHeal = CreateFrame("Frame", nil, f.hp)
   -- Texture lives on hp.bar for correct draw order:
-  -- hp.bar.bg (BACKGROUND) < incHeal (BORDER) < hp.bar.bar (NORMAL)
+  -- hp.bar.bg (a level below) < incHeal (BORDER) < hp.bar's fill (ARTWORK)
   f.incHeal.texture = f.hp.bar:CreateTexture(nil, "BORDER")
   f.incHeal.texture:SetAllPoints(f.incHeal)
   -- Override Show/Hide since texture lives on hp.bar, not incHeal
@@ -1518,15 +1648,14 @@ function pfUI.uf:CreateUnitFrame(unit, id, config, tick)
     f:UpdateFrameSize()
   else
     f:UnregisterAllEvents()
-    -- that dropped the unit filters along with the registrations, so the cache
-    -- has to go too or the next UpdateVisibility believes they are still set
-    f.eventunit = nil
+    -- that dropped the unit filters along with the registrations, so the
+    -- caches have to go too or the next UpdateVisibility believes they are
+    -- still set
+    f.eventunit, f.chainkey = nil, nil
     f:Hide()
   end
 
-  if f.label ~= "" then
-    f:SetAttribute("unit", f.label .. f.id)
-  end
+  f:SetAttribute("unit", f.label .. f.id)
 
   -- register frame for clique
   _G.ClickCastFrames = ClickCastFrames or {}
@@ -1598,6 +1727,10 @@ function pfUI.uf:RefreshIndicators(unit)
 
   if unit.pvpIcon then -- PvP Icon
     unit.pvpIcon:SetShown(unit.config.showPVP == "1" and UnitIsPVP(unitstr))
+  end
+
+  if unit.ressIcon then -- Resurrection Icon
+    unit.ressIcon:SetShown(libpredict:UnitHasResurrection(unitstr))
   end
 
   if unit.restIcon and unit:GetName() == "pfPlayer" then -- Rest Icon
@@ -1673,11 +1806,6 @@ function pfUI.uf:RefreshUnit(unit, component)
   if not unit.id then unit.id = "" end
   component = component or ""
 
-  -- don't update scanner activity
-  if unit.label == "target" or unit.label == "targettarget" or unit.label == "targettargettarget" then
-    if pfScanActive == true then return end
-  end
-
   -- hide unused and invalid frames
   unit:UpdateVisibility()
 
@@ -1711,24 +1839,7 @@ function pfUI.uf:RefreshUnit(unit, component)
           unit.buffs[i].stacks:SetText("")
         end
 
-        if expirationTime > 0 then
-          -- pfUI's cooldown text falls into a 2^32 wraparound branch when start > GetTime(),
-          -- which happens for talent-extended buffs where the real duration exceeds the
-          -- Spell.dbc base. Anchor start to now in that case to keep the remaining math sane.
-          local now = GetTime()
-          local start = expirationTime - duration
-          local dur = duration
-          if start > now or dur <= 0 then
-            start, dur = now, expirationTime - now
-          end
-          if dur > 0 then
-            CooldownFrame_SetTimer(unit.buffs[i].cd, start, dur, 1)
-          else
-            CooldownFrame_SetTimer(unit.buffs[i].cd, 0, 0, 0)
-          end
-        else
-          CooldownFrame_SetTimer(unit.buffs[i].cd, 0, 0, 0)
-        end
+        unit.buffs[i].auraStart, unit.buffs[i].auraDuration = AuraTimer(duration, expirationTime)
       else
         unit.buffs[i]:Hide()
       end
@@ -1771,24 +1882,7 @@ function pfUI.uf:RefreshUnit(unit, component)
       if texture then
         unit.debuffs[i]:Show()
 
-        if expirationTime > 0 then
-          -- Cap start to now so talent-extended debuffs (expirationTime past
-          -- the dbc base duration) don't push start into the future and trip
-          -- CooldownFrame_SetTimer's 2^32-wraparound branch.
-          local now = GetTime()
-          local start = expirationTime - duration
-          local dur = duration
-          if start > now or dur <= 0 then
-            start, dur = now, expirationTime - now
-          end
-          if dur > 0 then
-            CooldownFrame_SetTimer(unit.debuffs[i].cd, start, dur, 1)
-          else
-            CooldownFrame_SetTimer(unit.debuffs[i].cd, 0, 0, 0)
-          end
-        else
-          CooldownFrame_SetTimer(unit.debuffs[i].cd, 0, 0, 0)
-        end
+        unit.debuffs[i].auraStart, unit.debuffs[i].auraDuration = AuraTimer(duration, expirationTime)
 
         if stacks > 1 then
           unit.debuffs[i].stacks:SetText(stacks)
@@ -1806,8 +1900,11 @@ function pfUI.uf:RefreshUnit(unit, component)
     end
   end
 
+  -- timers start after the layout so each cooldown text is sized to its icon
   if component == "all" or component == "aura" then
     LayoutAuras(unit, unitstr)
+    StartAuraTimers(unit.buffs)
+    StartAuraTimers(unit.debuffs)
   end
 
   -- indicators
@@ -1877,7 +1974,7 @@ function pfUI.uf:RefreshUnit(unit, component)
             indicator[debuff]:SetSize(size, size)
             indicator[debuff]:SetBackdrop(nil)
           elseif disptype == "3" then
-            indicator[debuff].tex:SetTexture(dispelColor:GetRGBA())
+            indicator[debuff].tex:SetColorTexture(dispelColor:GetRGBA())
             indicator[debuff].tex:SetVertexColor(1,1,1,1)
             indicator[debuff].tex:Show()
             indicator[debuff]:ClearAllPoints()
@@ -1889,7 +1986,7 @@ function pfUI.uf:RefreshUnit(unit, component)
             indicator[debuff]:SetBackdrop(glow)
             indicator[debuff]:SetBackdropBorderColor(dispelColor:GetRGBA())
           elseif disptype == "1" then
-            indicator[debuff].tex:SetTexture(dispelColor:GetRGBA())
+            indicator[debuff].tex:SetColorTexture(dispelColor:GetRGBA())
             indicator[debuff].tex:SetVertexColor(1,1,1,1)
             indicator[debuff].tex:Show()
             indicator[debuff]:SetAllPoints(unit.hp.bar)
@@ -1938,8 +2035,8 @@ function pfUI.uf:RefreshUnit(unit, component)
 
     if not unit.indicator_custom and unit.config.buff_indicator == "1" then
       unit.indicator_custom = {}
-      for k, v in pairs({strsplit("#", unit.config.custom_indicator)}) do
-        unit.indicator_custom[k] = v:lower()
+      for _, v in pairs({strsplit("#", unit.config.custom_indicator)}) do
+        if v ~= "" then table.insert(unit.indicator_custom, v:lower()) end
       end
     elseif not unit.indicator_custom then
       unit.indicator_custom = {}
@@ -2238,7 +2335,7 @@ function pfUI.uf:AddIcon(frame, pos, icon, timeleft, stacks, start, duration)
   if not frame.icon[pos] then
     frame.icon[pos] = CreateFrame("Frame", nil, frame.icon)
     frame.icon[pos]:SetParent(frame)
-    frame.icon[pos].tex = frame.icon[pos]:CreateTexture("OVERLAY")
+    frame.icon[pos].tex = frame.icon[pos]:CreateTexture(nil, "OVERLAY")
     frame.icon[pos].tex:SetAllPoints(frame.icon[pos])
     frame.icon[pos].tex:SetTexCoord(.08, .92, .08, .92)
     frame.icon[pos].stacks = frame.icon[pos]:CreateFontString(nil, "OVERLAY")
@@ -2248,6 +2345,8 @@ function pfUI.uf:AddIcon(frame, pos, icon, timeleft, stacks, start, duration)
 
     frame.icon[pos].cd = CreateFrame("Cooldown", nil, frame.icon[pos], "CooldownFrameTemplate")
     frame.icon[pos].cd.pfCooldownStyleAnimation = 0
+    frame.icon[pos].cd:SetDrawSwipe(false)
+    frame.icon[pos].cd:SetDrawBling(false)
     frame.icon[pos].cd.pfCooldownType = "ALL"
     frame.icon[pos].cd:SetFrameLevel(48)
   end

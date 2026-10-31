@@ -116,9 +116,7 @@ function libspell.GetSpellInfo(index, bookType)
 end
 
 -- Reset all spell caches whenever new spells are learned/unlearned
-local resetcache = CreateFrame("Frame")
-resetcache:RegisterEvent("LEARNED_SPELL_IN_TAB")
-resetcache:SetScript("OnEvent", function()
+pfUI.events:RegisterFrameEventAndCallback("LEARNED_SPELL_IN_TAB", function()
   table.wipe(spellmaxrank)
   table.wipe(spellindex)
   table.wipe(spellinfo)

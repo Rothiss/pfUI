@@ -16,14 +16,14 @@ pfUI:RegisterSkin("Options - Interface", function ()
   SkinScrollbar(InterfaceOptionsFrameAddOnsListScrollBar)
 
   for _, button in ipairs(InterfaceOptionsFrameAddOns.buttons) do
-    button:GetHighlightTexture():SetTexture(cr, cg, cb, .25)
+    button:GetHighlightTexture():SetColorTexture(cr, cg, cb, .25)
 
     -- the list update swaps plus/minus textures on the toggle by path
     local toggle = _G[button:GetName() .. "Toggle"]
     SkinCollapseButton(toggle)
     toggle:SetPushedTexture("")
     toggle:SetHighlightTexture("")
-    toggle.SetPushedTexture = function() end
+    toggle.SetPushedTexture = nop
   end
 
   -- ClassicAPI's own pages (Options\Panel.lua) number their controls

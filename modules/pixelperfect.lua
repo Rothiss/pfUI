@@ -33,9 +33,7 @@ pfUI:RegisterModule("pixelperfect", function ()
 
   -- pixelperfect: native UIScale listener
   if tonumber(C.global.pixelperfect) > 0 then
-    local f = CreateFrame("Frame")
-    f:RegisterEvent("PLAYER_ENTERING_WORLD")
-    f:SetScript("OnEvent", pixelperfect)
+    pfUI.events:RegisterFrameEventAndCallback("PLAYER_ENTERING_WORLD", pixelperfect)
     pixelperfect()
   end
 

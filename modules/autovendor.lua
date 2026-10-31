@@ -57,7 +57,7 @@ pfUI:RegisterModule("autovendor", function ()
   -- Setup Autosell button
   autovendor.button = CreateFrame("Button", "pfMerchantAutoVendorButton", MerchantFrame)
   autovendor.button:SetSize(36, 36)
-  autovendor.button.icon = autovendor.button:CreateTexture("ARTWORK")
+  autovendor.button.icon = autovendor.button:CreateTexture(nil, "ARTWORK")
   autovendor.button.icon:SetTexture("Interface\\Icons\\Spell_Shadow_SacrificialShield")
   autovendor.button:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
@@ -86,11 +86,7 @@ pfUI:RegisterModule("autovendor", function ()
   if not pfMerchantFrame_Update then
     local pfMerchantFrame_Update = MerchantFrame_Update
     function _G.MerchantFrame_Update()
-      if MerchantFrame.selectedTab == 1 and C["global"]["autosell"] ~= "1" then
-        autovendor.button:Show()
-      else
-        autovendor.button:Hide()
-      end
+      autovendor.button:SetShown(MerchantFrame.selectedTab == 1 and C["global"]["autosell"] ~= "1")
       pfMerchantFrame_Update()
     end
   end

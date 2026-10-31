@@ -53,7 +53,7 @@ pfUI:RegisterSkin("Quest Log", function ()
     QuestLogTrack:SetPoint("RIGHT", QuestLogQuestCount, "LEFT", -5, 0)
 
     StripTextures(QuestLogTrack)
-    QuestLogTrackTracking:SetTexture(.8,.8,.8,1)
+    QuestLogTrackTracking:SetColorTexture(.8,.8,.8,1)
     QuestLogTrackTitle:Hide()
 
     SkinButton(QuestLogFrameAbandonButton)

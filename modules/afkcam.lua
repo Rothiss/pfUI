@@ -16,33 +16,33 @@ pfUI:RegisterModule("afkcam", function ()
   overlay.top:SetPoint("TOPLEFT", overlay, "TOPLEFT")
   overlay.top:SetPoint("TOPRIGHT", overlay, "TOPRIGHT")
   overlay.top:SetHeight(100)
-  overlay.top:SetTexture(1,1,1,1)
+  overlay.top:SetColorTexture(1,1,1,1)
   overlay.top:SetGradientAlpha("VERTICAL", 0,0,0,0,  0,0,0,1)
 
   overlay.bottom = overlay:CreateTexture("pfAFKGradientTop", "BACKGROUND")
   overlay.bottom:SetPoint("BOTTOMLEFT", overlay, "BOTTOMLEFT")
   overlay.bottom:SetPoint("BOTTOMRIGHT", overlay, "BOTTOMRIGHT")
   overlay.bottom:SetHeight(100)
-  overlay.bottom:SetTexture(1,1,1,1)
+  overlay.bottom:SetColorTexture(1,1,1,1)
   overlay.bottom:SetGradientAlpha("VERTICAL", 0,0,0,1,  0,0,0,0)
 
   overlay:SetFrameStrata("DIALOG")
   overlay:SetAllPoints(WorldFrame)
 
-  overlay:SetScript("OnMouseUp",function()
-    SendChatMessage("","AFK")
-    this._parent:stop()
-  end)
+  -- /afk toggles, so send it only while AFK is still set: once the client
+  -- or the server has cleared it, /afk would set it again
+  local function Wake()
+    if IsChatAFK() then SendChatMessage("", "AFK") end
+    afkcam:stop()
+  end
+  overlay:SetScript("OnMouseUp", Wake)
   overlay:SetScript("OnShow", function()
     this:EnableKeyboard(true)
   end)
   overlay:SetScript("OnHide", function()
     this:EnableKeyboard(false)
   end)
-  overlay:SetScript("OnKeyUp",function()
-    SendChatMessage("","AFK")
-    this._parent:stop()
-  end)
+  overlay:SetScript("OnKeyUp", Wake)
   overlay:Hide()
 
   local chat = CreateFrame("ScrollingMessageFrame", "pfAFKCamChat", overlay)
@@ -74,15 +74,10 @@ pfUI:RegisterModule("afkcam", function ()
     chat:RegisterEvent(ctype)
   end
   chat:SetScript("OnMouseWheel",function()
-    if arg1 > 0 then
-      this:ScrollUp()
-    else
-      this:ScrollDown()
-    end
+    this:ScrollByAmount(arg1)
   end)
   overlay.chat = chat
 
-  overlay._parent = afkcam
   afkcam.overlay = overlay
 
   local clock = CreateFrame("Frame", "pfAFKClock", overlay)
@@ -166,9 +161,9 @@ pfUI:RegisterModule("afkcam", function ()
     if event == "PLAYER_FLAGS_CHANGED" then
       if UnitIsAFK('player') then
         delay:Show()
-      elseif delay:IsVisible() then
+      else
         delay:Hide()
-        this:stop()
+        if this._spinning then this:stop() end
       end
     else
       if this._spinning then

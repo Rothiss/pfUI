@@ -25,7 +25,7 @@ pfUI:RegisterModule("nampower", function ()
       pfUI.spellqueue:SetPoint("CENTER", UIParent, "CENTER", 100, -100)
     end
 
-    pfUI.spellqueue.icon = pfUI.spellqueue:CreateTexture("OVERLAY")
+    pfUI.spellqueue.icon = pfUI.spellqueue:CreateTexture(nil, "OVERLAY")
     pfUI.spellqueue.icon:SetAllPoints(pfUI.spellqueue)
     pfUI.spellqueue.icon:SetTexCoord(.08, .92, .08, .92)
 
@@ -41,19 +41,7 @@ pfUI:RegisterModule("nampower", function ()
     local NON_GCD_QUEUED = 4
     local NON_GCD_QUEUE_POPPED = 5
 
-    local queue = CreateFrame("Frame")
-    queue:RegisterEvent("SPELL_QUEUE_EVENT")
-    queue:RegisterEvent("PLAYER_LOGOUT")
-    queue:SetScript("OnEvent", function()
-      -- Handle shutdown to prevent crash 132
-      if event == "PLAYER_LOGOUT" then
-        this:UnregisterAllEvents()
-        this:SetScript("OnEvent", nil)
-        return
-      end
-      
-      local eventCode, spellId = arg1, arg2
-
+    pfUI.events:RegisterFrameEventAndCallback("SPELL_QUEUE_EVENT", function(_, eventCode, spellId)
       if eventCode == NORMAL_QUEUED or eventCode == NON_GCD_QUEUED or eventCode == ON_SWING_QUEUED then
         local texture = C_Spell.GetSpellTexture(spellId)
         if texture then

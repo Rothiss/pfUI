@@ -103,13 +103,20 @@ mod = math.mod or mod
 --                              characters (bytes) in the string.
 -- 'subject'    [string]        String to split.
 -- return:      [list]          a list of strings.
-local format, sgsub = string.format, string.gsub
+local sfind, ssub, sgsub = string.find, string.sub, string.gsub
 function pfUI.api.strsplit(delimiter, subject)
   if not subject then return nil end
-  local fields = {}
-  delimiter = delimiter or ":"
-  local pattern = format("([^%s]+)", delimiter)
-  sgsub(subject, pattern, function(c) fields[table.getn(fields)+1] = c end)
+  -- a character class of the delimiter bytes, each escaped so % ] ^ - stay
+  -- literal
+  local set = "[" .. sgsub(delimiter or ":", "(%W)", "%%%1") .. "]"
+  local fields, start = {}, 1
+  local pos = sfind(subject, set)
+  while pos do
+    table.insert(fields, ssub(subject, start, pos - 1))
+    start = pos + 1
+    pos = sfind(subject, set, start)
+  end
+  table.insert(fields, ssub(subject, start))
   return unpack(fields)
 end
 
@@ -173,26 +180,6 @@ function pfUI.api.UnitInRange(unit)
     return pfUI.api.librange:UnitInSpellRange(unit)
   end
   return nil
-end
-
--- [ RunOOC ]
--- Runs a function once, as soon as the combat lockdown fades.
--- func         [function]      The function that shall run ooc.
--- return:      [bool]          true if the function was added,
---                              nil if the function already exists in queue
-local queue, frame = {}
-function pfUI.api.RunOOC(func)
-  if not frame then
-    frame = CreateFrame("Frame")
-    frame:SetScript("OnUpdate", function()
-      for key, func in pairs(queue) do func(); queue[key] = nil end
-    end)
-  end
-
-  if not queue[tostring(func)] then
-    queue[tostring(func)] = func
-    return true
-  end
 end
 
 -- [ UnitHasBuff ]
@@ -579,6 +566,14 @@ function pfUI.api.SendChatMessageWide(msg)
   SendChatMessage(msg,channel)
 end
 
+-- [ CopyText ]
+-- Copies text to the clipboard and says so in the colour of a UI_INFO_MESSAGE
+-- 'text'       [string]          the text to copy
+function pfUI.api.CopyText(text)
+  CopyToClipboard(text)
+  UIErrorsFrame:AddMessage(T["Copied to clipboard"], 1, 1, 0, 1)
+end
+
 -- [ GroupInfoByName ]
 -- Gets the unit id by name
 -- 'name'       [string]          party or raid member
@@ -643,75 +638,21 @@ function hooksecurefunc(tbl, name, func)
   return _G.hooksecurefunc(tbl, name, func)
 end
 
--- [ HookAddonOrVariable ]
--- Sets a function to be called automatically once an addon gets loaded
--- 'addon'      [string]            addon or variable name
+-- [ HookAddon ]
+-- Runs a function once an addon has loaded, but never before PLAYER_LOGIN.
+-- Module and skin bodies run inside pfUI's own ADDON_LOADED, so an addon that
+-- is already loaded there would otherwise run its hook before later pfUI
+-- modules exist and before the addon's own VARIABLES_LOADED setup. A
+-- load-on-demand addon runs its hook on its ADDON_LOADED. Hooks for addons
+-- that are not installed are dropped. Hooks on the same addon run in no
+-- particular order.
+-- 'addon'      [string]            addon name
 -- 'func'       [function]          function that should run
-do
-  local lurker
-  local pending = {}
-
-  local function ProcessPending()
-    if not lurker.foundConfig then return end
-    for i = table.getn(pending), 1, -1 do
-      local hook = pending[i]
-      if IsAddOnLoaded(hook.addon) or _G[hook.addon] then
-        hook.func()
-        table.remove(pending, i)
-      end
-    end
-    if table.getn(pending) == 0 then
-      lurker:UnregisterAllEvents()
-    end
-  end
-
-  function pfUI.api.HookAddonOrVariable(addon, func)
-    if not lurker then
-      lurker = CreateFrame("Frame", nil)
-      lurker:SetScript("OnEvent", function()
-        if event == "VARIABLES_LOADED" or event == "PLAYER_ENTERING_WORLD" then
-          this.foundConfig = true
-        end
-        ProcessPending()
-      end)
-    end
-
-    table.insert(pending, { addon = addon, func = func })
-    lurker:RegisterEvent("ADDON_LOADED")
-    lurker:RegisterEvent("VARIABLES_LOADED")
-    lurker:RegisterEvent("PLAYER_ENTERING_WORLD")
-    ProcessPending()
-  end
-end
-
--- [ QueueFunction ]
--- Add functions to a FIFO queue for execution after a short delay.
--- '...'        [vararg]        function, [arguments]
-local timer
-function pfUI.api.QueueFunction(a1,a2,a3,a4,a5,a6,a7,a8,a9)
-  if not timer then
-    timer = CreateFrame("Frame")
-    timer.queue = {}
-    timer.interval = TOOLTIP_UPDATE_TIME
-    timer.DeQueue = function()
-      local item = table.remove(timer.queue,1)
-      if item then
-        item[1](item[2],item[3],item[4],item[5],item[6],item[7],item[8],item[9])
-      end
-      if table.getn(timer.queue) == 0 then
-        timer:Hide() -- no need to run the OnUpdate when the queue is empty
-      end
-    end
-    timer:SetScript("OnUpdate",function()
-      this.sinceLast = (this.sinceLast or 0) + arg1
-      while (this.sinceLast > this.interval) do
-        this.DeQueue()
-        this.sinceLast = this.sinceLast - this.interval
-      end
-    end)
-  end
-  table.insert(timer.queue,{a1,a2,a3,a4,a5,a6,a7,a8,a9})
-  timer:Show() -- start the OnUpdate
+function pfUI.api.HookAddon(addon, func)
+  if not C_AddOns.DoesAddOnExist(addon) then return end
+  EventUtil.ContinueOnPlayerLogin(function()
+    EventUtil.ContinueOnAddOnLoaded(addon, func)
+  end)
 end
 
 -- [ Create Gold String ]
@@ -722,20 +663,7 @@ end
 function pfUI.api.CreateGoldString(money)
   if type(money) ~= "number" then return "-" end
 
-  if _G.GetCoinTextureString then
-    return "|cffffffff" .. _G.GetCoinTextureString(money) .. "|r"
-  end
-
-  local gold = floor(money/ 100 / 100)
-  local silver = floor(mod((money/100),100))
-  local copper = floor(mod(money,100))
-
-  local string = ""
-  if gold > 0 then string = string .. "|cffffffff" .. gold .. "|cffffd700g" end
-  if silver > 0 or gold > 0 then string = string .. "|cffffffff " .. silver .. "|cffc7c7cfs" end
-  string = string .. "|cffffffff " .. copper .. "|cffeda55fc"
-
-  return string
+  return "|cffffffff" .. _G.GetCoinTextureString(money) .. "|r"
 end
 
 -- [ Enable Movable ]
@@ -1353,15 +1281,18 @@ end
 
 -- [ Bar Layout Options ] --
 -- 'barsize'  size of bar in number of buttons
--- returns:   array of options as strings for pfUI.gui.bar
+-- returns:   array of options as strings for pfUI.gui.bar: every grid
+--            that fits the bar exactly, plus common uneven ones
 function pfUI.api.BarLayoutOptions(barsize)
   assert(barsize > 0 and barsize <= NUM_ACTIONBAR_BUTTONS,"BarLayoutOptions: barsize "..tostring(barsize).." is invalid")
   local options, seen = {}, {}
   local function add(option)
     if not seen[option] then table.insert(options, option); seen[option] = true end
   end
-  for i,layout in ipairs(pfGridmath[barsize]) do
-    add(string.format("%d x %d",layout[1],layout[2]))
+  for cols = 1, barsize do
+    if barsize % cols == 0 then
+      add(string.format("%d x %d", cols, barsize / cols))
+    end
   end
   for _, option in ipairs({
     "1 x 12", "1 x 10", "2 x 10", "2 x 5", "3 x 10", "3 x 5", "3 x 3",
@@ -1381,49 +1312,23 @@ function pfUI.api.BarLayoutOptions(barsize)
   return options
 end
 
--- [ Bar Layout Formfactor ] --
--- 'option'  string option as used in pfUI_config.bars[bar].option
--- returns:  integer formfactor
-local formfactors = {}
-setmetatable(formfactors, {__mode = "v"}) -- weak table so values not referenced are collected on next gc
-function pfUI.api.BarLayoutFormfactor(option)
-  if formfactors[option] then
-    return formfactors[option]
-  else
-    for barsize,_ in ipairs(pfGridmath) do
-      local options = pfUI.api.BarLayoutOptions(barsize)
-      for i,opt in ipairs(options) do
-        if opt == option then
-          formfactors[option] = i
-          return formfactors[option]
-        end
-      end
-    end
-  end
-end
-
+-- 'formfactor' has to be a "cols x rows" string; the actionbar module resets
+-- a stored layout that isn't one before it lays out a bar
 local function ResolveBarLayout(barsize, formfactor, uneven)
-  local layout = tostring(formfactor or "")
-  local _, _, a, b = string.find(layout, "(%d+)%s*x%s*(%d+)")
-  if a and b then
-    local cols, rows = tonumber(a), tonumber(b)
-    cols = math.min(NUM_ACTIONBAR_BUTTONS, math.max(1, cols))
-    rows = math.min(NUM_ACTIONBAR_BUTTONS, math.max(1, rows))
-    local orientation = string.upper(uneven or "DOWN")
-    local mode = (orientation == "LEFT" or orientation == "RIGHT") and "cols" or "rows"
-    if mode == "rows" then
-      cols = math.max(1, math.min(cols, barsize))
-      rows = math.max(1, math.ceil(barsize / cols))
-    else
-      rows = math.max(1, math.min(rows, barsize))
-      cols = math.max(1, math.ceil(barsize / rows))
-    end
-    return cols, rows, mode, orientation
+  local _, _, a, b = string.find(formfactor, "(%d+)%s*x%s*(%d+)")
+  local cols, rows = tonumber(a), tonumber(b)
+  cols = math.min(NUM_ACTIONBAR_BUTTONS, math.max(1, cols))
+  rows = math.min(NUM_ACTIONBAR_BUTTONS, math.max(1, rows))
+  local orientation = string.upper(uneven or "DOWN")
+  local mode = (orientation == "LEFT" or orientation == "RIGHT") and "cols" or "rows"
+  if mode == "rows" then
+    cols = math.max(1, math.min(cols, barsize))
+    rows = math.max(1, math.ceil(barsize / cols))
+  else
+    rows = math.max(1, math.min(rows, barsize))
+    cols = math.max(1, math.ceil(barsize / rows))
   end
-  local index = pfUI.api.BarLayoutFormfactor(layout)
-  if not index then return nil end
-  local cols, rows = unpack(pfGridmath[barsize][index])
-  return cols, rows, "rows", "DOWN"
+  return cols, rows, mode, orientation
 end
 
 -- [ Bar Layout Size ] --
@@ -1434,7 +1339,6 @@ end
 function pfUI.api.BarLayoutSize(bar,barsize,formfactor,iconsize,bordersize,padding,uneven,fillmode)
   assert(barsize > 0 and barsize <= NUM_ACTIONBAR_BUTTONS,"BarLayoutSize: barsize "..tostring(barsize).." is invalid")
   local cols, rows = ResolveBarLayout(barsize, formfactor, uneven)
-  if not cols or not rows then cols, rows = unpack(pfGridmath[barsize][1]) end
   local width = (iconsize + bordersize*2+padding) * cols + padding
   local height = (iconsize + bordersize*2+padding) * rows + padding
   bar._size = {width,height}
@@ -1452,9 +1356,6 @@ end
 function pfUI.api.BarButtonAnchor(button,basename,buttonindex,barsize,formfactor,iconsize,bordersize,padding,uneven,fillmode)
   assert(barsize > 0 and barsize <= NUM_ACTIONBAR_BUTTONS,"BarButtonAnchor: barsize "..tostring(barsize).." is invalid")
   local cols, rows, mode, orientation = ResolveBarLayout(barsize, formfactor, uneven)
-  if not cols or not rows then
-    cols, rows, mode, orientation = unpack(pfGridmath[barsize][1]), "rows", "DOWN"
-  end
 
   -- fillmode: remap buttonindex to slotindex (grid position in native fill order)
   -- only needed when fill direction differs from layout mode

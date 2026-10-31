@@ -1,5 +1,5 @@
 pfUI:RegisterModule("gui", function ()
-  local Reload, U, CreateConfig, CreateTabFrame, CreateArea, CreateGUIEntry, EntryUpdate
+  local Reload, U, CreateConfig, CreateTabFrame, CreateArea, CreateGUIEntry, EntryOnEnter, EntryOnLeave
 
   -- "searchDB" gets populated when CreateConfig is called. The table holds
   -- information about the title, its parent buttons and the frame itself:
@@ -47,25 +47,12 @@ pfUI:RegisterModule("gui", function ()
       end
     end})
 
-    function EntryUpdate()
-      -- detect and skip during dropdowns
-      local focus = GetMouseFocus()
-      if focus and focus.parent and focus.parent.menu then
-        if this.over then
-          this.tex:Hide()
-          this.over = nil
-        end
-        return
-      end
+    function EntryOnEnter()
+      this.tex:Show()
+    end
 
-      local over = MouseIsOverHitRect(this)
-      if over and not this.over then
-        this.tex:Show()
-        this.over = true
-      elseif not over and this.over then
-        this.tex:Hide()
-        this.over = nil
-      end
+    function EntryOnLeave()
+      this.tex:Hide()
     end
 
     function CreateConfig(ufunc, caption, category, config, widget, values, skip, named, type)
@@ -116,9 +103,13 @@ pfUI:RegisterModule("gui", function ()
       if not widget or (widget and widget ~= "button") then
 
         if widget ~= "header" then
-          frame:SetScript("OnUpdate", EntryUpdate)
+          -- light up while the cursor is over the row; its widgets pass
+          -- their mouse motion on to it below
+          frame:SetMouseMotionEnabled(true)
+          frame:SetScript("OnEnter", EntryOnEnter)
+          frame:SetScript("OnLeave", EntryOnLeave)
           frame.tex = frame:CreateTexture(nil, "BACKGROUND")
-          frame.tex:SetTexture(1,1,1,.05)
+          frame.tex:SetColorTexture(1,1,1,.05)
           frame.tex:SetAllPoints()
           frame.tex:Hide()
         end
@@ -183,14 +174,14 @@ pfUI:RegisterModule("gui", function ()
         frame.color:SetHeight(12)
         CreateBackdrop(frame.color)
         frame.color:SetPoint("RIGHT" , -5, 1)
-        frame.color.prev = frame.color.backdrop:CreateTexture("OVERLAY")
+        frame.color.prev = frame.color.backdrop:CreateTexture(nil, "OVERLAY")
         frame.color.prev:SetAllPoints(frame.color)
 
         local cr, cg, cb, ca = strsplit(",", category[config])
         if not cr or not cg or not cb or not ca then
           cr, cg, cb, ca = 1, 1, 1, 1
         end
-        frame.color.prev:SetTexture(cr,cg,cb,ca)
+        frame.color.prev:SetColorTexture(cr,cg,cb,ca)
 
         frame.color:SetScript("OnClick", function()
           local cr, cg, cb, ca = strsplit(",", category[config])
@@ -208,7 +199,7 @@ pfUI:RegisterModule("gui", function ()
             b = round(b, 3)
             a = round(a, 3)
 
-            preview:SetTexture(r,g,b,a)
+            preview:SetColorTexture(r,g,b,a)
 
             if not this:GetParent():IsShown() then
               category[config] = r .. "," .. g .. "," .. b .. "," .. a
@@ -218,7 +209,7 @@ pfUI:RegisterModule("gui", function ()
           end
 
           function ColorPickerFrame.cancelFunc()
-            preview:SetTexture(cr,cg,cb,ca)
+            preview:SetColorTexture(cr,cg,cb,ca)
           end
 
           ColorPickerFrame.opacityFunc = ColorPickerFrame.func
@@ -344,45 +335,43 @@ pfUI:RegisterModule("gui", function ()
 
       -- use dropdown widget
       if widget == "dropdown" and values then
-        frame.input = CreateDropDownButton(nil, frame)
-        frame.input:SetBackdrop(nil)
-        frame.input.menuframe:SetParent(pfUI.gui)
+        local function IsSelected(value)
+          return category[config] == value
+        end
 
+        local function SetSelected(value)
+          if category[config] ~= value then
+            category[config] = value
+            if ufunc then ufunc() else pfUI.gui.settingChanged = true end
+            pfUI.events:TriggerEvent("config:changed", category, config)
+          end
+        end
+
+        frame.input = CreateFrame("DropdownButton", nil, frame, "pfUIDropdownTemplate")
         frame.input:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
         frame.input:SetWidth(180)
-        frame.input:SetMenu(function()
-          local menu = {}
-
-          for i, k in pairs(_G.type(values) == "function" and values() or values) do
-            local entry = {}
+        frame.input:SetupMenu(function(dropdown, rootDescription)
+          for _, k in pairs(_G.type(values) == "function" and values() or values) do
             -- get human readable
             local value, text = strsplit(":", k)
-            text = text or value
-
-            entry.text = text
-            entry.func = function()
-              if category and category[config] ~= value then
-                category[config] = value
-                if ufunc then ufunc() else pfUI.gui.settingChanged = true end
-                pfUI.events:TriggerEvent("config:changed", category, config)
-              end
-            end
-
-            if category and category[config] == value then
-              frame.input.current = i
-            end
-
-            table.insert(menu, entry)
+            rootDescription:CreateRadio(text or value, IsSelected, SetSelected, value)
           end
-
-          return menu
         end)
-
-        frame.input:SetSelection(frame.input.current)
       end
 
       -- use list widget
       if widget == "list" then
+        -- index of the selected entry among the "#" separated ones
+        local selected
+
+        local function IsSelected(index)
+          return index == selected
+        end
+
+        local function Select(index)
+          selected = index
+        end
+
         frame.del = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
         SkinButton(frame.del)
         frame.del:SetWidth(16)
@@ -392,15 +381,16 @@ pfUI:RegisterModule("gui", function ()
         frame.del:SetText("-")
         frame.del:SetTextColor(1,.5,.5,1)
         frame.del:SetScript("OnClick", function()
-          local sel = frame.input:GetSelection()
+          if not selected then return end
           local newconf = ""
-          for id, val in pairs({strsplit("#", category[config])}) do
-            if id ~= sel then newconf = newconf .. "#" .. val end
+          for id, val in ipairs({strsplit("#", category[config])}) do
+            if id ~= selected and val ~= "" then newconf = newconf .. "#" .. val end
           end
+          selected = nil
           category[config] = newconf
           if ufunc then ufunc() else pfUI.gui.settingChanged = true end
           pfUI.events:TriggerEvent("config:changed", category, config)
-          frame.input:UpdateMenu()
+          frame.input:GenerateMenu()
         end)
 
         frame.add = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
@@ -416,22 +406,24 @@ pfUI:RegisterModule("gui", function ()
             category[config] = category[config] .. "#" .. this:GetParent().input:GetText()
             if ufunc then ufunc() else pfUI.gui.settingChanged = true end
             pfUI.events:TriggerEvent("config:changed", category, config)
-            frame.input:UpdateMenu()
+            frame.input:GenerateMenu()
           end, false, true)
         end)
 
-        frame.input = CreateDropDownButton(nil, frame)
-        frame.input:SetBackdrop(nil)
-        frame.input.menuframe:SetParent(pfUI.gui)
+        frame.input = CreateFrame("DropdownButton", nil, frame, "pfUIDropdownTemplate")
         frame.input:SetPoint("RIGHT", frame.add, "LEFT", -2, 0)
         frame.input:SetWidth(140)
-        frame.input:SetMenu(function()
-          local menu = {}
-          for i, val in pairs({strsplit("#", category[config])}) do
-            table.insert(menu, { text = val })
+        frame.input:SetupMenu(function(dropdown, rootDescription)
+          for id, val in ipairs({strsplit("#", category[config])}) do
+            if val ~= "" then
+              rootDescription:CreateRadio(val, IsSelected, Select, id)
+            end
           end
-          return menu
         end)
+      end
+
+      for _, child in ipairs({ frame:GetChildren() }) do
+        child:SetPropagateMouseMotion(true)
       end
 
       return frame
@@ -498,31 +490,32 @@ pfUI:RegisterModule("gui", function ()
       f.button = parent[title]
 
       f.bg = f:CreateTexture(nil, "BACKGROUND")
-      f.bg:SetTexture(1,1,1,.05)
+      f.bg:SetColorTexture(1,1,1,.05)
       f.bg:SetAllPoints()
 
       f:SetScript("OnShow", function()
         this.indexed = true
         this.button.text:SetTextColor(.2,1,.8,1)
-        this.button.bg:SetTexture(1,1,1,1)
+        this.button.bg:SetColorTexture(1,1,1,1)
         this.button.bg:SetGradientAlpha("HORIZONTAL", 0,0,0,0,  1,1,1,.05)
       end)
 
       f:SetScript("OnHide", function()
         this.button.text:SetTextColor(1,1,1,1)
-        this.button.bg:SetTexture(0,0,0,0)
+        this.button.bg:SetColorTexture(0,0,0,0)
       end)
 
       -- are we a frame with contents?
       if func then
-        f.scroll = CreateScrollFrame(nil, f)
+        f.scroll = CreateFrame("ScrollFrame", nil, f, "pfUIScrollFrameTemplate")
         SetAllPointsOffset(f.scroll, f, 2)
-        f.scroll.content = CreateScrollChild(nil, f.scroll)
+        f.scroll.content = f.scroll.Content
         f.scroll.content.parent = f.scroll
         f.scroll.content:SetScript("OnShow", function()
           if not this.setup then
             func()
             this.setup = true
+            this.parent:UpdateScrollChildRect()
           end
         end)
       end
@@ -695,7 +688,10 @@ pfUI:RegisterModule("gui", function ()
     SkinButton(pfUI.gui.share)
 
     -- searchbar
-    local function SearchEntryClick()
+    local results     -- the result list, made with the search page on the first search
+    local highlighted -- the config row the last clicked result points at
+
+    local function SearchResultClick()
       -- clear search focus
       pfUI.gui.search:ClearFocus()
 
@@ -705,35 +701,44 @@ pfUI:RegisterModule("gui", function ()
       end
 
       -- highlight matched entry
-      if not this.obj[-1].highlight then
-        this.obj[-1].highlight = this.obj[-1]:CreateTexture(nil, "OVERLAY")
-        this.obj[-1].highlight:SetAllPoints()
-        this.obj[-1].highlight:SetTexture(.2,1,.8,.2)
+      if highlighted then highlighted.highlight:Hide() end
+      highlighted = this.obj[-1]
+      if not highlighted.highlight then
+        highlighted.highlight = highlighted:CreateTexture(nil, "OVERLAY")
+        highlighted.highlight:SetAllPoints()
+        highlighted.highlight:SetColorTexture(.2,1,.8,.2)
       end
-      this.obj[-1].highlight:Show()
+      highlighted.highlight:Show()
     end
 
-    local function CreateSearchEntry(parent, i)
-      local f = CreateFrame("Button", nil, parent)
-      f:SetPoint("TOPLEFT", 5, -5 + (i-1)*-25)
-      f:SetWidth(565)
-      f:SetHeight(20)
-      f:SetScript("OnClick", SearchEntryClick)
-      f:SetScript("OnUpdate", EntryUpdate)
+    local function InitSearchResult(f, obj)
+      -- one-time setup of a pooled row
+      if not f.text then
+        f:SetScript("OnClick", SearchResultClick)
+        f:SetScript("OnEnter", EntryOnEnter)
+        f:SetScript("OnLeave", EntryOnLeave)
 
-      f.text = f:CreateFontString("Status", "LOW", "GameFontWhite")
-      f.text:SetFont(pfUI.font_default, pfUI_config.global.font_size, "OUTLINE")
-      f.text:SetAllPoints()
-      f.text:SetJustifyH("LEFT")
-      f.text:SetJustifyV("CENTER")
-      f.text:SetTextColor(.5,.5,.5)
+        f.text = f:CreateFontString(nil, "LOW", "GameFontWhite")
+        f.text:SetFont(pfUI.font_default, pfUI_config.global.font_size, "OUTLINE")
+        f.text:SetAllPoints()
+        f.text:SetJustifyH("LEFT")
+        f.text:SetJustifyV("CENTER")
+        f.text:SetTextColor(.5,.5,.5)
 
-      f.tex = f:CreateTexture(nil, "BACKGROUND")
-      f.tex:SetTexture(1,1,1,.05)
-      f.tex:SetAllPoints()
-      f.tex:Hide()
+        f.tex = f:CreateTexture(nil, "BACKGROUND")
+        f.tex:SetColorTexture(1,1,1,.05)
+        f.tex:SetAllPoints()
+        f.tex:Hide()
+      end
 
-      return f
+      f.obj = obj
+
+      -- the path of submenus, then the entry
+      local caption = ""
+      for x=table.getn(obj),1,-1 do
+        caption = caption .. "|cff33ffcc" .. obj[x].text:GetText() .. "|r » "
+      end
+      f.text:SetText(caption .. "|cffffffff" .. obj[0])
     end
 
     pfUI.gui.search = CreateFrame("EditBox", nil, pfUI.gui)
@@ -760,54 +765,34 @@ pfUI:RegisterModule("gui", function ()
       local defval = "["..T["Search"].."]"
 
       -- initialize search window
-      CreateGUIEntry(defval, nil, function() end)
+      if not results then
+        CreateGUIEntry(defval)
+        results = CreateFrame("Frame", nil, pfUI.gui.frames[defval].area, "pfUIScrollBoxListTemplate")
+        SetAllPointsOffset(results, pfUI.gui.frames[defval].area, 2)
+
+        local view = CreateScrollBoxListLinearView(0, 0, 0, 0, 5)
+        view:SetElementExtent(20)
+        view:SetElementInitializer("Button", InitSearchResult)
+        ScrollUtil.InitScrollBoxListWithScrollBar(results.ScrollBox, results.ScrollBar, view)
+      end
       pfUI.gui.frames[defval]:Click()
 
-      local scroll = pfUI.gui.frames[defval].area.scroll.content
-      local parent = pfUI.gui.frames[defval].area.scroll
-      scroll.results = scroll.results or {}
-
-      for i=1,table.getn(scroll.results) do
-        scroll.results[i]:Hide()
-        if scroll.results[i].obj and scroll.results[i].obj[-1].highlight then
-          scroll.results[i].obj[-1].highlight:Hide()
-        end
+      if highlighted then
+        highlighted.highlight:Hide()
+        highlighted = nil
       end
 
-      if strlen(this:GetText()) < 1 then return end
-
-      local i = 1
+      -- the matching entries, from the top of the list
+      local matches = {}
       local search = strlower(this:GetText())
-      for name, obj in pairs(searchDB) do
-        local title = obj[0] and strlower(obj[0])
-        if strfind(title, search) then
-          -- build caption string
-          local caption = ""
-          for x=table.getn(obj),1,-1 do
-            caption = caption .. "|cff33ffcc" .. obj[x].text:GetText() .. "|r » "
+      if search ~= "" then
+        for _, obj in pairs(searchDB) do
+          if strfind(strlower(obj[0]), search, 1, true) then
+            table.insert(matches, obj)
           end
-          caption = caption .. "|cffffffff" .. obj[0]
-
-          -- build search entry button
-          scroll.results[i] = scroll.results[i] or CreateSearchEntry(scroll, i)
-          scroll.results[i].obj = obj
-          scroll.results[i].text:SetText(caption)
-          scroll.results[i]:Show()
-
-          i = i + 1
         end
       end
-
-      -- reload scroll frames
-      scroll:Hide()
-      scroll:SetHeight(i * 25 )
-      scroll:Show()
-      parent:SetScrollChild(scroll)
-      QueueFunction(function()
-        parent:SetVerticalScroll(0)
-        parent:UpdateScrollState()
-        parent:Scroll()
-      end)
+      results.ScrollBox:SetDataProvider(CreateDataProvider(matches))
     end)
 
     pfUI.gui.search:SetScript("OnEditFocusGained", function(self)
@@ -1300,7 +1285,7 @@ pfUI:RegisterModule("gui", function ()
       -- draw pfUI logo
       local function draw(p, fx, fy, tx, ty, r, g, b, a)
         local t = p:CreateTexture(nil, "OVERLAY")
-        t:SetTexture(r,g,b,a)
+        t:SetColorTexture(r,g,b,a)
         t:SetPoint("TOPLEFT", fx, fy)
         t:SetPoint("BOTTOMRIGHT", p, "TOPLEFT", tx, ty)
       end
@@ -1327,14 +1312,14 @@ pfUI:RegisterModule("gui", function ()
 
       this.version = this:CreateFontString("Status", "LOW", "GameFontWhite")
       this.version:SetFont(pfUI.font_default, C.global.font_size)
-      this.version:SetPoint("TOPRIGHT", 375, -170)
+      this.version:SetPoint("TOPRIGHT", this, "TOPLEFT", 375, -170)
       this.version:SetWidth(200)
       this.version:SetJustifyH("RIGHT")
 
       this.update = this:CreateFontString("Status", "LOW", "GameFontWhite")
       this.update:SetFont(pfUI.font_default, C.global.font_size)
       this.update:SetPoint("TOPLEFT", 200, -140)
-      this.update:SetPoint("TOPRIGHT", 375, -140)
+      this.update:SetPoint("TOPRIGHT", this, "TOPLEFT", 375, -140)
       this.update:SetJustifyH("CENTER")
       this.update:SetTextColor(.2,1,.8)
 
@@ -1347,7 +1332,7 @@ pfUI:RegisterModule("gui", function ()
 
       this.screen = this:CreateFontString("Status", "LOW", "GameFontWhite")
       this.screen:SetFont(pfUI.font_default, C.global.font_size)
-      this.screen:SetPoint("TOPRIGHT", 375, -200)
+      this.screen:SetPoint("TOPRIGHT", this, "TOPLEFT", 375, -200)
       this.screen:SetWidth(200)
       this.screen:SetJustifyH("RIGHT")
 
@@ -1360,7 +1345,7 @@ pfUI:RegisterModule("gui", function ()
 
       this.scale = this:CreateFontString("Status", "LOW", "GameFontWhite")
       this.scale:SetFont(pfUI.font_default, C.global.font_size)
-      this.scale:SetPoint("TOPRIGHT", 375, -220)
+      this.scale:SetPoint("TOPRIGHT", this, "TOPLEFT", 375, -220)
       this.scale:SetWidth(200)
       this.scale:SetJustifyH("RIGHT")
 
@@ -1373,7 +1358,7 @@ pfUI:RegisterModule("gui", function ()
 
       this.client = this:CreateFontString("Status", "LOW", "GameFontWhite")
       this.client:SetFont(pfUI.font_default, C.global.font_size)
-      this.client:SetPoint("TOPRIGHT", 375, -250)
+      this.client:SetPoint("TOPRIGHT", this, "TOPLEFT", 375, -250)
       this.client:SetWidth(200)
       this.client:SetJustifyH("RIGHT")
 
@@ -1385,7 +1370,7 @@ pfUI:RegisterModule("gui", function ()
       this.langc:SetText(T["Language"] .. ":")
       this.lang = this:CreateFontString("Status", "LOW", "GameFontWhite")
       this.lang:SetFont(pfUI.font_default, C.global.font_size)
-      this.lang:SetPoint("TOPRIGHT", 375, -270)
+      this.lang:SetPoint("TOPRIGHT", this, "TOPLEFT", 375, -270)
       this.lang:SetWidth(200)
       this.lang:SetJustifyH("RIGHT")
 
@@ -1414,7 +1399,7 @@ pfUI:RegisterModule("gui", function ()
       donate:SetHeight(20)
       donate:SetText(T["Donate"])
       donate:SetScript("OnClick", function()
-        pfUI.chat.urlcopy.CopyText("https://buymeacoffee.com/brues")
+        CopyText("https://buymeacoffee.com/brues")
       end)
       SkinButton(donate)
 
@@ -1424,7 +1409,7 @@ pfUI:RegisterModule("gui", function ()
       github:SetHeight(20)
       github:SetText(T["GitHub"])
       github:SetScript("OnClick", function()
-        pfUI.chat.urlcopy.CopyText(GetAddOnMetadata(pfUI.name, "X-Website"))
+        CopyText(GetAddOnMetadata(pfUI.name, "X-Website"))
       end)
       SkinButton(github)
 
@@ -1434,7 +1419,7 @@ pfUI:RegisterModule("gui", function ()
       website:SetHeight(20)
       website:SetText(T["Website"])
       website:SetScript("OnClick", function()
-        pfUI.chat.urlcopy.CopyText(GetAddOnMetadata(pfUI.name, "X-Website"))
+        CopyText(GetAddOnMetadata(pfUI.name, "X-Website"))
       end)
       SkinButton(website)
     end)
@@ -2088,6 +2073,7 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(nil, T["Offhand Bar Color"], C.unitframes, "swingtimerohcolor", "color")
       CreateConfig(nil, T["Ranged Bar Color"], C.unitframes, "swingtimerrangedcolor", "color")
       CreateConfig(nil, T["Ranged Warn Color (Hunter)"], C.unitframes, "swingtimerrangedwarncolor", "color")
+      CreateConfig(nil, T["Out Of Range Color"], C.unitframes, "swingtimeroutrangecolor", "color")
       CreateConfig(nil, T["Show On Next Attack Queue Color"], C.unitframes, "swingtimerhsqueue", "checkbox")
       CreateConfig(nil, T["Show Attack Speed"], C.unitframes, "swingtimerattackspeed", "checkbox")
 
@@ -2340,7 +2326,8 @@ pfUI:RegisterModule("gui", function ()
 
         CreateConfig(U[c], T["Timer"], nil, nil, "header")
         CreateConfig(U[c], T["Show Timer Text"], C.unitframes[c], "cooldown_text", "checkbox")
-        CreateConfig(Reload, T["Show Timer Animation"], C.unitframes[c], "cooldown_anim", "checkbox")
+        CreateConfig(U[c], T["Show Timer Animation"], C.unitframes[c], "cooldown_anim", "checkbox")
+        CreateConfig(U[c], T["Reverse Timer Animation"], C.unitframes[c], "cooldown_reverse", "checkbox")
 
         CreateConfig(U[c], T["Buffs"], nil, nil, "header")
         CreateConfig(U[c], T["Buff Position"], C.unitframes[c], "buffs", "dropdown", pfUI.gui.dropdowns.uf_buff_position)
@@ -2427,6 +2414,21 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(nil, T["Always Show Equipment Slot Flyouts"], C.character.inventory, "equipflyout", "checkbox")
     end)
 
+    CreateGUIEntry(T["Character"], T["Equipment Manager"], function()
+      CreateConfig(nil, T["Automatic Set Switching"], nil, nil, "header")
+      CreateConfig(U["equipmentmanager"], T["Enable Automatic Set Switching"], C.equipmentmanager, "autoswitch", "checkbox")
+      CreateConfig(U["equipmentmanager"], T["Announce Automatic Set Switches In Chat"], C.equipmentmanager, "announce", "checkbox")
+      CreateConfig(nil, T["Items Not In Any Set"], nil, nil, "header")
+      CreateConfig(U["equipmentmanager"], T["Minimum Item Quality"], C.equipmentmanager, "unusedquality", "dropdown", {
+        "0:" .. ITEM_QUALITY0_DESC,
+        "1:" .. ITEM_QUALITY1_DESC,
+        "2:" .. ITEM_QUALITY2_DESC,
+        "3:" .. ITEM_QUALITY3_DESC,
+        "4:" .. ITEM_QUALITY4_DESC,
+      })
+      CreateConfig(U["equipmentmanager"], T["Include Bank Items"], C.equipmentmanager, "unusedbank", "checkbox")
+    end)
+
     CreateGUIEntry(T["Character"], T["Reputation"], function()
       CreateConfig(nil, T["Show Reputation Remaining"], C.character.reputation, "repRequired", "checkbox")
     end)
@@ -2443,8 +2445,8 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(nil, T["Hide Chat When Bags Are Opened"], C.appearance.bags, "hidechat", "checkbox")
       CreateConfig(nil, T["Bagslots Per Row"], C.appearance.bags, "bagrowlength")
       CreateConfig(nil, T["Bankslots Per Row"], C.appearance.bags, "bankrowlength")
-      CreateConfig(nil, T["Enable Full-Text Search"], C.appearance.bags, "fulltext")
       CreateConfig(nil, T["Item Slot Size"], C.appearance.bags, "icon_size")
+      CreateConfig(Reload, T["Reverse Cooldown Animation"], C.appearance.bags, "cooldown_reverse", "checkbox")
       CreateConfig(nil, T["Auto Sell Grey Items"], C.global, "autosell", "checkbox")
       CreateConfig(nil, T["Auto Repair Items"], C.global, "autorepair", "checkbox")
       CreateConfig(nil, T["Auto Sort When Opening Bags"], C.appearance.bags, "autoSortOnOpen", "checkbox")
@@ -2495,6 +2497,8 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(U["buff"], T["Number Of Debuffs Per Row"], C.buffs, "debuffrowsize")
       CreateConfig(U["buff"], T["Show Duration Inside Buff"], C.buffs, "textinside", "checkbox")
       CreateConfig(U["buff"], T["Buff Font Size"], C.buffs, "fontsize")
+      CreateConfig(U["buff"], T["Show Timer Animation"], C.buffs, "cooldown_anim", "checkbox")
+      CreateConfig(U["buff"], T["Reverse Timer Animation"], C.buffs, "cooldown_reverse", "checkbox")
     end)
 
     CreateGUIEntry(T["Buffs"], T["Totem Icons"], function()
@@ -2502,6 +2506,7 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(U["totems"], T["Icon Size"], C.totems, "iconsize")
       CreateConfig(U["totems"], T["Spacing"], C.totems, "spacing", "dropdown", pfUI.gui.dropdowns.spacing)
       CreateConfig(U["totems"], T["Show Background"], C.totems, "showbg", "checkbox")
+      CreateConfig(U["totems"], T["Reverse Cooldown Animation"], C.totems, "cooldown_reverse", "checkbox")
     end)
 
     CreateGUIEntry(T["Buffs"], T["Player Buff Bar"], function()
@@ -2591,6 +2596,7 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(U["bars"], T["Keybind Text Size"], C.bars, "bind_size")
       CreateConfig(U["bars"], T["Keybind Text Color"], C.bars, "bind_color", "color")
       CreateConfig(nil, T["Cooldown Text Size"], C.bars, "cd_size")
+      CreateConfig(Reload, T["Reverse Cooldown Animation"], C.bars, "cooldown_reverse", "checkbox")
 
       CreateConfig(nil, T["Auto Paging"], nil, nil, "header")
       CreateConfig(U["bars"], T["Switch Pages On Alt Key Press"], C.bars, "pagemasteralt", "checkbox")
@@ -2683,8 +2689,8 @@ pfUI:RegisterModule("gui", function ()
           elseif is_horizontal then
             if uneven ~= "Left" and uneven ~= "Right" then C.bars["bar"..id].uneven = "Left" end
           end
-          if uneven_frame and uneven_frame.input and uneven_frame.input.UpdateMenu then
-            uneven_frame.input:UpdateMenu()
+          if uneven_frame then
+            uneven_frame.input:GenerateMenu()
           end
           if U["bars"] then U["bars"]() end
         end
@@ -2864,6 +2870,8 @@ pfUI:RegisterModule("gui", function ()
     end)
 
     CreateGUIEntry(T["Chat"], nil, function()
+      -- a nop updater skips the reload prompt; the nop settings below
+      -- are read by AddMessage on every chat line
       CreateConfig(nil, T["Enable \"Loot & Spam\" Chat Window"], C.chat.right, "enable", "checkbox")
       CreateConfig(nil, T["Inputbox Width"], C.chat.text, "input_width")
       CreateConfig(nil, T["Inputbox Height"], C.chat.text, "input_height")
@@ -2872,18 +2880,20 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(nil, T["Show Items On Mouseover"], C.chat.text, "mouseover", "checkbox")
       CreateConfig(nil, T["Chat Default Brackets"], C.chat.text, "bracket", nil, nil, nil, nil, "STRING")
       CreateConfig(nil, T["Enable Timestamps"], C.chat.text, "time", "checkbox")
-      CreateConfig(nil, T["Timestamp Format"], C.chat.text, "timeformat", nil, nil, nil, nil, "STRING")
+      CreateConfig(nop, T["Timestamp Format"], C.chat.text, "timeformat", nil, nil, nil, nil, "STRING")
       CreateConfig(nil, T["Timestamp Brackets"], C.chat.text, "timebracket", nil, nil, nil, nil, "STRING")
       CreateConfig(nil, T["Timestamp Color"], C.chat.text, "timecolor", "color")
-      CreateConfig(nil, T["Hide Channel Names"], C.chat.text, "channelnumonly", "checkbox")
+      -- read each time chat copy opens, so no reload
+      CreateConfig(nop, T["Show Timestamps In Chat Copy"], C.chat.text, "copytime", "checkbox")
+      CreateConfig(nop, T["Hide Channel Names"], C.chat.text, "channelnumonly", "checkbox")
       CreateConfig(nil, T["Generate Playerlinks"], C.chat.text, "playerlinks", "checkbox")
-      CreateConfig(nil, T["Enable URL Detection"], C.chat.text, "detecturl", "checkbox")
-      CreateConfig(nil, T["Enable Class Colors"], C.chat.text, "classcolor", "checkbox")
+      CreateConfig(nop, T["Enable URL Detection"], C.chat.text, "detecturl", "checkbox")
+      CreateConfig(nop, T["Enable Class Colors"], C.chat.text, "classcolor", "checkbox")
       local _, playerRace = UnitRace("player")
-      CreateConfig(nil, T["Show Faction Icons"] .. " " .. GetFactionIcon(playerRace), C.chat.text, "factionicons", "checkbox")
-      CreateConfig(nil, T["Show Race Icons"] .. " " .. GetRaceIcon(playerRace, UnitSex("player")), C.chat.text, "raceicons", "checkbox")
-      CreateConfig(nil, T["Enable Player Levels"], C.chat.text, "playerlevel", "checkbox")
-      CreateConfig(nil, T["Colorize Unknown Classes"], C.chat.text, "tintunknown", "checkbox")
+      CreateConfig(nop, T["Show Faction Icons"] .. " " .. GetFactionIcon(playerRace), C.chat.text, "factionicons", "checkbox")
+      CreateConfig(nop, T["Show Race Icons"] .. " " .. GetRaceIcon(playerRace, UnitSex("player")), C.chat.text, "raceicons", "checkbox")
+      CreateConfig(nop, T["Enable Player Levels"], C.chat.text, "playerlevel", "checkbox")
+      CreateConfig(nop, T["Colorize Unknown Classes"], C.chat.text, "tintunknown", "checkbox")
       CreateConfig(nil, T["Unknown Class Color"], C.chat.text, "unknowncolor", "color")
       CreateConfig(nil, T["Left Chat Width"], C.chat.left, "width")
       CreateConfig(nil, T["Left Chat Height"], C.chat.left, "height")
@@ -2903,7 +2913,7 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(nil, T["Maximum Number Of Chat Lines"], C.chat.global, "maxlines")
       CreateConfig(nil, T["Enable Chat Fade"], C.chat.global, "fadeout", "checkbox")
       CreateConfig(nil, T["Seconds Before Chat Fade"], C.chat.global, "fadetime")
-      CreateConfig(nil, T["Mousewheel Scroll Speed"], C.chat.global, "scrollspeed")
+      CreateConfig(nop, T["Mousewheel Scroll Speed"], C.chat.global, "scrollspeed")
       CreateConfig(nil, T["Enable Chat Bubbles"], "CVAR", "chatBubbles", "checkbox")
       CreateConfig(nil, T["Enable Party Chat Bubbles"], "CVAR", "chatBubblesParty", "checkbox")
       CreateConfig(nil, T["Enable Chat Bubble Borders"], C.chat.bubbles, "borders", "checkbox")
@@ -2959,7 +2969,8 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(U["nameplates"], T["Show Debuff Stacks"], C.nameplates.debuffs, "showstacks", "checkbox")
       CreateConfig(U["nameplates"], T["Enable Debuff Timers"], C.nameplates, "debufftimers", "checkbox")
       CreateConfig(U["nameplates"], T["Show Timer Text"], C.nameplates, "debufftext", "checkbox")
-      CreateConfig(Reload, T["Show Timer Animation"], C.nameplates, "debuffanim", "checkbox")
+      CreateConfig(U["nameplates"], T["Show Timer Animation"], C.nameplates, "debuffanim", "checkbox")
+      CreateConfig(U["nameplates"], T["Reverse Timer Animation"], C.nameplates, "debreverse", "checkbox")
 
       CreateConfig(U["nameplates"], T["Filter Mode"], C.nameplates.debuffs, "filter", "dropdown", pfUI.gui.dropdowns.buffbarfilter)
       CreateConfig(U["nameplates"], T["Blacklist"], C.nameplates.debuffs, "blacklist", "list")

@@ -52,9 +52,11 @@ pfUI.env = {}
 -- the flag; one that lacks it should drop the flag and get the safe fallback.
 pfUI.handlesHookScript = true
 
-pfUI.events = Mixin({}, CallbackRegistryMixin)
+-- pfUI's own EventRegistry: carries pfUI's custom events ("bag:closed",
+-- "config:changed", ...) and game events alike. Register game events with
+-- RegisterFrameEventAndCallback instead of creating a frame per listener.
+pfUI.events = CreateFromMixins(EventRegistry)
 pfUI.events:OnLoad()
-pfUI.events:SetUndefinedEventsAllowed(true)
 
 -- check if macro addons are loaded (disables macrotweak/macroscan)
 function pfUI:MacroAddonsLoaded()
@@ -495,21 +497,6 @@ function pfUI.SetupCVars()
     COMBAT_TEXT_SHOW_HONOR_GAINED = "1"
   end
   UIParentLoadAddOn("Blizzard_CombatText")
-end
-
-do -- RunMacroText
-  local obj = setmetatable({ ["GetText"] = function(self) return self.text end }, {
-    __index = function(tab,key)
-      local value = function() return end
-      rawset(tab,key,value)
-      return value
-    end
-  })
-
-  function RunMacroText(text)
-    obj.text = text
-    ChatEdit_ParseText(obj, 1)
-  end
 end
 
 _G.PLAYER_BUFF_START_ID = -1

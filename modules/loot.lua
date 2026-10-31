@@ -31,8 +31,9 @@ pfUI:RegisterModule("loot", function ()
   pfUI.loot.randoms = {}
   pfUI.loot.rollers = {}
   pfUI.loot.rollers_sorted = {}
-  pfUI.loot.info = {}
-  local info = pfUI.loot.info
+
+  -- the master loot menu while it is shown
+  local masterLootMenu, OpenMasterLootMenu, RefreshMasterLootMenu
 
   function pfUI.loot.RaidRoll(candidates)
     if type(candidates) ~= "table" then return end
@@ -48,7 +49,7 @@ pfUI:RegisterModule("loot", function ()
             names = (k==1) and (i..":"..pfUI.loot.index_to_name[candidates[i]]) or (names..", "..i..":"..pfUI.loot.index_to_name[candidates[i]])
             -- fit the maximum names in a single 255 char message (15)
             if i == to or k == 15 then
-              QueueFunction(SendChatMessageWide,names)
+              SendChatMessageWide(names)
               names = ""
             end
             k = k<15 and k+1 or 1
@@ -57,10 +58,11 @@ pfUI:RegisterModule("loot", function ()
       end
       pfUI.loot:RegisterEvent("CHAT_MSG_SYSTEM")
       pfUI.loot.randomRolling = true
-      QueueFunction(RandomRoll,"1",tostring(to))
+      RandomRoll("1",tostring(to))
     end
   end
 
+  -- the roll actions keep the menu open, so it can show the rolls coming in
   function pfUI.loot.RequestRolls()
     local slot = pfUI.loot.selectedSlot or 0
     local rollers = wipe(pfUI.loot.rollers)
@@ -68,58 +70,16 @@ pfUI:RegisterModule("loot", function ()
     SendChatMessageWide(T["Roll for"].. " " .. GetLootSlotLink(slot))
     pfUI.loot:RegisterEvent("CHAT_MSG_SYSTEM")
     pfUI.loot.monitorRolling = true
-    UIDropDownMenu_Refresh(GroupLootDropDown)
-  end
-
-  function pfUI.loot:BuildSpecialRecipientsMenu(level)
-    local slot = pfUI.loot.selectedSlot or 0
-    if level == 1 then
-      if pfUI.loot.my_index or pfUI.loot.disenchanter_index or pfUI.loot.banker_index then
-        info = wipe(info)
-        info.text = T["Special Recipient"]
-        info.textR, info.textG, info.textB = NORMAL_FONT_COLOR:GetRGB()
-        info.textHeight = 12
-        info.hasArrow = 1
-        info.notCheckable = 1
-        info.value = "PFRECIPIENTS"
-        info.func = nil
-        UIDropDownMenu_AddButton(info)
-      end
-    elseif level == 2 then
-      if UIDROPDOWNMENU_MENU_VALUE == "PFRECIPIENTS" then
-        if (pfUI.loot.my_index) then
-          info = wipe(info)
-          info.text = T["Self"]
-          info.textHeight = 12
-          info.value = pfUI.loot.my_index
-          info.func = GroupLootDropDown_GiveLoot
-          UIDropDownMenu_AddButton(info,UIDROPDOWNMENU_MENU_LEVEL)
-        end
-        if (pfUI.loot.disenchanter_index) then
-          info = wipe(info)
-          info.text = T["Disenchanter"]
-          info.textHeight = 12
-          info.value = pfUI.loot.disenchanter_index
-          info.func = GroupLootDropDown_GiveLoot
-          UIDropDownMenu_AddButton(info,UIDROPDOWNMENU_MENU_LEVEL)
-        end
-        if (pfUI.loot.banker_index) then
-          info = wipe(info)
-          info.text = T["Banker"]
-          info.textHeight = 12
-          info.value = pfUI.loot.banker_index
-          info.func = GroupLootDropDown_GiveLoot
-          UIDropDownMenu_AddButton(info,UIDROPDOWNMENU_MENU_LEVEL)
-        end
-      end
-    end
+    RefreshMasterLootMenu()
+    return MenuResponse.Open
   end
 
   function pfUI.loot.ClearRolls()
     wipe(pfUI.loot.rollers)
     wipe(pfUI.loot.rollers_sorted)
     pfUI.loot.monitorRolling = nil
-    UIDropDownMenu_Refresh(GroupLootDropDown)
+    RefreshMasterLootMenu()
+    return MenuResponse.Open
   end
 
   function pfUI.loot.CallTieRoll(rollers)
@@ -148,69 +108,12 @@ pfUI:RegisterModule("loot", function ()
       pfUI.loot:RegisterEvent("CHAT_MSG_SYSTEM")
       pfUI.loot.monitorRolling = true
     end
-    UIDropDownMenu_Refresh(GroupLootDropDown)
+    RefreshMasterLootMenu()
+    return MenuResponse.Open
   end
 
-  function pfUI.loot:BuildSpecialRollsMenu(level)
-    local slot = pfUI.loot.selectedSlot or 0
-    if level == 1 then
-      info = wipe(info)
-      info.text = T["Random"]
-      info.textR, info.textG, info.textB = NORMAL_FONT_COLOR:GetRGB()
-      info.value = "PFRANDOM"
-      info.textHeight = 12
-      info.notCheckable = 1
-      info.arg1 = pfUI.loot.randoms
-      info.func = pfUI.loot.RaidRoll
-      UIDropDownMenu_AddButton(info)
-
-      info = wipe(info)
-      info.text = T["Request Rolls"]
-      info.textR, info.textG, info.textB = NORMAL_FONT_COLOR:GetRGB()
-      info.value = "PFROLLS"
-      info.textHeight = 12
-      info.hasArrow = 1
-      info.notCheckable = 1
-      info.func = pfUI.loot.RequestRolls
-      UIDropDownMenu_AddButton(info)
-    elseif level == 2 then
-      if UIDROPDOWNMENU_MENU_VALUE == "PFROLLS" then
-        info = wipe(info)
-        info.text = T["Clear Rolls"]
-        info.textR, info.textG, info.textB = NORMAL_FONT_COLOR:GetRGB()
-        info.value = "PFCLEARROLLS"
-        info.notCheckable = 1
-        info.func = pfUI.loot.ClearRolls
-        UIDropDownMenu_AddButton(info,UIDROPDOWNMENU_MENU_LEVEL)
-
-        info = wipe(info)
-        info.text = T["Reroll Ties"]
-        info.textR, info.textG, info.textB = NORMAL_FONT_COLOR:GetRGB()
-        info.value = "PFTIEROLL"
-        info.notCheckable = 1
-        info.arg1 = pfUI.loot.rollers_sorted
-        info.func = pfUI.loot.CallTieRoll
-        UIDropDownMenu_AddButton(info,UIDROPDOWNMENU_MENU_LEVEL)
-        for _,roller in ipairs(pfUI.loot.rollers_sorted) do
-          info = wipe(info)
-          info.text = string.format("%02d - %s",roller.roll,roller.who)
-          info.textHeight = 12
-          if roller.value == "disabled" then
-            info.disabled = 1
-            info.value = "disabled"
-          else
-            info.value = roller.value
-            info.func = GroupLootDropDown_GiveLoot
-          end
-          info.notCheckable = 1
-          UIDropDownMenu_AddButton(info,UIDROPDOWNMENU_MENU_LEVEL)
-        end
-      end
-    end
-  end
-
-  function pfUI.loot:BuildRaidMenu(level)
-    local slot = pfUI.loot.selectedSlot or 0
+  -- fills the candidate tables from the master loot candidates of the raid
+  local function UpdateRaidCandidates()
     local index_to_name = wipe(pfUI.loot.index_to_name)
     local name_to_index = wipe(pfUI.loot.name_to_index)
     local classes_in_raid = wipe(pfUI.loot.classes_in_raid) -- [global class]=localized class for display
@@ -242,87 +145,95 @@ pfUI:RegisterModule("loot", function ()
         table.insert(players_in_class[unit.class],candidate)
       end
     end
-    if level == 1 then -- classes
-      info = wipe(info)
-      info.text = GIVE_LOOT
-      info.textHeight = 12
-      info.notCheckable = 1
-      info.isTitle = 1
-      UIDropDownMenu_AddButton(info)
-      pfUI.loot:BuildSpecialRollsMenu(UIDROPDOWNMENU_MENU_LEVEL)
-      pfUI.loot:BuildSpecialRecipientsMenu(UIDROPDOWNMENU_MENU_LEVEL)
-      for order, class in ipairs(CLASS_SORT_ORDER) do
-        local lclass = classes_in_raid[class]
-        if (lclass) then
-          info = wipe(info)
-          info.text = lclass
-          info.textR, info.textG, info.textB = .7,.7,.7
-          if class and PFUI_CLASS_COLORS[class] then
-            info.textR, info.textG, info.textB = PFUI_CLASS_COLORS[class]:GetRGB()
-          end
-          info.textHeight = 12
-          info.hasArrow = 1
-          info.notCheckable = 1
-          info.value = class
-          info.func = nil
-          UIDropDownMenu_AddButton(info)
-        end
+  end
+
+  -- gives the selected slot to a candidate, asking first for epic items
+  local function GiveLoot(index)
+    if ( pfUI.loot.selectedQuality >= MASTER_LOOT_THREHOLD ) then
+      local dialog = StaticPopup_Show("CONFIRM_LOOT_DISTRIBUTION", ITEM_QUALITY_COLORS[pfUI.loot.selectedQuality].hex..pfUI.loot.selectedItemName..FONT_COLOR_CODE_CLOSE, GetMasterLootCandidate(index))
+      if ( dialog ) then
+        dialog.data = index
       end
-    elseif level == 2 then -- players
-      pfUI.loot:BuildSpecialRollsMenu(UIDROPDOWNMENU_MENU_LEVEL)
-      pfUI.loot:BuildSpecialRecipientsMenu(UIDROPDOWNMENU_MENU_LEVEL)
-      local players = players_in_class[UIDROPDOWNMENU_MENU_VALUE]
-      if (players) and next(players) then
-        table.sort(players)
-        for _, candidate in ipairs(players) do
-          info = wipe(info)
-          info.text = candidate
-          info.textR, info.textG, info.textB = .7,.7,.7
-          if UIDROPDOWNMENU_MENU_VALUE and PFUI_CLASS_COLORS[UIDROPDOWNMENU_MENU_VALUE] then
-            info.textR, info.textG, info.textB = PFUI_CLASS_COLORS[UIDROPDOWNMENU_MENU_VALUE]:GetRGB()
-          end
-          info.textHeight = 12
-          info.value = name_to_index[candidate]
-          info.func = GroupLootDropDown_GiveLoot
-          UIDropDownMenu_AddButton(info,UIDROPDOWNMENU_MENU_LEVEL)
-        end
-      end
+    else
+      GiveMasterLoot(pfUI.loot.selectedSlot, index)
     end
   end
 
-  function pfUI.loot:BuildPartyMenu(level)
-    local slot = pfUI.loot.selectedSlot or 0
-    if level == 1 then
-      for i=1, MAX_PARTY_MEMBERS+1, 1 do
+  -- A party gets its candidates. A raid gets the advanced loot tools, then
+  -- a submenu of candidates per class.
+  local function GenerateMasterLootMenu(owner, rootDescription)
+    if not IsInRaid() then
+      for i=1, MAX_PARTY_MEMBERS+1 do
         local candidate = GetMasterLootCandidate(i)
         if (candidate) then
-          info = wipe(info)
           local unit = GroupInfoByName(candidate,"party")
-          info.text = candidate
-          info.textR, info.textG, info.textB = .7,.7,.7
-          if unit.class and PFUI_CLASS_COLORS[unit.class] then
-            info.textR, info.textG, info.textB = PFUI_CLASS_COLORS[unit.class]:GetRGB()
-          end
-          info.textHeight = 12
-          info.value = i
-          info.func = GroupLootDropDown_GiveLoot
-          UIDropDownMenu_AddButton(info)
+          rootDescription:CreateButton(PFUI_CLASS_COLORS[unit.class]:WrapTextInColorCode(candidate), GiveLoot, i)
+        end
+      end
+      return
+    end
+
+    UpdateRaidCandidates()
+    rootDescription:CreateTitle(GIVE_LOOT)
+
+    if C.loot.advancedloot == "1" then
+      rootDescription:CreateButton(NORMAL_FONT_COLOR:WrapTextInColorCode(T["Random"]), pfUI.loot.RaidRoll, pfUI.loot.randoms)
+      rootDescription:CreateButton(NORMAL_FONT_COLOR:WrapTextInColorCode(T["Request Rolls"]), pfUI.loot.RequestRolls)
+
+      -- the rolls so far, highest first; a roller who can't get the item is greyed out
+      if pfUI.loot.monitorRolling then
+        rootDescription:CreateButton(NORMAL_FONT_COLOR:WrapTextInColorCode(T["Reroll Ties"]), pfUI.loot.CallTieRoll, pfUI.loot.rollers_sorted)
+        rootDescription:CreateButton(NORMAL_FONT_COLOR:WrapTextInColorCode(T["Clear Rolls"]), pfUI.loot.ClearRolls)
+        for _, roller in ipairs(pfUI.loot.rollers_sorted) do
+          local button = rootDescription:CreateButton(string.format("%02d - %s", roller.roll, roller.who), GiveLoot, roller.value)
+          button:SetEnabled(roller.value ~= "disabled")
+        end
+      end
+
+      if pfUI.loot.my_index or pfUI.loot.disenchanter_index or pfUI.loot.banker_index then
+        local recipients = rootDescription:CreateButton(NORMAL_FONT_COLOR:WrapTextInColorCode(T["Special Recipient"]))
+        if pfUI.loot.my_index then
+          recipients:CreateButton(T["Self"], GiveLoot, pfUI.loot.my_index)
+        end
+        if pfUI.loot.disenchanter_index then
+          recipients:CreateButton(T["Disenchanter"], GiveLoot, pfUI.loot.disenchanter_index)
+        end
+        if pfUI.loot.banker_index then
+          recipients:CreateButton(T["Banker"], GiveLoot, pfUI.loot.banker_index)
+        end
+      end
+    end
+
+    for _, class in ipairs(CLASS_SORT_ORDER) do
+      local players = pfUI.loot.players_in_class[class]
+      if (players) then
+        local color = PFUI_CLASS_COLORS[class]
+        local classButton = rootDescription:CreateButton(color:WrapTextInColorCode(pfUI.loot.classes_in_raid[class]))
+        table.sort(players)
+        for _, candidate in ipairs(players) do
+          classButton:CreateButton(color:WrapTextInColorCode(candidate), GiveLoot, pfUI.loot.name_to_index[candidate])
         end
       end
     end
   end
 
-  function pfUI.loot:InitGroupDropDown()
-    local inRaid = IsInRaid()
-    if UIDROPDOWNMENU_MENU_LEVEL == 1 then
-      if ( inRaid ) then
-        pfUI.loot:BuildRaidMenu(UIDROPDOWNMENU_MENU_LEVEL)
-      else
-        pfUI.loot:BuildPartyMenu(UIDROPDOWNMENU_MENU_LEVEL)
-      end
-    elseif UIDROPDOWNMENU_MENU_LEVEL == 2 and (inRaid) then
-      pfUI.loot:BuildRaidMenu(UIDROPDOWNMENU_MENU_LEVEL)
+  -- Opens the menu under the clicked loot button, which owns it. The slots
+  -- table is by row, not by loot slot, so after a looted item it no longer
+  -- lines up with selectedSlot. Opening it again closes the one shown before.
+  OpenMasterLootMenu = function()
+    local slot = pfUI.loot.selectedLootButton
+    local description = MenuUtil.CreateRootMenuDescription(pfUIMenuStyleMixin)
+    Menu.PopulateDescription(GenerateMasterLootMenu, slot, description)
+
+    masterLootMenu = Menu.GetManager():OpenMenu(slot, description, AnchorUtil.CreateAnchor("TOPLEFT", slot, "BOTTOMLEFT", 0, 0))
+    if masterLootMenu then
+      masterLootMenu:SetClosedCallback(function() masterLootMenu = nil end)
     end
+  end
+
+  -- a change to the candidates or the rolls rebuilds the menu while it is shown
+  RefreshMasterLootMenu = function()
+    if masterLootMenu then OpenMasterLootMenu() end
   end
 
   function pfUI.loot:AddMasterLootMenus()
@@ -376,7 +287,6 @@ pfUI:RegisterModule("loot", function ()
   end
 
   if C.loot.advancedloot == "1" then
-    UIDropDownMenu_Initialize(GroupLootDropDown, pfUI.loot.InitGroupDropDown, "MENU")
     for button, data in pairs(pfUI.loot.unitbuttons) do
       UnitPopupButtons[button] = { text = data[1], dist = 0}
     end
@@ -413,7 +323,6 @@ pfUI:RegisterModule("loot", function ()
     end)
   else
     pfUI.loot:RemoveMasterlootMenus()
-    UIDropDownMenu_Initialize(GroupLootDropDown, GroupLootDropDown_Initialize, "MENU")
   end
 
   pfUI.loot.slots = {}
@@ -506,8 +415,7 @@ pfUI:RegisterModule("loot", function ()
 
   local function CloseOnClick()
     local lootbind = StaticPopup_FindVisible("LOOT_BIND")
-    local masterloot = UIDROPDOWNMENU_INIT_MENU and (UIDROPDOWNMENU_INIT_MENU == "GroupLootDropDown")
-    if lootbind or masterloot then else CloseLoot() end
+    if lootbind or masterLootMenu then else CloseLoot() end
   end
 
   function pfUI.loot:CreateSlot(id)
@@ -531,7 +439,7 @@ pfUI:RegisterModule("loot", function ()
 
       StaticPopup_Hide("CONFIRM_LOOT_DISTRIBUTION")
       local numItems = GetNumLootItems()
-      pfUI.loot.selectedLootButton = this:GetName()
+      pfUI.loot.selectedLootButton = this
       pfUI.loot.selectedSlot = this:GetID()
       pfUI.loot.selectedQuality = this.quality
       pfUI.loot.selectedItemName = this.name:GetText()
@@ -542,7 +450,7 @@ pfUI:RegisterModule("loot", function ()
       LootSlot(this:GetID())
       -- workaround for bugged disenchant / container loot on some servers
       if numItems == 1 then
-        QueueFunction(CloseOnClick)
+        RunNextFrame(CloseOnClick)
       end
     end)
 
@@ -622,11 +530,11 @@ pfUI:RegisterModule("loot", function ()
 
   pfUI.loot:SetScript("OnEvent", function()
     if event == "OPEN_MASTER_LOOT_LIST" then
-      ToggleDropDownMenu(1, nil, GroupLootDropDown, pfUI.loot.slots[pfUI.loot.selectedSlot], 0, 0)
+      OpenMasterLootMenu()
     end
 
     if event == "UPDATE_MASTER_LOOT_LIST" then
-      UIDropDownMenu_Refresh(GroupLootDropDown)
+      RefreshMasterLootMenu()
     end
 
     if event == "LOOT_OPENED" then
@@ -657,7 +565,6 @@ pfUI:RegisterModule("loot", function ()
     if event == "LOOT_CLOSED" then
       StaticPopup_Hide("LOOT_BIND")
       HideUIPanel(this)
-      if DropDownList1:IsShown() then CloseDropDownMenus() end
       for _, v in pairs(this.slots) do
         v:Hide()
       end
@@ -689,7 +596,7 @@ pfUI:RegisterModule("loot", function ()
         table.sort(pfUI.loot.rollers_sorted,function(a,b)
           return a.roll > b.roll
         end)
-        QueueFunction(UIDropDownMenu_Refresh,GroupLootDropDown)
+        RefreshMasterLootMenu()
       end
     end
 
@@ -697,7 +604,7 @@ pfUI:RegisterModule("loot", function ()
     if C.loot.autopickup == "1" and GetNumPartyMembers() == 0 and GetNumRaidMembers() == 0 then
       if event == "LOOT_BIND_CONFIRM" then
         local slot = arg1
-        QueueFunction(function()
+        RunNextFrame(function()
           LootSlot(slot)
           StaticPopup_Hide("LOOT_BIND")
         end)
@@ -711,18 +618,6 @@ pfUI:RegisterModule("loot", function ()
 
   LootFrame:UnregisterAllEvents()
   table.insert(UISpecialFrames, "pfLootFrame")
-
-  function _G.GroupLootDropDown_GiveLoot()
-    if ( pfUI.loot.selectedQuality >= MASTER_LOOT_THREHOLD ) then
-      local dialog = StaticPopup_Show("CONFIRM_LOOT_DISTRIBUTION", ITEM_QUALITY_COLORS[pfUI.loot.selectedQuality].hex..pfUI.loot.selectedItemName..FONT_COLOR_CODE_CLOSE, this:GetText())
-      if ( dialog ) then
-        dialog.data = this.value
-      end
-    else
-      GiveMasterLoot(pfUI.loot.selectedSlot, this.value)
-    end
-    CloseDropDownMenus()
-  end
 
   StaticPopupDialogs["CONFIRM_LOOT_DISTRIBUTION"].OnAccept = function(data)
     GiveMasterLoot(pfUI.loot.selectedSlot, data)

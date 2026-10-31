@@ -205,36 +205,23 @@ pfUI:RegisterModule("share", function ()
     table.insert(UISpecialFrames, "pfShare")
 
     do -- Edit Box
-      f.scroll = pfUI.api.CreateScrollFrame("pfShareScroll", f)
+      f.scroll = CreateFrame("Frame", "pfShareScroll", f, "pfUIScrollingEditBoxTemplate")
       f.scroll:SetPoint("TOPLEFT", f, "TOPLEFT", 10, -30)
       f.scroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -10, 50)
-      f.scroll:SetWidth(560)
-      f.scroll:SetHeight(400)
+      f.scroll:SetFont(pfUI.media["font:RobotoMono.ttf"], 9)
+      f.scroll:SetTextInsets(15,15,15,15)
 
-      f.scroll.backdrop = CreateFrame("Frame", "pfShareScrollBackdrop", f.scroll)
-      f.scroll.backdrop:SetFrameLevel(1)
+      -- the ScrollBox clips its children, so the backdrop is a sibling
+      f.scroll.backdrop = CreateFrame("Frame", "pfShareScrollBackdrop", f)
       f.scroll.backdrop:SetPoint("TOPLEFT", f.scroll, "TOPLEFT", -5, 5)
       f.scroll.backdrop:SetPoint("BOTTOMRIGHT", f.scroll, "BOTTOMRIGHT", 5, -5)
       pfUI.api.CreateBackdrop(f.scroll.backdrop, nil, true)
+      f.scroll.backdrop.tint = f.scroll.backdrop:CreateTexture(nil, "ARTWORK")
+      f.scroll.backdrop.tint:SetAllPoints(f.scroll)
+      f.scroll.backdrop.tint:SetColorTexture(1,1,1,.05)
 
-      f.scroll.text = CreateFrame("EditBox", "pfShareEditBox", f.scroll)
-      f.scroll.text.bg = f.scroll.text:CreateTexture(nil, "OVERLAY")
-      f.scroll.text.bg:SetAllPoints(f.scroll.text)
-      f.scroll.text.bg:SetTexture(1,1,1,.05)
-      f.scroll.text:SetMultiLine(true)
-      f.scroll.text:SetWidth(560)
-      f.scroll.text:SetHeight(400)
-      f.scroll.text:SetAllPoints(f.scroll)
-      f.scroll.text:SetTextInsets(15,15,15,15)
-      f.scroll.text:SetFont(pfUI.media["font:RobotoMono.ttf"], 9)
-      f.scroll.text:SetAutoFocus(false)
-      f.scroll.text:SetJustifyH("LEFT")
-      f.scroll.text:SetScript("OnEscapePressed", function() this:ClearFocus() end)
-      f.scroll.text:SetScript("OnTextChanged", function()
-        this:GetParent():UpdateScrollChildRect()
-        this:GetParent():UpdateScrollState()
-
-        local text = this:GetText()
+      f.scroll:RegisterCallback("OnTextChanged", function()
+        local text = f.scroll:GetText()
         local blob = Decode(text)
         local json = not blob and DecodeJSON(text) or nil
         local legacy = not blob and not json and DecodeLegacy(text) or nil
@@ -253,27 +240,26 @@ pfUI:RegisterModule("share", function ()
           f.readButton:Enable()
           f.readButton.text:SetText(T["Decode"])
           f.readButton.func = function()
-            local current = f.scroll.text:GetText()
+            local current = f.scroll:GetText()
             local config = Decode(current) or DecodeLegacy(current)
             if config then
-              f.scroll.text:SetText(C_EncodingUtil.SerializeJSON(config))
+              f.scroll:SetText(C_EncodingUtil.SerializeJSON(config))
             end
           end
         elseif json then
           f.readButton:Enable()
           f.readButton.text:SetText(T["Encode"])
           f.readButton.func = function()
-            local config = DecodeJSON(f.scroll.text:GetText())
+            local config = DecodeJSON(f.scroll:GetText())
             if config then
-              f.scroll.text:SetText(Encode(config))
+              f.scroll:SetText(Encode(config))
             end
           end
         else
           f.readButton:Disable()
           f.readButton.text:SetText(T["N/A"])
         end
-      end)
-      f.scroll:SetScrollChild(f.scroll.text)
+      end, f)
     end
 
     do -- button: close
@@ -322,7 +308,7 @@ pfUI:RegisterModule("share", function ()
       f.loadButton.text:SetFont(pfUI.font_default, pfUI_config.global.font_size, "OUTLINE")
       f.loadButton.text:SetText(T["Import"])
       f.loadButton:SetScript("OnClick", function()
-        local text = f.scroll.text:GetText()
+        local text = f.scroll:GetText()
         local config = Decode(text) or DecodeJSON(text) or DecodeLegacy(text)
         if not config then return end
 
@@ -383,9 +369,8 @@ pfUI:RegisterModule("share", function ()
         ignored["disabled"] = f.ignorePosition:GetChecked()
 
         local encoded = Encode(DiffConfig(myconfig, defconfig, ignored) or {})
-        f.scroll.text:SetText(encoded)
-        f.scroll.text.value = encoded
-        f.scroll:SetVerticalScroll(0)
+        f.scroll:SetText(encoded)
+        CopyText(encoded)
       end)
     end
 

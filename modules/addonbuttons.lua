@@ -402,11 +402,7 @@ pfUI:RegisterModule("addonbuttons", function ()
     -- rescan before deciding whether the panel should be shown by default
     pfUI.addonbuttons:ProcessButtons()
 
-    if C.abuttons.showdefault == "1" and GetNumButtons() > 0 then
-      pfUI.addonbuttons:Show()
-    else
-      pfUI.addonbuttons:Hide()
-    end
+    pfUI.addonbuttons:SetShown(C.abuttons.showdefault == "1" and GetNumButtons() > 0)
 
     -- apply workarounds
     for k, v in pairs(pfUI.addonbuttons.overrides) do

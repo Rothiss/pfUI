@@ -24,7 +24,7 @@ pfUI:RegisterSkin("Inspect", function ()
   local rawborder, border = GetBorderSize()
   local bpad = rawborder > 1 and border - GetPerfectPixel() or GetPerfectPixel()
 
-  HookAddonOrVariable("Blizzard_InspectUI", function()
+  HookAddon("Blizzard_InspectUI", function()
     local cache = {}
 
     CreateBackdrop(InspectFrame, nil, nil, .75)

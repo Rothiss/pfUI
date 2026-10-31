@@ -1,5 +1,5 @@
 pfUI:RegisterSkin("Readycheck", function ()
-  HookAddonOrVariable("Blizzard_RaidUI", function()
+  HookAddon("Blizzard_RaidUI", function()
     StripTextures(ReadyCheckFrame, true)
     CreateBackdrop(ReadyCheckFrame, nil, nil, .75)
     CreateBackdropShadow(ReadyCheckFrame)

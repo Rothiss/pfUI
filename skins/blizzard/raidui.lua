@@ -1,5 +1,5 @@
 pfUI:RegisterSkin("RaidUI", function ()
-  HookAddonOrVariable("Blizzard_RaidUI", function()
+  HookAddon("Blizzard_RaidUI", function()
 
     for i = 1, (NUM_RAID_GROUPS or 8) do
       local group = _G["RaidGroup"..i]

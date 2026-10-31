@@ -651,45 +651,21 @@ function hooksecurefunc(tbl, name, func)
   return _G.hooksecurefunc(tbl, name, func)
 end
 
--- [ HookAddonOrVariable ]
--- Sets a function to be called automatically once an addon gets loaded
--- 'addon'      [string]            addon or variable name
+-- [ HookAddon ]
+-- Runs a function once an addon has loaded, but never before PLAYER_LOGIN.
+-- Module and skin bodies run inside pfUI's own ADDON_LOADED, so an addon that
+-- is already loaded there would otherwise run its hook before later pfUI
+-- modules exist and before the addon's own VARIABLES_LOADED setup. A
+-- load-on-demand addon runs its hook on its ADDON_LOADED. Hooks for addons
+-- that are not installed are dropped. Hooks on the same addon run in no
+-- particular order.
+-- 'addon'      [string]            addon name
 -- 'func'       [function]          function that should run
-do
-  local lurker
-  local pending = {}
-
-  local function ProcessPending()
-    if not lurker.foundConfig then return end
-    for i = table.getn(pending), 1, -1 do
-      local hook = pending[i]
-      if IsAddOnLoaded(hook.addon) or _G[hook.addon] then
-        hook.func()
-        table.remove(pending, i)
-      end
-    end
-    if table.getn(pending) == 0 then
-      lurker:UnregisterAllEvents()
-    end
-  end
-
-  function pfUI.api.HookAddonOrVariable(addon, func)
-    if not lurker then
-      lurker = CreateFrame("Frame", nil)
-      lurker:SetScript("OnEvent", function()
-        if event == "VARIABLES_LOADED" or event == "PLAYER_ENTERING_WORLD" then
-          this.foundConfig = true
-        end
-        ProcessPending()
-      end)
-    end
-
-    table.insert(pending, { addon = addon, func = func })
-    lurker:RegisterEvent("ADDON_LOADED")
-    lurker:RegisterEvent("VARIABLES_LOADED")
-    lurker:RegisterEvent("PLAYER_ENTERING_WORLD")
-    ProcessPending()
-  end
+function pfUI.api.HookAddon(addon, func)
+  if not C_AddOns.DoesAddOnExist(addon) then return end
+  EventUtil.ContinueOnPlayerLogin(function()
+    EventUtil.ContinueOnAddOnLoaded(addon, func)
+  end)
 end
 
 -- [ QueueFunction ]

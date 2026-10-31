@@ -139,7 +139,7 @@ pfUI:RegisterModule("thirdparty", function()
   -- MrPlow Bag Sorting Addon.
   -- Vanilla: https://www.wowace.com/projects/mr-plow/files/288059
   -- TBC: https://www.wowace.com/projects/mr-plow/files/136162
-  HookAddonOrVariable("MrPlow", function()
+  HookAddon("MrPlow", function()
     if C.thirdparty.mrplow.enable == "0" then return end
 
     local sort = CreateFrame("Frame", nil)
@@ -175,7 +175,7 @@ pfUI:RegisterModule("thirdparty", function()
   -- ShaguDPS Damage Meter
   -- Vanilla: https://github.com/shagu/ShaguDPS
   -- TBC: https://github.com/shagu/ShaguDPS
-  HookAddonOrVariable("ShaguDPS", function()
+  HookAddon("ShaguDPS", function()
     local docktable = { "shagudps", "ShaguDPS", "ShaguDPSWindow",
       function() -- single
         ShaguDPSWindow:ClearAllPoints()
@@ -280,7 +280,7 @@ pfUI:RegisterModule("thirdparty", function()
   -- dock slot; a second window (GreedMeter.UI.frames[2]) takes the "threat"
   -- slot so the two tile the panel side-by-side. Docking triggers a
   -- LayoutBars/RefreshFrame so the bars refit the new width.
-  HookAddonOrVariable("GreedMeter", function()
+  HookAddon("GreedMeter", function()
     local UI = GreedMeter.UI
 
     local function frameAt(i)
@@ -373,7 +373,12 @@ pfUI:RegisterModule("thirdparty", function()
   -- DPSMate Damage Meter
   -- Vanilla: https://github.com/Geigerkind/DPSMate
   -- TBC: https://github.com/Geigerkind/DPSMateTBC
-  HookAddonOrVariable("DPSMate_DPSMate", function()
+  HookAddon("DPSMate", function()
+    -- DPSMate builds its windows on VARIABLES_LOADED, each named after its
+    -- settings entry, so DPSMate_DPSMate exists only while the first window
+    -- keeps the default name "DPSMate"
+    if not DPSMate_DPSMate then return end
+
     local docktable = { "dpsmate", "DPSMate", "DPSMate_DPSMate",
       function() -- single
         DPSMate_DPSMate:ClearAllPoints()

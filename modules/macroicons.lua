@@ -8,7 +8,7 @@
 -- on both the modern (Turtle/Octo) and stock-vanilla macro UIs. The surrounding
 -- MacroFrame (list + body editor) is Blizzard's, already skinned elsewhere.
 pfUI:RegisterModule("macroicons", function ()
-  HookAddonOrVariable("Blizzard_MacroUI", function()
+  HookAddon("Blizzard_MacroUI", function()
     -- ============================================================
     -- Popup frame
     -- ============================================================

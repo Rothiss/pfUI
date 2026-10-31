@@ -28,7 +28,7 @@ pfUI:RegisterSkin("Mailbox", function ()
       end)
       skin:RegisterEvent("MAIL_SHOW")
 
-      HookAddonOrVariable("Mail", function()
+      HookAddon("Mail", function()
         skin._Mail = true
         for i = 1, 21 do
           local button = _G["MailAttachment"..i]

@@ -135,11 +135,9 @@ pfUI:RegisterModule("eqcompare", function ()
   -- spot. Reading the rect inside the Set* call picks the side against the
   -- position the tooltip is about to leave, so place the compare a frame later.
   local deferred
-  if C_AddOns.DoesAddOnExist("Guda") then
-    EventUtil.ContinueOnAddOnLoaded("Guda", function()
-      deferred = true
-    end)
-  end
+  HookAddon("Guda", function()
+    deferred = true
+  end)
 
   local function makeHook(getter)
     return function(tooltip, arg1, arg2, arg3)

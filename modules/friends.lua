@@ -456,7 +456,7 @@ pfUI:RegisterSkin("Friends", function ()
     end
 
     -- all RaidFrame buttons are in Blizzard_RaidUI in Turtle WoW
-    HookAddonOrVariable("Blizzard_RaidUI", function()
+    HookAddon("Blizzard_RaidUI", function()
       if RaidFrameRaidInfoButton      then SkinButton(RaidFrameRaidInfoButton)      end
       if RaidFrameConvertToRaidButton then SkinButton(RaidFrameConvertToRaidButton) end
       if RaidFrameReadyCheckButton    then SkinButton(RaidFrameReadyCheckButton)    end

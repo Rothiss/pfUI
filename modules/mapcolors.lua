@@ -138,7 +138,7 @@ pfUI:RegisterModule("mapcolors", function ()
   end
 
   -- BattlefieldMinimap
-  HookAddonOrVariable("Blizzard_BattlefieldMinimap", function()
+  HookAddon("Blizzard_BattlefieldMinimap", function()
     Initialize('BattlefieldMinimap')
 
     hooksecurefunc('BattlefieldMinimap_OnUpdate', function()

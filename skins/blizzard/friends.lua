@@ -458,7 +458,7 @@ pfUI:RegisterSkin("Friends", function ()
     SkinButton(RaidFrameRaidInfoButton)
     SkinButton(RaidFrameConvertToRaidButton)
 
-    HookAddonOrVariable("Blizzard_RaidUI", function()
+    HookAddon("Blizzard_RaidUI", function()
       for i = 1, MAX_RAID_MEMBERS do
         StripTextures(_G["RaidGroupButton"..i])
         CreateBackdrop(_G["RaidGroupButton"..i], nil, true)

@@ -2,7 +2,7 @@ pfUI:RegisterSkin("KeyBindings", function ()
   local rawborder, border = GetBorderSize()
   local bpad = rawborder > 1 and border - GetPerfectPixel() or GetPerfectPixel()
 
-  HookAddonOrVariable("Blizzard_BindingUI", function()
+  HookAddon("Blizzard_BindingUI", function()
     StripTextures(KeyBindingFrame)
     CreateBackdrop(KeyBindingFrame, nil, nil, .75)
     CreateBackdropShadow(KeyBindingFrame)

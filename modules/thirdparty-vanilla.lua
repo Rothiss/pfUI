@@ -3,7 +3,7 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
   if not pfUI.thirdparty then return end
   local rawborder, default_border = GetBorderSize()
 
-  HookAddonOrVariable("KLHThreatMeter", function()
+  HookAddon("KLHThreatMeter", function()
     local ktm_scale = 1
     local function GetKtmWidthDiff(view, match_size)
       local default_width = 0
@@ -159,7 +159,7 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
     end
   end)
 
-  HookAddonOrVariable("TWThreat", function()
+  HookAddon("TWThreat", function()
     local docktable = { "twt", "TODO", "TWTMain",
       function() -- single
         TWTMain:ClearAllPoints()
@@ -232,7 +232,7 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
     end
   end)
 
-  HookAddonOrVariable("SW_Stats", function()
+  HookAddon("SW_Stats", function()
     local docktable = { "swstats", "TODO", "SW_BarFrame1",
       function() -- single
         SW_BarFrame1:SetWidth(pfUI.chat.right:GetWidth())
@@ -518,7 +518,7 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
     end
   end)
 
-  HookAddonOrVariable("WIM", function()
+  HookAddon("WIM", function()
     if C.thirdparty.wim.enable == "0" then return end
 
     -- use pfUI link handler if available
@@ -798,7 +798,7 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
 
   -- SortBags
   -- Vanilla: https://github.com/shirsig/SortBags-vanilla
-  HookAddonOrVariable("SortBags", function()
+  HookAddon("SortBags", function()
     if C.thirdparty.sortbags.enable == "0" then return end
 
     local sort = CreateFrame("Frame", nil)
@@ -828,7 +828,7 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
     end)
   end)
 
-  HookAddonOrVariable("FlightMap", function()
+  HookAddon("FlightMap", function()
     if C.thirdparty.flightmap.enable == "0" then return end
 
     FlightMapTimesBorder:Hide()
@@ -844,7 +844,7 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
     FlightMapTimesText:SetFont(pfUI.font_default, 12, "OUTLINE")
   end)
 
-  HookAddonOrVariable("TheoryCraft_SetUpButton", function()
+  HookAddon("TheoryCraft", function()
     if C.thirdparty.theorycraft.enable == "0" then return end
 
     -- set pfUI bar font
@@ -862,7 +862,7 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
     end
   end)
 
-  HookAddonOrVariable("SM_GetActionSpell", function()
+  HookAddon("SuperMacro", function()
     if C.thirdparty.supermacro.enable == "0" then return end
     if not pfUI.bars then return end
 
@@ -908,7 +908,7 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
 
   -- CleverMacro
   -- https://github.com/DanielAdolfsson/CleverMacro
-  HookAddonOrVariable("CleverMacro", function()
+  HookAddon("CleverMacro", function()
     if C.thirdparty.clevermacro.enable == "0" then return end
 
     -- get pfUI actionbar event handler
@@ -925,7 +925,7 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
   end)
 
   -- SuperCleveRoidMacros
-  HookAddonOrVariable("SuperCleveRoidMacros", function()
+  HookAddon("SuperCleveRoidMacros", function()
     if C.thirdparty.supercleveroidmacros.enable == "0" then return end
     if not pfUI.bars then return end
 
@@ -933,7 +933,7 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
     pfUI.bars.skip_macro = true
   end)
 
-  HookAddonOrVariable("AtlasLoot", function()
+  HookAddon("AtlasLoot", function()
     if C.thirdparty.atlasloot.enable == "0" then return end
 
     CreateBackdrop(AtlasLootTooltip)
@@ -948,7 +948,7 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
     end
   end)
 
-  HookAddonOrVariable("crafty", function()
+  HookAddon("crafty", function()
     if C.thirdparty.crafty.enable == "0" then return end
 
     local craftyskin = CreateFrame("Frame", nil, UIParent)
@@ -1011,7 +1011,7 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
     end)
   end)
 
-  HookAddonOrVariable("BetterCharacterStats", function()
+  HookAddon("BetterCharacterStats", function()
     if C.thirdparty.bcs.enable == "0" then return end
     StripTextures(BetterCharacterAttributesFrame)
 
@@ -1028,7 +1028,7 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
     end
   end)
 
-  HookAddonOrVariable("MyRolePlay", function()
+  HookAddon("MyRolePlay", function()
     if C.thirdparty.myroleplay.enable == "0" then return end
 
     if pfUI.uf.target then
@@ -1053,7 +1053,7 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
     end
   end)
 
-  HookAddonOrVariable("DruidManaBarBackground", function()
+  HookAddon("DruidManaBarBackground", function()
     if C.thirdparty.druidmana.enable == "0" then return end
     DruidManaBar:SetParent(UIParent)
     DruidManaBar.bd:Hide()
@@ -1082,7 +1082,7 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
     UpdateMovable(DruidManaBar)
   end)
 
-  HookAddonOrVariable("NoteIt", function()
+  HookAddon("NoteIt", function()
     if C.thirdparty.noteit.enable == "0" then return end
 
     -- Main window
@@ -1178,15 +1178,15 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
       pfUI.api.libpredict.sender.enabled = nil
     end
   end
-  HookAddonOrVariable("HealComm", EnableHealComm)
-  HookAddonOrVariable("LunaUnitFrames", EnableHealComm)
-  HookAddonOrVariable("NotGrid", EnableHealComm)
+  HookAddon("HealComm", EnableHealComm)
+  HookAddon("LunaUnitFrames", EnableHealComm)
+  HookAddon("NotGrid", EnableHealComm)
 
-  HookAddonOrVariable("HardcoreDeath", function()
+  HookAddon("HardcoreDeath", function()
     GameMenuFrame:SetHeight(GameMenuFrame:GetHeight() + 20)
   end)
 
-  HookAddonOrVariable("MacroExtender", function()
+  HookAddon("MacroExtender", function()
     -- Macro Extender moves the character dialog from frame-stata "dialog"
     -- to "low" and by that moves the frame below backgrounds, quest-trackers,
     -- and what not... it does this because the buttons it attempts to add, are
@@ -1208,7 +1208,7 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
 
   -- UnitXP SP3 compatibility
   -- https://github.com/allfoxwy/UnitXP_SP3
-  HookAddonOrVariable("UnitXP_SP3_Addon", function()
+  HookAddon("UnitXP_SP3_Addon", function()
     -- skin UnitXP SP3 window and elements
     StripTextures(xpsp3Frame)
     CreateBackdrop(xpsp3Frame)

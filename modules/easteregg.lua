@@ -58,6 +58,99 @@ pfUI:RegisterModule("easteregg", function ()
     return scene
   end
 
+  -- happy valentine's day
+  if today == "0214" then
+    local valentine = CreateScene("pfValentine", "happy valentine's day!")
+    valentine.text:SetTextColor(1, .4, .6)
+
+    -- a rosy glow around the screen edges
+    local glow = CreateFrame("Frame", nil, valentine)
+    glow:SetAllPoints()
+    glow:SetBackdrop({ edgeFile = pfUI.media["img:glow"], edgeSize = 32 })
+    glow:SetBackdropBorderColor(1, .3, .5, 1)
+
+    -- A heart is a square turned onto its corner with a round lobe on each
+    -- upper edge. The client's minimap mask is a plain white disc, so it
+    -- tints into a lobe without a texture of our own. Smaller hearts are
+    -- farther away, so they are darker and rise slower.
+    local hearts = {}
+    for i = 1, 40 do
+      local width = math.random(10, 28)
+      local side = width / 1.7
+      local shade = .4 + width / 28 * .6
+      local r, g, b = shade, shade * math.random() * .4, shade * (.2 + math.random() * .3)
+
+      local heart = CreateFrame("Frame", nil, valentine)
+      heart:SetSize(width, width)
+      heart.width = width
+
+      local tip = heart:CreateTexture(nil, "ARTWORK")
+      tip:SetColorTexture(1, 1, 1)
+      tip:SetVertexColor(r, g, b)
+      tip:SetSize(side, side)
+      tip:SetPoint("CENTER", 0, -side * .07)
+      tip:SetRotation(math.pi / 4)
+
+      for _, x in ipairs({ -1, 1 }) do
+        local lobe = heart:CreateTexture(nil, "ARTWORK")
+        lobe:SetTexture("Textures\\MinimapMask")
+        lobe:SetVertexColor(r, g, b)
+        lobe:SetSize(side, side)
+        lobe:SetPoint("CENTER", x * side * .354, side * .28)
+      end
+
+      -- like the snow, but up from below the screen
+      heart.float = heart:CreateAnimationGroup()
+      heart.float:SetLooping("REPEAT")
+      heart.float:SetIgnoreFramerateThrottle(true)
+      heart.path = heart.float:CreateAnimation("Path")
+      heart.path:SetCurve("SMOOTH")
+      heart.points = {}
+      for point = 1, 6 do
+        heart.points[point] = heart.path:CreateControlPoint()
+      end
+      hearts[i] = heart
+    end
+
+    local function LetThemFloat()
+      local width, height = valentine:GetWidth(), valentine:GetHeight()
+      for _, heart in ipairs(hearts) do
+        local rise = height + heart.width
+        local duration = rise / (20 + heart.width * 2)
+        local sway = math.random(-30, 30)
+
+        heart:ClearAllPoints()
+        heart:SetPoint("TOP", valentine, "BOTTOMLEFT", math.random() * width, 0)
+
+        heart.path:SetDuration(duration)
+        heart.path:SetStartDelay(math.random() * duration)
+        for point, control in ipairs(heart.points) do
+          control:SetOffset(point % 2 == 1 and sway or -sway, rise * point / 6)
+        end
+        heart.float:Play()
+      end
+    end
+
+    -- Cupid hovers by the side, turned towards the middle
+    local cupid = CreateFrame("PlayerModel", nil, valentine)
+    cupid:SetSize(260, 260)
+    cupid:SetPoint("BOTTOMRIGHT", -60, 60)
+    cupid:SetScript("OnShow", function()
+      this:SetDisplayInfo(15990)
+      this:SetFacing(-.5)
+    end)
+    cupid:Hide()
+
+    valentine.dusk:SetScript("OnFinished", function()
+      LetThemFloat()
+      cupid:Show()
+    end)
+
+    valentine:HookScript("OnHide", function()
+      cupid:Hide()
+    end)
+  end
+
   -- happy hallow's end
   if today == "1031" then
     local halloween = CreateScene("pfHallowsEnd", "happy hallow's end!")

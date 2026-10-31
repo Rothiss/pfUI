@@ -250,7 +250,7 @@ pfUI:RegisterModule("unitxp", function ()
       pcall(UnitXP, "notify", "systemSound")
     end
 
-    for _, event in ipairs({ "CHAT_MSG_WHISPER", "CHAT_MSG_BN_WHISPER", "READY_CHECK", "RAID_INSTANCE_WELCOME" }) do
+    for _, event in ipairs({ "CHAT_MSG_WHISPER", "READY_CHECK" }) do
       pfUI.events:RegisterFrameEventAndCallback(event, Notify)
     end
 

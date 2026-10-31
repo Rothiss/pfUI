@@ -529,8 +529,10 @@ pfUI:RegisterModule("unlock", function ()
   pfUI.unlock.dock.title:SetPoint("TOP", 0, -5)
 
   -- anchor
+  -- SetupMenu reads the selection at once, before any frame is docked
   local function IsDockAnchor(anchor)
-    local position = pfUI_config["position"] and pfUI_config["position"][pfUI.unlock.dock.parent.fname]
+    local drag = pfUI.unlock.dock.parent
+    local position = drag and pfUI_config["position"] and pfUI_config["position"][drag.fname]
     return position and position["xpos"] and (position["anchor"] or "TOPLEFT") == anchor
   end
 

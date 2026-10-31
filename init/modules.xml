@@ -82,4 +82,5 @@
   <Include file="..\modules\loothistory.lua"/>
   <Include file="..\modules\newitem.lua"/>
   <Include file="..\modules\friendnotes.lua"/>
+  <Include file="..\modules\lossofcontrol.lua"/>
 </Ui>

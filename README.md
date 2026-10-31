@@ -37,6 +37,8 @@ Provides:
 - Click-casting
 - Loot Roll History (/loothistory)
 - New item highlighting
+- Loss of control alert - Stuns, fears, silences and school lockouts from C_LossOfControl
+- Dressing room zoom, pan and per-slot undress (PlayerModel / DressUpModel methods)
 - Plenty other functions
 
 ### [Nampower](https://github.com/brues-code/nampower)

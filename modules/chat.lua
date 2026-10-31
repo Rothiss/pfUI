@@ -457,7 +457,7 @@ pfUI:RegisterModule("chat", function ()
 
       -- hide textures
       for j,v in ipairs({tab:GetRegions()}) do
-        if j==5 then v:SetTexture(0,0,0,0) end
+        if j==5 then v:SetColorTexture(0,0,0,0) end
         v:SetHeight(C.global.font_size+default_border*2)
       end
 

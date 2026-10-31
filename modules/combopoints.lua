@@ -27,11 +27,11 @@ pfUI:RegisterModule("combopoints", function ()
     pfUI.combopoints[point].tex:SetAllPoints(pfUI.combopoints[point])
 
     if point < 3 then
-      pfUI.combopoints[point].tex:SetTexture(1, .3, .3, .75)
+      pfUI.combopoints[point].tex:SetColorTexture(1, .3, .3, .75)
     elseif point < 4 then
-      pfUI.combopoints[point].tex:SetTexture(1, 1, .3, .75)
+      pfUI.combopoints[point].tex:SetColorTexture(1, 1, .3, .75)
     else
-      pfUI.combopoints[point].tex:SetTexture(.3, 1, .3, .75)
+      pfUI.combopoints[point].tex:SetColorTexture(.3, 1, .3, .75)
     end
 
     UpdateMovable(pfUI.combopoints[point])

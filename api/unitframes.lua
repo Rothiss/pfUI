@@ -1097,10 +1097,10 @@ function pfUI.uf.OnUpdate()
       this.lastCombatCheck = now + 0.2
       
       if this.config and this.config.squareaggro == "1" and pfUI.api.UnitHasAggro(this.label .. this.id) > 0 then
-        this.combat.tex:SetTexture(1,.2,0)
+        this.combat.tex:SetColorTexture(1,.2,0)
         this.combat:Show()
       elseif this.config and this.config.squarecombat == "1" and UnitAffectingCombat(this.label .. this.id) then
-        this.combat.tex:SetTexture(1,1,.2)
+        this.combat.tex:SetColorTexture(1,1,.2)
         this.combat:Show()
       elseif this.combat then
         this.combat:Hide()
@@ -1900,7 +1900,7 @@ function pfUI.uf:RefreshUnit(unit, component)
             indicator[debuff]:SetSize(size, size)
             indicator[debuff]:SetBackdrop(nil)
           elseif disptype == "3" then
-            indicator[debuff].tex:SetTexture(dispelColor:GetRGBA())
+            indicator[debuff].tex:SetColorTexture(dispelColor:GetRGBA())
             indicator[debuff].tex:SetVertexColor(1,1,1,1)
             indicator[debuff].tex:Show()
             indicator[debuff]:ClearAllPoints()
@@ -1912,7 +1912,7 @@ function pfUI.uf:RefreshUnit(unit, component)
             indicator[debuff]:SetBackdrop(glow)
             indicator[debuff]:SetBackdropBorderColor(dispelColor:GetRGBA())
           elseif disptype == "1" then
-            indicator[debuff].tex:SetTexture(dispelColor:GetRGBA())
+            indicator[debuff].tex:SetColorTexture(dispelColor:GetRGBA())
             indicator[debuff].tex:SetVertexColor(1,1,1,1)
             indicator[debuff].tex:Show()
             indicator[debuff]:SetAllPoints(unit.hp.bar)

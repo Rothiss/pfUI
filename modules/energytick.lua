@@ -260,7 +260,7 @@ pfUI:RegisterModule("energytick", function()
   if fsrOverlay then
     -- classic style: a translucent shade on top of the power bar's own fill
     energytick.fsrbar = energytick:CreateTexture(nil, "ARTWORK")
-    energytick.fsrbar:SetTexture(1, 1, 1, .15)
+    energytick.fsrbar:SetColorTexture(1, 1, 1, .15)
     energytick.fsrbar:SetPoint("TOPLEFT", 0, 0)
     energytick.fsrbar:SetPoint("BOTTOMLEFT", 0, 0)
   else

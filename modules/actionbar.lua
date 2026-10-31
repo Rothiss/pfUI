@@ -1151,7 +1151,7 @@ pfUI:RegisterModule("actionbar", function ()
 
     -- equipped color
     if f.equipped then
-      f.equipped:SetTexture(GetStringColor(C.bars.eqcolor))
+      f.equipped:SetColorTexture(GetStringColor(C.bars.eqcolor))
     end
 
     -- general appearance

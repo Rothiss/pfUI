@@ -109,7 +109,7 @@ pfUI:RegisterModule("gui", function ()
           frame:SetScript("OnEnter", EntryOnEnter)
           frame:SetScript("OnLeave", EntryOnLeave)
           frame.tex = frame:CreateTexture(nil, "BACKGROUND")
-          frame.tex:SetTexture(1,1,1,.05)
+          frame.tex:SetColorTexture(1,1,1,.05)
           frame.tex:SetAllPoints()
           frame.tex:Hide()
         end
@@ -181,7 +181,7 @@ pfUI:RegisterModule("gui", function ()
         if not cr or not cg or not cb or not ca then
           cr, cg, cb, ca = 1, 1, 1, 1
         end
-        frame.color.prev:SetTexture(cr,cg,cb,ca)
+        frame.color.prev:SetColorTexture(cr,cg,cb,ca)
 
         frame.color:SetScript("OnClick", function()
           local cr, cg, cb, ca = strsplit(",", category[config])
@@ -199,7 +199,7 @@ pfUI:RegisterModule("gui", function ()
             b = round(b, 3)
             a = round(a, 3)
 
-            preview:SetTexture(r,g,b,a)
+            preview:SetColorTexture(r,g,b,a)
 
             if not this:GetParent():IsShown() then
               category[config] = r .. "," .. g .. "," .. b .. "," .. a
@@ -209,7 +209,7 @@ pfUI:RegisterModule("gui", function ()
           end
 
           function ColorPickerFrame.cancelFunc()
-            preview:SetTexture(cr,cg,cb,ca)
+            preview:SetColorTexture(cr,cg,cb,ca)
           end
 
           ColorPickerFrame.opacityFunc = ColorPickerFrame.func
@@ -490,19 +490,19 @@ pfUI:RegisterModule("gui", function ()
       f.button = parent[title]
 
       f.bg = f:CreateTexture(nil, "BACKGROUND")
-      f.bg:SetTexture(1,1,1,.05)
+      f.bg:SetColorTexture(1,1,1,.05)
       f.bg:SetAllPoints()
 
       f:SetScript("OnShow", function()
         this.indexed = true
         this.button.text:SetTextColor(.2,1,.8,1)
-        this.button.bg:SetTexture(1,1,1,1)
+        this.button.bg:SetColorTexture(1,1,1,1)
         this.button.bg:SetGradientAlpha("HORIZONTAL", 0,0,0,0,  1,1,1,.05)
       end)
 
       f:SetScript("OnHide", function()
         this.button.text:SetTextColor(1,1,1,1)
-        this.button.bg:SetTexture(0,0,0,0)
+        this.button.bg:SetColorTexture(0,0,0,0)
       end)
 
       -- are we a frame with contents?
@@ -706,7 +706,7 @@ pfUI:RegisterModule("gui", function ()
       if not highlighted.highlight then
         highlighted.highlight = highlighted:CreateTexture(nil, "OVERLAY")
         highlighted.highlight:SetAllPoints()
-        highlighted.highlight:SetTexture(.2,1,.8,.2)
+        highlighted.highlight:SetColorTexture(.2,1,.8,.2)
       end
       highlighted.highlight:Show()
     end
@@ -726,7 +726,7 @@ pfUI:RegisterModule("gui", function ()
         f.text:SetTextColor(.5,.5,.5)
 
         f.tex = f:CreateTexture(nil, "BACKGROUND")
-        f.tex:SetTexture(1,1,1,.05)
+        f.tex:SetColorTexture(1,1,1,.05)
         f.tex:SetAllPoints()
         f.tex:Hide()
       end
@@ -1285,7 +1285,7 @@ pfUI:RegisterModule("gui", function ()
       -- draw pfUI logo
       local function draw(p, fx, fy, tx, ty, r, g, b, a)
         local t = p:CreateTexture(nil, "OVERLAY")
-        t:SetTexture(r,g,b,a)
+        t:SetColorTexture(r,g,b,a)
         t:SetPoint("TOPLEFT", fx, fy)
         t:SetPoint("BOTTOMRIGHT", p, "TOPLEFT", tx, ty)
       end

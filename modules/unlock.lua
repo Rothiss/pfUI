@@ -168,10 +168,10 @@ pfUI:RegisterModule("unlock", function ()
     for i = 0, 128 do
       if i == 128 / 2 then
         line = grid:CreateTexture(nil, 'BORDER')
-        line:SetTexture(.1, .5, .4)
+        line:SetColorTexture(.1, .5, .4)
       else
         line = grid:CreateTexture(nil, 'BACKGROUND')
-        line:SetTexture(0, 0, 0, .5)
+        line:SetColorTexture(0, 0, 0, .5)
       end
       line:SetPoint("TOPLEFT", grid, "TOPLEFT", i*wStep - (size/2), 0)
       line:SetPoint('BOTTOMRIGHT', grid, 'BOTTOMLEFT', i*wStep + (size/2), 0)
@@ -181,10 +181,10 @@ pfUI:RegisterModule("unlock", function ()
     for i = 1, floor(height/hStep) do
       if i == floor(height/hStep / 2) then
         line = grid:CreateTexture(nil, 'BORDER')
-        line:SetTexture(.1, .5, .4)
+        line:SetColorTexture(.1, .5, .4)
       else
         line = grid:CreateTexture(nil, 'BACKGROUND')
-        line:SetTexture(0, 0, 0)
+        line:SetColorTexture(0, 0, 0)
       end
 
       line:SetPoint("TOPLEFT", grid, "TOPLEFT", 0, -(i*hStep) + (size/2))

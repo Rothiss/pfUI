@@ -122,7 +122,7 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
         -- remove red background on some buttons
         for i,v in ipairs({b:GetRegions()}) do
           if v.SetTexture and i == 1 then
-            v:SetTexture(0,0,0,0)
+            v:SetColorTexture(0,0,0,0)
           end
         end
 

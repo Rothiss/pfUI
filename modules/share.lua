@@ -218,7 +218,7 @@ pfUI:RegisterModule("share", function ()
       pfUI.api.CreateBackdrop(f.scroll.backdrop, nil, true)
       f.scroll.backdrop.tint = f.scroll.backdrop:CreateTexture(nil, "ARTWORK")
       f.scroll.backdrop.tint:SetAllPoints(f.scroll)
-      f.scroll.backdrop.tint:SetTexture(1,1,1,.05)
+      f.scroll.backdrop.tint:SetColorTexture(1,1,1,.05)
 
       f.scroll:RegisterCallback("OnTextChanged", function()
         local text = f.scroll:GetText()

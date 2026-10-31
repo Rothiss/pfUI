@@ -429,7 +429,7 @@ pfUI:RegisterModule("nameplates", function ()
     plate.debuffs[index]:SetFrameLevel(4)
 
     plate.debuffs[index].icon = plate.debuffs[index]:CreateTexture(nil, "BACKGROUND")
-    plate.debuffs[index].icon:SetTexture(.3,1,.8,1)
+    plate.debuffs[index].icon:SetColorTexture(.3,1,.8,1)
     plate.debuffs[index].icon:SetAllPoints(plate.debuffs[index])
 
     plate.debuffs[index].stacks = plate.debuffs[index]:CreateFontString(nil, "OVERLAY")
@@ -866,11 +866,11 @@ nameplates:RegisterUnitEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "target", "focu
         combopoints[i].tex:SetAllPoints()
 
         if i < 3 then
-          combopoints[i].tex:SetTexture(1, .3, .3, .75)
+          combopoints[i].tex:SetColorTexture(1, .3, .3, .75)
         elseif i < 4 then
-          combopoints[i].tex:SetTexture(1, 1, .3, .75)
+          combopoints[i].tex:SetColorTexture(1, 1, .3, .75)
         else
-          combopoints[i].tex:SetTexture(.3, 1, .3, .75)
+          combopoints[i].tex:SetColorTexture(.3, 1, .3, .75)
         end
       end
       nameplate.combopoints = combopoints

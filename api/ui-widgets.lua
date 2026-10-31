@@ -283,7 +283,7 @@ function pfUI.api.SkinButton(button, cr, cg, cb, icon, disableHighlight)
   b:SetDisabledTexture("")
 
   if b.SetCheckedTexture and b:GetCheckedTexture() then
-    b:GetCheckedTexture():SetTexture(cr, cg, cb, .25)
+    b:GetCheckedTexture():SetColorTexture(cr, cg, cb, .25)
   end
 
   if not disableHighlight then
@@ -360,7 +360,7 @@ function pfUI.api.SkinRotateButton(button)
   button:GetNormalTexture():SetTexCoord(0.3, 0.29, 0.3, 0.65, 0.69, 0.29, 0.69, 0.65)
   button:GetPushedTexture():SetTexCoord(0.3, 0.29, 0.3, 0.65, 0.69, 0.29, 0.69, 0.65)
 
-  button:GetHighlightTexture():SetTexture(cr, cg, cb, .25)
+  button:GetHighlightTexture():SetColorTexture(cr, cg, cb, .25)
 
   button:GetPushedTexture():SetAllPoints(button:GetNormalTexture())
   button:GetHighlightTexture():SetAllPoints(button:GetNormalTexture())
@@ -457,7 +457,7 @@ function pfUI.api.SkinScrollbar(frame, always)
   if not frame.thumb then
     thumb:SetTexture(nil)
     frame.thumb = frame.bg:CreateTexture(nil, "ARTWORK")
-    frame.thumb:SetTexture(.8,.8,.8,.8)
+    frame.thumb:SetColorTexture(.8,.8,.8,.8)
     frame.thumb:SetPoint("TOPLEFT", thumb, "TOPLEFT", 1, -4)
     frame.thumb:SetPoint("BOTTOMRIGHT", thumb, "BOTTOMRIGHT", -1, 4)
   end
@@ -611,7 +611,7 @@ function pfUI.api.SkinSlider(frame)
   local thumb = frame:GetThumbTexture()
 
   CreateBackdrop(frame, nil, true)
-  thumb:SetTexture(1, .82, 0)
+  thumb:SetColorTexture(1, .82, 0)
 
   for i,region in ipairs({frame:GetRegions()}) do
     if region:GetObjectType() == 'FontString' then

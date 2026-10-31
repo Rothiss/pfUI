@@ -234,14 +234,14 @@ pfUI:RegisterModule("castbar", function ()
     cb.bar.lag = cb.bar:CreateTexture(nil, "OVERLAY")
     cb.bar.lag:SetPoint("TOPRIGHT", cb.bar, "TOPRIGHT", 0, 0)
     cb.bar.lag:SetPoint("BOTTOMRIGHT", cb.bar, "BOTTOMRIGHT", 0, 0)
-    cb.bar.lag:SetTexture(1,.2,.2,.2)
+    cb.bar.lag:SetColorTexture(1,.2,.2,.2)
 
     -- Per-craft progress spark for tradeskill merge — a thin vertical line
     -- that crosses the bar once per craft in the chain (so on a 5-stack it
     -- moves 5x faster than the main fill). Position is updated by OnUpdate
     -- while a merge is active; hidden otherwise.
     cb.bar.spark = cb.bar:CreateTexture(nil, "OVERLAY")
-    cb.bar.spark:SetTexture(1, 1, 1, 0.8)
+    cb.bar.spark:SetColorTexture(1, 1, 1, 0.8)
     cb.bar.spark:SetWidth(2)
     cb.bar.spark:SetPoint("TOP", cb.bar, "TOPLEFT", 0, 0)
     cb.bar.spark:SetPoint("BOTTOM", cb.bar, "BOTTOMLEFT", 0, 0)

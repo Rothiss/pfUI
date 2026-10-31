@@ -86,11 +86,7 @@ pfUI:RegisterModule("autovendor", function ()
   if not pfMerchantFrame_Update then
     local pfMerchantFrame_Update = MerchantFrame_Update
     function _G.MerchantFrame_Update()
-      if MerchantFrame.selectedTab == 1 and C["global"]["autosell"] ~= "1" then
-        autovendor.button:Show()
-      else
-        autovendor.button:Hide()
-      end
+      autovendor.button:SetShown(MerchantFrame.selectedTab == 1 and C["global"]["autosell"] ~= "1")
       pfMerchantFrame_Update()
     end
   end

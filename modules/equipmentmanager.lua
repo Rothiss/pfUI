@@ -778,7 +778,7 @@ pfUI:RegisterModule("equipmentmanager", function()
   function UpdatePopouts()
     local show = PopoutsActive()
     for _, b in ipairs(popoutButtons) do
-      if show then b:Show() else b:Hide() end
+      b:SetShown(show)
     end
     if not show then flyout:Hide() end
   end
@@ -831,7 +831,7 @@ pfUI:RegisterModule("equipmentmanager", function()
     -- uncommitted user changes show immediately.
     local setIgnored = selectedSetID and GetEffectiveIgnored(selectedSetID) or {}
     for slotID, overlay in pairs(slotOverlays) do
-      if frame:IsShown() and selectedSetID and setIgnored[slotID] then overlay:Show() else overlay:Hide() end
+      overlay:SetShown(frame:IsShown() and selectedSetID and setIgnored[slotID])
     end
 
     local hasSelection = selectedSetID and true or false
@@ -1170,7 +1170,7 @@ pfUI:RegisterModule("equipmentmanager", function()
 
     unusedGrid.ScrollBox:SetDataProvider(CreateDataProvider(list), ScrollBoxConstants.RetainScrollPosition)
 
-    if total == 0 then unusedPanel.empty:Show() else unusedPanel.empty:Hide() end
+    unusedPanel.empty:SetShown(total == 0)
 
     bagHighlight.active = true
     bagHighlight.locs = {}

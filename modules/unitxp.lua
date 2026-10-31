@@ -42,11 +42,7 @@ pfUI:RegisterModule("unitxp", function ()
         end
 
         local success, behind = pcall(UnitXP, "behind", "player", "target")
-        if success and behind then
-          this.text:Show()
-        else
-          this.text:Hide()
-        end
+        this.text:SetShown(success and behind)
       end)
 
       pfUI.uf.target.behindIndicator = behindFrame
@@ -76,11 +72,7 @@ pfUI:RegisterModule("unitxp", function ()
         end
 
         local success, inSight = pcall(UnitXP, "inSight", "player", "target")
-        if success and inSight == false then
-          this.text:Show()
-        else
-          this.text:Hide()
-        end
+        this.text:SetShown(success and inSight == false)
       end)
 
       pfUI.uf.target.losIndicator = losFrame

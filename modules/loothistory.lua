@@ -266,7 +266,7 @@ pfUI:RegisterModule("loothistory", function ()
     pf.rollicon:SetTexture(ROLL_TEX[rollType] or ROLL_TEX[ROLL_PASS])
     if roll and roll > 0 then pf.rolltext:SetText(roll) else pf.rolltext:SetText("") end
 
-    if isWinner then pf.winmark:Show() else pf.winmark:Hide() end
+    pf.winmark:SetShown(isWinner)
   end
 
   local view = CreateScrollBoxListLinearView(2, 2, 4, 4, 2)

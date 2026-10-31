@@ -40,11 +40,7 @@ pfUI:RegisterModule("bags", function ()
 
   -- overwrite some bag functions
   function _G.OpenAllBags()
-    if pfUI.bag.right:IsShown() then
-      pfUI.bag.right:Hide()
-    else
-      pfUI.bag.right:Show()
-    end
+    pfUI.bag.right:SetShown(not pfUI.bag.right:IsShown())
   end
 
   function _G.CloseAllBags()
@@ -52,11 +48,7 @@ pfUI:RegisterModule("bags", function ()
   end
 
   function _G.ToggleBackpack()
-    if pfUI.bag.right:IsShown() then
-      pfUI.bag.right:Hide()
-    else
-      pfUI.bag.right:Show()
-    end
+    pfUI.bag.right:SetShown(not pfUI.bag.right:IsShown())
   end
 
   function _G.OpenBackpack()
@@ -1140,11 +1132,7 @@ pfUI:RegisterModule("bags", function ()
         end)
 
         frame.bags:SetScript("OnClick", function()
-          if pfUI.bag.left.bagslots:IsShown() then
-            pfUI.bag.left.bagslots:Hide()
-          else
-            pfUI.bag.left.bagslots:Show()
-          end
+          pfUI.bag.left.bagslots:SetShown(not pfUI.bag.left.bagslots:IsShown())
         end)
       end
 

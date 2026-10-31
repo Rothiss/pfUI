@@ -414,11 +414,7 @@ pfUI:RegisterModule("actionbar", function ()
     end
 
     -- equipped item
-    if IsEquippedAction(sid) and C.bars.showequipped == "1" then
-      self.equipped:Show()
-    else
-      self.equipped:Hide()
-    end
+    self.equipped:SetShown(IsEquippedAction(sid) and C.bars.showequipped == "1")
   end
 
   local start, duration, enable, castable, autocast, token
@@ -506,11 +502,7 @@ pfUI:RegisterModule("actionbar", function ()
         self.autocast:Hide()
       end
 
-      if castable and C.bars.showcastable == "1" then
-        self.autocastable:Show()
-      else
-        self.autocastable:Hide()
-      end
+      self.autocastable:SetShown(castable and C.bars.showcastable == "1")
     end
 
     -- keybinds
@@ -1116,7 +1108,7 @@ pfUI:RegisterModule("actionbar", function ()
     end
 
     -- macro options
-    if showmacro == "1" then f.macro:Show() else f.macro:Hide() end
+    f.macro:SetShown(showmacro == "1")
     SetAllPointsOffset(f.macro, f, font_offset, -font_offset)
     f.macro:SetFont(font, macro_size, "OUTLINE")
     f.macro:SetTextColor(unpack(macro_color))
@@ -1124,7 +1116,7 @@ pfUI:RegisterModule("actionbar", function ()
     f.macro:SetJustifyV("BOTTOM")
 
     -- keybind options
-    if showkybind == "1" then f.keybind:Show() else f.keybind:Hide() end
+    f.keybind:SetShown(showkybind == "1")
     SetAllPointsOffset(f.keybind, f, font_offset, -font_offset)
     f.keybind:SetFont(font, bind_size, "OUTLINE")
     f.keybind:SetTextColor(unpack(bind_color))
@@ -1133,7 +1125,7 @@ pfUI:RegisterModule("actionbar", function ()
     f.keybind:SetNonSpaceWrap(false)
 
     -- item count options
-    if showcount == "1" then f.count:Show() else f.count:Hide() end
+    f.count:SetShown(showcount == "1")
     SetAllPointsOffset(f.count, f, font_offset, -font_offset)
     f.count:SetFont(font, count_size, "OUTLINE")
     f.count:SetTextColor(unpack(count_color))
@@ -1232,11 +1224,7 @@ pfUI:RegisterModule("actionbar", function ()
       -- handle pet bar
       if i == 12 then
         -- only show when pet actions exists
-        if PetHasActionBar() or pfUI.unlock and pfUI.unlock:IsShown() then
-          bars[i]:Show()
-        else
-          bars[i]:Hide()
-        end
+        bars[i]:SetShown(PetHasActionBar() or pfUI.unlock and pfUI.unlock:IsShown())
 
         -- show/hide petbar on petbar updates
         if init then
@@ -1256,11 +1244,7 @@ pfUI:RegisterModule("actionbar", function ()
       -- handle shapeshift bar
       elseif i == 11 then
         -- only show when shapeshifts exist
-        if GetNumShapeshiftForms() > 0 then
-          bars[i]:Show()
-        else
-          bars[i]:Hide()
-        end
+        bars[i]:SetShown(GetNumShapeshiftForms() > 0)
 
         -- update shapeshift bar when amount of spells changes
         if init then

@@ -95,7 +95,16 @@ pfUI:RegisterModule("tooltip", function ()
 
   pfUI.tooltip:SetAllPoints()
   pfUI.tooltip:SetScript("OnShow", function()
-      pfUI.tooltip:Update()
+      if C.tooltip.itemid == "1" and GameTooltip:HasItem() then
+        local _, _, itemID = GameTooltip:GetItem()
+        GameTooltip:AddLine(T["ItemID"] .. ": " .. itemID, .25,.5,1)
+        GameTooltip:Show()
+      elseif C.tooltip.spellid == "1" and GameTooltip:HasSpell() then
+        local _, _, spellID = GameTooltip:GetSpell()
+        GameTooltip:AddLine(T["SpellID"] .. ": " .. spellID, .25,.5,1)
+        GameTooltip:Show()
+      end
+
       if GameTooltip:GetAnchorType() == "ANCHOR_NONE" then
         GameTooltip:ClearAllPoints()
         if C.tooltip.position == "bottom" then
@@ -273,22 +282,47 @@ pfUI:RegisterModule("tooltip", function ()
     end
   end
 
-  function pfUI.tooltip:Update()
+  -- A unit tooltip names the unit's target, so it rebuilds when that changes:
+  -- UNIT_TARGET by the unit's GUID, which unit events fire with whatever token
+  -- names the unit. SetUnit re-runs OnTooltipSetUnit and with it UpdateUnit.
+  -- It goes through the token the tooltip was built from -- "mouseover" for a
+  -- world unit stops naming it once the cursor leaves, so a fading tooltip is
+  -- left to fade -- and waits a frame: the rebuild re-points this frame's
+  -- registration, which the dispatch is still walking.
+  local function Retarget()
+    local _, unit = GameTooltip:GetUnit()
+    local _, guid = GameTooltip:GetUnitGUID()
+    if unit and GameTooltip:IsShown() and UnitGUID(unit) == guid then
+      GameTooltip:SetUnit(unit)
+    end
+  end
+
+  pfUI.tooltip.retarget = CreateFrame("Frame")
+  pfUI.tooltip.retarget:SetScript("OnEvent", function()
+    RunNextFrame(Retarget)
+  end)
+
+  -- pfUI's unit lines go on whenever a unit is set, not only when the tooltip
+  -- shows, so a tooltip rebuilt while it is up keeps them
+  GameTooltip:HookScript("OnTooltipSetUnit", function()
+    pfUI.tooltip:UpdateUnit()
+  end)
+
+  -- the buff row belongs to the unit it was built for
+  GameTooltip:HookScript("OnTooltipCleared", function()
+    pfUI.tooltip:UpdateBuffs("none")
+  end)
+
+  GameTooltip:HookScript("OnHide", function()
+    pfUI.tooltip:UpdateBuffs("none")
+    pfUI.tooltip.retarget:UnregisterEvent("UNIT_TARGET")
+  end)
+
+  function pfUI.tooltip:UpdateUnit()
       local unit = pfUI.tooltip:GetUnit()
       pfUI.tooltip:UpdateBuffs(unit)
-      if unit == "none" then
-        if C.tooltip.itemid == "1" and GameTooltip:HasItem() then
-          local _, _, itemID = GameTooltip:GetItem()
-          GameTooltip:AddLine(T["ItemID"] .. ": " .. itemID, .25,.5,1)
-          GameTooltip:Show()
-        elseif C.tooltip.spellid == "1" and GameTooltip:HasSpell() then
-          local _, _, spellID = GameTooltip:GetSpell()
-          GameTooltip:AddLine(T["SpellID"] .. ": " .. spellID, .25,.5,1)
-          GameTooltip:Show()
-        end
-
-        return
-      end
+      if unit == "none" then return end
+      pfUI.tooltip.retarget:RegisterUnitEvent("UNIT_TARGET", UnitGUID(unit))
 
       local pvpname = UnitPVPName(unit)
       local name = UnitName(unit)

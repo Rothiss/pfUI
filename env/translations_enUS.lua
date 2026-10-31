@@ -167,6 +167,7 @@ pfUI_translation["enUS"] = {
   ["Cooldown Text Time Threshold"] = nil,
   ["Coordinates Location"] = nil,
   ["Coordinates On Minimap"] = nil,
+  ["Copied to clipboard"] = nil,
   ["Count"] = nil,
   ["Create Profile"] = nil,
   ["Ctrl-Click"] = nil,

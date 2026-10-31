@@ -161,6 +161,7 @@ pfUI_translation["esES"] = {
   ["Cooldown Text Time Threshold"] = "Umbral del texto del tiempo de reutilización",
   ["Coordinates Location"] = "Coordenadas de localización",
   ["Coordinates On Minimap"] = "Coordenadas en el minimapa",
+  ["Copied to clipboard"] = nil,
   ["Count"] = "Recuento",
   ["Create Profile"] = "Crear perfil",
   ["Ctrl-Click"] = "Ctrl-Clic",

@@ -161,6 +161,7 @@ pfUI_translation["ruRU"] = {
   ["Cooldown Text Time Threshold"] = "Порог текста восстановления",
   ["Coordinates Location"] = "Расположение координат",
   ["Coordinates On Minimap"] = "Координаты на миникарте",
+  ["Copied to clipboard"] = nil,
   ["Count"] = "Счет",
   ["Create Profile"] = "Создать профиль",
   ["Ctrl-Click"] = "Ctrl+нажатие",

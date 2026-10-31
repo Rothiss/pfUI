@@ -161,6 +161,7 @@ pfUI_translation["zhCN"] = {
   ["Cooldown Text Time Threshold"] = "技能冷却时间文字临界值",
   ["Coordinates Location"] = "坐标位置",
   ["Coordinates On Minimap"] = "小地图上的坐标",
+  ["Copied to clipboard"] = nil,
   ["Count"] = "计数器",
   ["Create Profile"] = "新建配置",
   ["Ctrl-Click"] = "CTRL点击",

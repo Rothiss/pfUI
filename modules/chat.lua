@@ -145,7 +145,7 @@ pfUI:RegisterModule("chat", function ()
     ["URL"] = function(a1,a2,a3) return pfUI.chat:FormatLink(pfUI.chat.URLPattern.URL.fm,a1,a2,a3) end,
   }
 
-  -- url copy dialog
+  -- url links
   function pfUI.chat:FormatLink(formatter,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10)
     if not (formatter and a1) then return end
     local newtext = string.format(formatter,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10)
@@ -185,73 +185,10 @@ pfUI:RegisterModule("chat", function ()
     return text
   end
 
-  pfUI.chat.urlcopy = CreateFrame("Frame", "pfURLCopy", UIParent)
-  pfUI.chat.urlcopy:Hide()
-  pfUI.chat.urlcopy:SetWidth(270)
-  pfUI.chat.urlcopy:SetHeight(65)
-  pfUI.chat.urlcopy:SetFrameStrata("FULLSCREEN")
-  pfUI.chat.urlcopy:SetPoint("CENTER", 0, 0)
-  CreateBackdrop(pfUI.chat.urlcopy, nil, nil, 0.8)
-
-  pfUI.chat.urlcopy:SetMovable(true)
-  pfUI.chat.urlcopy:EnableMouse(true)
-  pfUI.chat.urlcopy:RegisterForDrag("LeftButton")
-  pfUI.chat.urlcopy:SetScript("OnDragStart",function()
-    this:StartMoving()
+  -- clicking a url link copies it
+  LinkUtil.RegisterLinkHandler("url", function(link, text, linkData)
+    CopyText(linkData.options)
   end)
-
-  pfUI.chat.urlcopy:SetScript("OnDragStop",function()
-    this:StopMovingOrSizing()
-  end)
-
-  pfUI.chat.urlcopy:SetScript("OnShow", function()
-    this.text:HighlightText()
-  end)
-
-  pfUI.chat.urlcopy.text = CreateFrame("EditBox", "pfURLCopyEditBox", pfUI.chat.urlcopy)
-  pfUI.chat.urlcopy.text:SetTextColor(.2,1,.8,1)
-  pfUI.chat.urlcopy.text:SetJustifyH("CENTER")
-
-  pfUI.chat.urlcopy.text:SetWidth(250)
-  pfUI.chat.urlcopy.text:SetHeight(20)
-  pfUI.chat.urlcopy.text:SetPoint("TOP", pfUI.chat.urlcopy, "TOP", 0, -10)
-  pfUI.chat.urlcopy.text:SetFontObject(GameFontNormal)
-  CreateBackdrop(pfUI.chat.urlcopy.text)
-
-  pfUI.chat.urlcopy.text:SetScript("OnEscapePressed", function(self)
-    pfUI.chat.urlcopy:Hide()
-  end)
-
-  pfUI.chat.urlcopy.text:SetScript("OnEditFocusLost", function(self)
-    pfUI.chat.urlcopy:Hide()
-  end)
-
-  pfUI.chat.urlcopy.close = CreateFrame("Button", "pfURLCopyClose", pfUI.chat.urlcopy, "UIPanelButtonTemplate")
-  pfUI.api.SkinButton(pfUI.chat.urlcopy.close)
-  pfUI.chat.urlcopy.close:SetWidth(70)
-  pfUI.chat.urlcopy.close:SetHeight(18)
-  pfUI.chat.urlcopy.close:SetPoint("BOTTOMRIGHT", pfUI.chat.urlcopy, "BOTTOMRIGHT", -10, 10)
-
-  pfUI.chat.urlcopy.close:SetText(T["Close"])
-  pfUI.chat.urlcopy.close:SetScript("OnClick", function()
-    pfUI.chat.urlcopy:Hide()
-  end)
-
-  pfUI.chat.urlcopy.SetItemRef = SetItemRef
-  pfUI.chat.urlcopy.CopyText = function(text)
-    pfUI.chat.urlcopy.text:SetText(text)
-    pfUI.chat.urlcopy:Show()
-  end
-
-  function _G.SetItemRef(link, text, button)
-    if (strsub(link, 1, 3) == "url") then
-      if string.len(link) > 4 and string.sub(link,1,4) == "url:" then
-        pfUI.chat.urlcopy.CopyText(string.sub(link,5, string.len(link)))
-      end
-      return
-    end
-    pfUI.chat.urlcopy.SetItemRef(link, text, button)
-  end
 
   pfUI.chat.right = CreateFrame("Frame", "pfChatRight", UIParent)
   pfUI.chat.right:SetFrameStrata("BACKGROUND")

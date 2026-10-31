@@ -579,6 +579,14 @@ function pfUI.api.SendChatMessageWide(msg)
   SendChatMessage(msg,channel)
 end
 
+-- [ CopyText ]
+-- Copies text to the clipboard and says so in chat
+-- 'text'       [string]          the text to copy
+function pfUI.api.CopyText(text)
+  CopyToClipboard(text)
+  DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccpf|cffffffffUI|r: " .. T["Copied to clipboard"])
+end
+
 -- [ GroupInfoByName ]
 -- Gets the unit id by name
 -- 'name'       [string]          party or raid member

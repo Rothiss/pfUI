@@ -370,6 +370,7 @@ pfUI:RegisterModule("share", function ()
 
         local encoded = Encode(DiffConfig(myconfig, defconfig, ignored) or {})
         f.scroll:SetText(encoded)
+        CopyText(encoded)
       end)
     end
 

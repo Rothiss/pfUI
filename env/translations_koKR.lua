@@ -161,6 +161,7 @@ pfUI_translation["koKR"] = {
   ["Cooldown Text Time Threshold"] = "재사용 대기시간 텍스트 임계 값",
   ["Coordinates Location"] = nil,
   ["Coordinates On Minimap"] = "미니맵의 좌표",
+  ["Copied to clipboard"] = nil,
   ["Count"] = "카운트",
   ["Create Profile"] = "프로파일 생성",
   ["Ctrl-Click"] = nil,

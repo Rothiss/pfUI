@@ -258,12 +258,8 @@ pfUI:RegisterModule("swingtimer", function ()
   -- weapons (22); main-hand-only (21) can never sit there.
   local OH_WEAPON_TYPES = { [13]=true, [22]=true }
   local function HasOffhandWeapon()
-    local l = GetInventoryItemLink("player", 17)
-    if not l then return false end
-    local _, _, id = string.find(l, "item:(%d+)")
-    id = tonumber(id)
-    if not id then return false end
-    return OH_WEAPON_TYPES[C_Item.GetItemInventoryTypeByID(id)] == true
+    local invType = C_Item.GetItemInventoryType({ equipmentSlotIndex = INVSLOT_OFFHAND })
+    return OH_WEAPON_TYPES[invType] == true
   end
 
   local function UpdateWeaponSpeeds()

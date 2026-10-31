@@ -209,23 +209,17 @@ pfUI:RegisterModule("loothistory", function ()
     local isExpanded = rollID and expanded[rollID]
     SetToggleTexture(f.toggle, isExpanded)
 
-    -- Item icon/name/quality via the ClassicAPI Item mixin. When the item
-    -- isn't cached yet, show a placeholder and re-paint this row from the
-    -- ContinueOnItemLoad callback (guarded on rollID: rows are pooled, so the
+    -- Item icon/name/quality via the ClassicAPI Item mixin. The row shows a
+    -- placeholder until ContinueOnItemLoad paints it, which happens at once
+    -- when the item is cached (guarded on rollID: rows are pooled, so the
     -- callback must no-op if the row has since been reused for another roll).
-    local item = itemLink and Item:CreateFromItemLink(itemLink)
-    if item and not item:IsItemEmpty() then
-      if item:IsItemDataCached() then
-        RenderItemVisual(f, item)
-      else
-        ShowRetrieving(f)
-        local pending = rollID
-        item:ContinueOnItemLoad(function()
-          if f.rollID == pending then RenderItemVisual(f, item) end
-        end)
-      end
-    else
-      ShowRetrieving(f)
+    ShowRetrieving(f)
+    if itemLink then
+      local item = Item:CreateFromItemLink(itemLink)
+      local pending = rollID
+      item:ContinueOnItemLoad(function()
+        if f.rollID == pending then RenderItemVisual(f, item) end
+      end)
     end
 
     -- winner summary only on a decided, collapsed row

@@ -575,18 +575,12 @@ pfUI:RegisterModule("panel", function()
         blindpowder = 5530
       }
 
+      -- runs at once when the item is cached
       local function AddItemToPanel(panelType)
-        local itemID = itemIDs[panelType]
-          if C_Item.IsItemDataCachedByID(itemID) then
-            local itemName, count = C_Item.GetItemNameByID(itemID), C_Item.GetItemCount(itemID)
-            pfUI.panel:OutputPanel(panelType, itemName .. ": " .. count)
-          else
-            local item = Item:CreateFromItemID(itemID)
-            item:ContinueOnItemLoad(function()
-              local itemName, count = item:GetItemName(), C_Item.GetItemCount(item:GetItemID())
-              pfUI.panel:OutputPanel(panelType, itemName .. ": " .. count)
-            end)
-          end
+        local item = Item:CreateFromItemID(itemIDs[panelType])
+        item:ContinueOnItemLoad(function()
+          pfUI.panel:OutputPanel(panelType, item:GetItemName() .. ": " .. C_Item.GetItemCount(item:GetItemID()))
+        end)
       end
     
       local class = UnitClassBase('player')

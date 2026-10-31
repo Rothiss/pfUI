@@ -63,14 +63,19 @@ pfUI:RegisterSkin("Mailbox", function ()
       SkinButton(OpenMailPackageButton, nil, nil, nil, OpenMailPackageButtonIconTexture)
 
       hooksecurefunc("InboxFrame_OnClick", function(index)
+        OpenMailPackageButton:SetBackdropBorderColor(GetStringColor(pfUI_config.appearance.border.color))
+
+        -- another player's item may not be cached yet
         local _, itemID = GetInboxItemLink(index)
-        if itemID then
-          local quality = C_Item.GetItemQualityByID(itemID)
-          local r,g,b = GetItemQualityColor(quality)
-          OpenMailPackageButton:SetBackdropBorderColor(r,g,b,1)
-        else
-          OpenMailPackageButton:SetBackdropBorderColor(GetStringColor(pfUI_config.appearance.border.color))
-        end
+        if not itemID then return end
+        local item = Item:CreateFromItemID(itemID)
+        item:ContinueOnItemLoad(function()
+          local quality = item:GetItemQuality()
+          if quality and InboxFrame.openMailID == index then
+            local r,g,b = GetItemQualityColor(quality)
+            OpenMailPackageButton:SetBackdropBorderColor(r,g,b,1)
+          end
+        end)
       end)
     end
 

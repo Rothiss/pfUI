@@ -216,13 +216,14 @@ local function DebuffOnClick()
 end
 
 -- Every enabled unit frame. Group, target and pet events re-check a frame's
--- visibility in OnEvent. A frame with a tick shows another unit's target or a
--- pet that can go out of sight, and no event reports either, so a timer
--- re-checks those frames, hidden ones included.
+-- visibility in OnEvent, and UNIT_TARGET does for a chained unit (another
+-- unit's target). No event reports a unit going out of sight, though, and a
+-- pet (the frames with a tick) or a chained unit can, so a timer re-checks
+-- those frames, hidden ones included.
 local visibilityframes = {}
 C_Timer.NewTicker(.2, function()
   for frame in pairs(visibilityframes) do
-    if frame.tick then frame:UpdateVisibility() end
+    if frame.tick or frame.chain then frame:UpdateVisibility() end
   end
 end)
 
@@ -239,6 +240,7 @@ local VISIBILITY_EVENTS = {
   RAID_ROSTER_UPDATE = true,
   PLAYER_TARGET_CHANGED = true,
   UNIT_PET = true,
+  UNIT_TARGET = true, -- a link of a chained frame's unit retargeted
 }
 
 -- ============================================================================
@@ -443,7 +445,24 @@ function pfUI.uf:UpdateVisibility()
   -- rebuilding label..id -- and calling UnitGUID -- for every unit event fired
   -- by anything, anywhere. A frame that is not in use drops them entirely; the
   -- VISIBILITY_EVENTS that bring it back are registered plainly.
-  self:RegisterUnitEvents(visibility ~= "hide" and self.unitstr or nil)
+  --
+  -- A chained unit -- another unit's target, "targettarget" or "party1target"
+  -- -- has no token that unit events name, so the frame follows it by GUID,
+  -- which every unit event also fires with. It follows the unit only while
+  -- the client has it: a link's target can be out of sight, and its coming
+  -- back is then a new unit too. The unit changes with no event of its own
+  -- whenever a link of the chain retargets; UNIT_TARGET on every link reports
+  -- that (RegisterChainEvents), and the GUID compare turns it into the full
+  -- refresh a new unit needs.
+  self.chain = visibility ~= "hide" and unitstr:match("^(.+)target$") or nil
+  if self.chain then
+    local guid = UnitName(unitstr) and UnitGUID(unitstr)
+    if guid ~= self.eventunit then self.update_full = true end
+    self:RegisterUnitEvents(guid)
+  else
+    self:RegisterUnitEvents(visibility ~= "hide" and unitstr or nil)
+  end
+  self:RegisterChainEvents(self.chain)
 
   -- vanilla visibility
   if visibility == "hide" then
@@ -970,9 +989,10 @@ function pfUI.uf:UpdateConfig()
     f:UpdateFrameSize()
   else
     f:UnregisterAllEvents()
-    -- that dropped the unit filters along with the registrations, so the cache
-    -- has to go too or the next UpdateVisibility believes they are still set
-    f.eventunit = nil
+    -- that dropped the unit filters along with the registrations, so the
+    -- caches have to go too or the next UpdateVisibility believes they are
+    -- still set
+    f.eventunit, f.chainkey = nil, nil
     f:Hide()
   end
 end
@@ -1011,7 +1031,7 @@ function pfUI.uf.OnEvent()
 
   -- a hidden frame runs no OnUpdate, so its unit coming into existence has to
   -- show it from here
-  if VISIBILITY_EVENTS[event] and not (event == "PLAYER_TARGET_CHANGED" and pfScanActive) then
+  if VISIBILITY_EVENTS[event] then
     this:UpdateVisibility()
   end
 
@@ -1020,7 +1040,7 @@ function pfUI.uf.OnEvent()
     this.update_full = true
     -- Clear GUID tracking on zone change for full rebuild
     if pfUI.uf.ClearGuidTracking then pfUI.uf.ClearGuidTracking() end
-  elseif this.label == "target" and event == "PLAYER_TARGET_CHANGED" and not pfScanActive == true then
+  elseif this.label == "target" and event == "PLAYER_TARGET_CHANGED" then
     this.update_full = true
     -- immediately update raid icon to avoid delay on target swap
     if this.raidIcon and this.config and this.config.raidicon == "1" then
@@ -1064,12 +1084,12 @@ function pfUI.uf.OnEvent()
     this.update_aura = true
   elseif this.label == "pet" and event == "UNIT_HAPPINESS" then
     this.update_full = true
-  -- UNIT_XXX Events. RegisterUnitEvents means arg1 can only be this frame's own
-  -- unit; the compare is kept for the case the filter sits out, which is when
-  -- arg1 is not a string. The old GUID alternative is gone: these events fire
-  -- once per token that resolves to the unit AND once with the raw GUID, so the
-  -- token form always arrives and the GUID form was only ever a duplicate wake.
-  elseif arg1 and arg1 == this.unitstr then
+  -- UNIT_XXX Events. RegisterUnitEvents means arg1 can only be the unit this
+  -- frame follows -- its token, or a chained unit's GUID; the compare is kept
+  -- for the case the filter sits out, which is when arg1 is not a string. These
+  -- events fire once per token that resolves to the unit AND once with the raw
+  -- GUID, so filtering on one of the two never wakes the frame twice.
+  elseif arg1 and arg1 == this.eventunit then
     if event == "UNIT_PORTRAIT_UPDATE" or event == "UNIT_MODEL_CHANGED" then
       this.update_portrait = true
     elseif event == "UNIT_AURA" then
@@ -1148,31 +1168,18 @@ function pfUI.uf.OnUpdate()
       local unitstr = this.label .. this.id
       this.lastTick = now + (tickInterval or .5)
 
-      -- target target has a huge delay, make sure to not tick during range checks
-      if this.label == "targettarget" or this.label == "targettargettarget" then
-        local name = UnitName(this.label)
-        if name ~= this.namebuf1 then
-          this.namebuf1 = name
-        elseif name ~= this.namebuf2 then
-          this.namebuf2 = name
-        else
-          pfUI.uf:RefreshUnitState(this)
+      pfUI.uf:RefreshUnitState(this)
+      -- group frames get their leader/loot/raid mark icons refreshed by
+      -- events through update_indicators, so polling them is only a safety
+      -- net; the other frames keep polling per tick
+      local label = this.label
+      if label == "raid" or label == "party" or label == "raidpet" or label == "partypet" then
+        if (this.lastIndicatorPoll or 0) < now then
+          this.lastIndicatorPoll = now + 3
           pfUI.uf:RefreshIndicators(this)
         end
       else
-        pfUI.uf:RefreshUnitState(this)
-        -- group frames get their leader/loot/raid mark icons refreshed by
-        -- events through update_indicators, so polling them is only a safety
-        -- net; frames whose unit changes without events keep polling per tick
-        local label = this.label
-        if label == "raid" or label == "party" or label == "raidpet" or label == "partypet" then
-          if (this.lastIndicatorPoll or 0) < now then
-            this.lastIndicatorPoll = now + 3
-            pfUI.uf:RefreshIndicators(this)
-          end
-        else
-          pfUI.uf:RefreshIndicators(this)
-        end
+        pfUI.uf:RefreshIndicators(this)
       end
 
       if this.config and this.config.glowaggro == "1" and pfUI.api.UnitHasAggro(unitstr) > 0 then
@@ -1185,9 +1192,10 @@ function pfUI.uf.OnUpdate()
         this.glow:Hide()
       end
 
-      -- update eventless frames (targettarget, etc). A full refresh rescans
-      -- every aura and the portrait, so only do it when the unit behind the
-      -- frame changes or once a second; other ticks refresh the bars only.
+      -- update polled frames (the pets, created with a tick). A full refresh
+      -- rescans every aura and the portrait, so only do it when the unit
+      -- behind the frame changes or once a second; other ticks refresh the
+      -- bars only.
       if this.tick then
         local guid = UnitGUID(unitstr)
         if guid ~= this.tickGuid or (this.tickFull or 0) < now then
@@ -1330,16 +1338,17 @@ local UNIT_EVENTS = {
   "INCOMING_RESURRECT_CHANGED", -- frame=ressIcon
 }
 
--- Point this frame's unit-event subscriptions at `unitstr`, or drop them when
--- the frame has no unit. Cheap to call repeatedly: it no-ops unless the unit
--- actually changed, which matters because every refresh runs UpdateVisibility.
-function pfUI.uf:RegisterUnitEvents(unitstr)
-  if self.eventunit == unitstr then return end
-  self.eventunit = unitstr
+-- Point this frame's unit-event subscriptions at `unit` (a token, or a chained
+-- unit's GUID), or drop them when the frame has no unit. Cheap to call
+-- repeatedly: it no-ops unless the unit actually changed, which matters
+-- because every refresh runs UpdateVisibility.
+function pfUI.uf:RegisterUnitEvents(unit)
+  if self.eventunit == unit then return end
+  self.eventunit = unit
 
   for i = 1, table.getn(UNIT_EVENTS) do
-    if unitstr then
-      self:RegisterUnitEvent(UNIT_EVENTS[i], unitstr)
+    if unit then
+      self:RegisterUnitEvent(UNIT_EVENTS[i], unit)
     else
       self:UnregisterEvent(UNIT_EVENTS[i])
     end
@@ -1348,10 +1357,39 @@ function pfUI.uf:RegisterUnitEvents(unitstr)
   -- UNIT_COMBAT rides along only while the frame draws combat feedback text.
   -- UpdateConfig clears eventunit when it toggles that, so the next
   -- UpdateVisibility re-runs this.
-  if unitstr and self.combatfeedback then
-    self:RegisterUnitEvent("UNIT_COMBAT", unitstr)
+  if unit and self.combatfeedback then
+    self:RegisterUnitEvent("UNIT_COMBAT", unit)
   else
     self:UnregisterEvent("UNIT_COMBAT")
+  end
+end
+
+-- Point this frame's UNIT_TARGET subscription at every link of its chained
+-- unit, whose `owner` is the unit it is the target of -- for
+-- "targettargettarget" the links are "targettarget" and "target" -- or drop it
+-- when `owner` is nil. By GUID, since the inner links are no token that events
+-- name. Cheap to call repeatedly: it re-registers only when a link changed.
+local chainlinks = {}
+function pfUI.uf:RegisterChainEvents(owner)
+  local n, key = 0, nil
+  while owner do
+    local guid = UnitGUID(owner)
+    if guid then
+      n = n + 1
+      chainlinks[n] = guid
+      key = key and key .. guid or guid
+    end
+    owner = owner:match("^(.+)target$")
+  end
+
+  if key == self.chainkey then return end
+  self.chainkey = key
+
+  if key then
+    for i = table.getn(chainlinks), n + 1, -1 do chainlinks[i] = nil end
+    self:RegisterUnitEvent("UNIT_TARGET", unpack(chainlinks))
+  else
+    self:UnregisterEvent("UNIT_TARGET")
   end
 end
 
@@ -1473,6 +1511,7 @@ function pfUI.uf:CreateUnitFrame(unit, id, config, tick)
   f.EnableScripts    = pfUI.uf.EnableScripts
   f.EnableEvents     = pfUI.uf.EnableEvents
   f.RegisterUnitEvents = pfUI.uf.RegisterUnitEvents
+  f.RegisterChainEvents = pfUI.uf.RegisterChainEvents
   f.EnableClickCast  = pfUI.uf.EnableClickCast
   f.GetColor         = pfUI.uf.GetColor
 
@@ -1593,9 +1632,10 @@ function pfUI.uf:CreateUnitFrame(unit, id, config, tick)
     f:UpdateFrameSize()
   else
     f:UnregisterAllEvents()
-    -- that dropped the unit filters along with the registrations, so the cache
-    -- has to go too or the next UpdateVisibility believes they are still set
-    f.eventunit = nil
+    -- that dropped the unit filters along with the registrations, so the
+    -- caches have to go too or the next UpdateVisibility believes they are
+    -- still set
+    f.eventunit, f.chainkey = nil, nil
     f:Hide()
   end
 
@@ -1749,11 +1789,6 @@ function pfUI.uf:RefreshUnit(unit, component)
   if not unit.power then return end
   if not unit.id then unit.id = "" end
   component = component or ""
-
-  -- don't update scanner activity
-  if unit.label == "target" or unit.label == "targettarget" or unit.label == "targettargettarget" then
-    if pfScanActive == true then return end
-  end
 
   -- hide unused and invalid frames
   unit:UpdateVisibility()

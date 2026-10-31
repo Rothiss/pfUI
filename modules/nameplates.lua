@@ -608,6 +608,7 @@ nameplates:RegisterUnitEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "target", "focu
         -- RegisterUnitEvent on an already-filtered registration swaps the units.
         plate.nameplate:RegisterUnitEvent("UNIT_AURA", arg1)
         plate.nameplate:RegisterUnitEvent("UNIT_FLAGS", arg1)
+        plate.nameplate:RegisterUnitEvent("UNIT_TARGET", arg1)
         plate.nameplate:RegisterUnitEvent("UNIT_SPELLCAST_START", arg1)
         plate.nameplate:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", arg1)
         plate.nameplate:RegisterUnitEvent("UNIT_SPELLCAST_STOP", arg1)
@@ -765,6 +766,14 @@ nameplates:RegisterUnitEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "target", "focu
         this.auraUpdate = true
       elseif event == "UNIT_FLAGS" then
         this.eventcache = true
+      elseif event == "UNIT_TARGET" then
+        -- the unit turned to someone else: recolour its combat state now
+        -- rather than once the colour cache and the data tick run out
+        if cfg.outcombatstate or cfg.barcombatstate then
+          local cached = this.cachedGuid and combatColorCache[this.cachedGuid]
+          if cached then cached.expires = 0 end
+          this.eventcache = true
+        end
       elseif event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START" then
         -- the payload carries no timing, so poll it (PollCastInfo picks cast
         -- vs channel)

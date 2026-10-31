@@ -516,9 +516,6 @@ nameplates:RegisterUnitEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "target", "focu
       this:UnregisterAllEvents()
       this:SetScript("OnEvent", nil)
       this:SetScript("OnUpdate", nil)
-      if nameplates.mouselook then
-        nameplates.mouselook:SetScript("OnUpdate", nil)
-      end
       -- The plates hold their own unit subscriptions now, so silencing this
       -- frame alone would leave them dispatching through logout -- exactly what
       -- this branch exists to prevent. Leaving the world destroys the units
@@ -1918,9 +1915,7 @@ nameplates:RegisterUnitEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "target", "focu
   end
 
   -- enable mouselook on rightbutton down
-  nameplates.mouselook = CreateFrame("Frame", nil, UIParent)
-  nameplates.mouselook.time = nil
-  nameplates.mouselook.frame = nil
+  nameplates.mouselook = {}
   nameplates.mouselook.OnMouseDown = function()
     if arg1 and arg1 == "RightButton" then
       MouselookStart()
@@ -1928,30 +1923,23 @@ nameplates:RegisterUnitEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "target", "focu
       -- start detection of the rightclick emulation
       nameplates.mouselook.time = GetTime()
       nameplates.mouselook.frame = this
-      nameplates.mouselook:Show()
     end
   end
 
-  nameplates.mouselook:SetScript("OnUpdate", function()
-    -- break here if nothing to do
-    if not this.time or not this.frame then
-      this:Hide()
-      return
-    end
+  -- releasing the button ends the mouselook. GLOBAL_MOUSE_UP fires for every
+  -- release, while PLAYER_STOPPED_LOOKING needs the camera to have moved, and
+  -- a click doesn't move it.
+  pfUI.events:RegisterFrameEventAndCallback("GLOBAL_MOUSE_UP", function(_, button)
+    local mouselook = nameplates.mouselook
+    if button ~= "RightButton" or not mouselook.frame then return end
 
-    -- if threshold is reached (0.5 second) no click action will follow
-    if not IsMouselooking() and this.time + tonumber(C.nameplates["clickthreshold"]) < GetTime() then
-      this:Hide()
-      return
-    end
-
-    -- run a usual nameplate rightclick action
-    if not IsMouselooking() then
-      this.frame:Click("LeftButton")
+    -- past the threshold (0.5 second) it was a drag, so no click action follows
+    if mouselook.time + tonumber(C.nameplates["clickthreshold"]) >= GetTime() then
+      -- run a usual nameplate rightclick action
+      mouselook.frame:Click("LeftButton")
       if UnitCanAttack("player", "target") and not nameplates.combat.inCombat then AttackTarget() end
-      this:Hide()
-      return
     end
+    mouselook.frame = nil
   end)
 
   pfUI.nameplates = nameplates

@@ -63,53 +63,55 @@ pfUI:RegisterModule("easteregg", function ()
     -- trigger fireworks when being AFK
     fireworks:RegisterEvent("PLAYER_FLAGS_CHANGED")
     fireworks:SetScript("OnEvent", function()
-      local isAFK = UnitIsAFK('player')
-      if isAFK then
-        this:SetAlpha(0)
-      end
-      this:SetShown(isAFK)
+      this:SetShown(UnitIsAFK('player'))
     end)
 
-    -- basic explosion animation
-    local function animation()
-      local fps = (60 / math.max(GetFramerate(), 1))
-      this:SetWidth(this:GetWidth()+fps)
-      this:SetHeight(this:GetHeight()+fps)
-      this:SetAlpha(this:GetAlpha()-fps*.01)
-      if this:GetAlpha() <= 0 then
-        this.free = true
-        this:Hide()
-      end
-    end
+    -- Each explosion grows by 100px and fades out over 5/3s, then goes back
+    -- to the pool.
+    local explosions = CreateTexturePool(fireworks, "OVERLAY")
 
-    -- cache explosions to reuse frames
-    local explosions = {}
-    local function GetExplosion()
-      for id, frame in pairs(explosions) do
-        if frame.free then
-          frame.free = nil
-          return frame
-        end
+    local function Explode(x, y, size, r, g, b, a)
+      local tex = explosions:Acquire()
+      if not tex.burst then
+        tex.burst = tex:CreateAnimationGroup()
+        tex.burst:SetIgnoreFramerateThrottle(true)
+        tex.burst.grow = tex.burst:CreateAnimation("Scale")
+        tex.burst.grow:SetDuration(5/3)
+        local fade = tex.burst:CreateAnimation("Alpha")
+        fade:SetChange(-1)
+        fade:SetDuration(5/3)
+        tex.burst:SetScript("OnFinished", function() explosions:Release(tex) end)
       end
 
-      local frame = CreateFrame("Frame", nil, fireworks)
-      frame:SetScript("OnUpdate", animation)
-      frame.tex = frame:CreateTexture("HIGH")
-      frame.tex:SetAllPoints()
-
-      table.insert(explosions, frame)
-
-      return frame
+      tex:SetPoint("CENTER", fireworks, "TOPLEFT", x, y)
+      tex:SetSize(size, size)
+      tex:SetColorTexture(r, g, b, a)
+      tex.burst.grow:SetScale((size + 100) / size, (size + 100) / size)
+      tex:Show()
+      tex.burst:Play()
     end
+
+    -- Fade the night in by playing a fade-out backwards. The frame keeps an
+    -- alpha of 1, which comes back when the fade ends.
+    fireworks.dusk = fireworks:CreateAnimationGroup()
+    local fade = fireworks.dusk:CreateAnimation("Alpha")
+    fade:SetChange(-1)
+    fade:SetDuration(.8)
+
+    fireworks:SetScript("OnShow", function()
+      this.dusk:Play(true)
+    end)
+
+    -- start over on the next AFK
+    fireworks:SetScript("OnHide", function()
+      this:StopAnimating()
+      explosions:ReleaseAll()
+    end)
 
     -- create random amount of fireworks at random positions
     local width, height = GetScreenWidth(), GetScreenHeight()
     fireworks:SetScript("OnUpdate", function()
-      -- fade in the night
-      if this:GetAlpha() < 1 then
-        this:SetAlpha(this:GetAlpha() + .02)
-        return
-      end
+      if this.dusk:IsPlaying() then return end
 
       -- let the "happy new year" blink
       local r,g,b = this.text:GetTextColor()
@@ -120,23 +122,11 @@ pfUI:RegisterModule("easteregg", function ()
       local x,y = math.random(1, width), -1*math.random(1,height)
 
       -- create the base explosion
-      local f = GetExplosion()
-      f:ClearAllPoints()
-      f:SetPoint("CENTER", fireworks, "TOPLEFT", x, y)
-      f:SetSize(25, 25)
-      f.tex:SetColorTexture(1,1,1,.5)
-      f:SetAlpha(1)
-      f:Show()
+      Explode(x, y, 25, 1, 1, 1, .5)
 
       -- create random amount of colored explosions
       for i=1, math.random(20) do
-        local f = GetExplosion()
-        f:ClearAllPoints()
-        f:SetPoint("CENTER", fireworks, "TOPLEFT", x+(math.random(0,100)-50), y+(math.random(0,100)-50))
-        f:SetSize(2, 2)
-        f.tex:SetColorTexture(math.random(),math.random(),math.random(),1)
-        f:SetAlpha(1)
-        f:Show()
+        Explode(x+(math.random(0,100)-50), y+(math.random(0,100)-50), 2, math.random(), math.random(), math.random(), 1)
       end
     end)
   end

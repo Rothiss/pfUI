@@ -1,5 +1,157 @@
 pfUI:RegisterModule("easteregg", function ()
   local today = date("%m%d")
+
+  -- A full screen scene for the time the player is AFK on a holiday. The
+  -- night fades in, and a click or coming back hides it again.
+  local function CreateScene(name, greeting, info)
+    local scene = CreateFrame("Button", name, WorldFrame)
+    scene:SetFrameStrata("DIALOG")
+    scene:SetAllPoints()
+    scene:Hide()
+
+    scene.night = scene:CreateTexture(nil, "BACKGROUND")
+    scene.night:SetColorTexture(0,0,0,1)
+    scene.night:SetGradientAlpha("VERTICAL", 0,0,0,.5, 0,0,0,1)
+    scene.night:SetAllPoints()
+
+    scene.stext = scene:CreateFontString(nil, "ARTWORK", "GameFontWhite")
+    scene.stext:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
+    scene.stext:SetPoint("TOP", 0, -380)
+    scene.stext:SetText("|cff33ffccShagu|cffffffff wishes you a")
+
+    scene.text = scene:CreateFontString(nil, "ARTWORK", "GameFontWhite")
+    scene.text:SetFont(pfUI.media["font:BigNoodleTitling.ttf"], 38)
+    scene.text:SetPoint("TOP", 0, -400)
+    scene.text:SetText(greeting)
+
+    local exit = "|cff444444<Click> or '/afk' to exit"
+    scene.dtext = scene:CreateFontString(nil, "ARTWORK", "GameFontWhite")
+    scene.dtext:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
+    scene.dtext:SetPoint("TOP", 0, -430)
+    scene.dtext:SetText(info and info .. "\n\n" .. exit or exit)
+
+    -- Fade the night in by playing a fade-out backwards. The scene keeps an
+    -- alpha of 1, which comes back when the fade ends.
+    scene.dusk = scene:CreateAnimationGroup()
+    local fade = scene.dusk:CreateAnimation("Alpha")
+    fade:SetChange(-1)
+    fade:SetDuration(.8)
+
+    scene:SetScript("OnShow", function()
+      this.dusk:Play(true)
+    end)
+
+    -- start over on the next AFK
+    scene:SetScript("OnHide", function()
+      this:StopAnimating()
+    end)
+
+    scene:SetScript("OnClick", function()
+      this:Hide()
+    end)
+
+    scene:RegisterEvent("PLAYER_FLAGS_CHANGED")
+    scene:SetScript("OnEvent", function()
+      this:SetShown(UnitIsAFK('player'))
+    end)
+
+    return scene
+  end
+
+  -- happy hallow's end
+  if today == "1031" then
+    local halloween = CreateScene("pfHallowsEnd", "happy hallow's end!")
+    halloween.text:SetTextColor(1, .5, 0)
+
+    -- Candlelight glows in from the screen edges. It flickers in uneven
+    -- steps of { duration, change } that end where they began, so the loop
+    -- never jumps.
+    local candle = CreateFrame("Frame", nil, halloween)
+    candle:SetAllPoints()
+    candle:SetBackdrop({ edgeFile = pfUI.media["img:glow"], edgeSize = 32 })
+    candle:SetBackdropBorderColor(1, .5, .1, 1)
+
+    candle.flicker = candle:CreateAnimationGroup()
+    candle.flicker:SetLooping("REPEAT")
+    local steps = {
+      { .18, -.25 }, { .09, .1 }, { .22, -.2 }, { .14, .3 }, { .3, -.1 },
+      { .11, -.15 }, { .2, .2 }, { .16, -.3 }, { .26, .25 }, { .12, .15 },
+    }
+    for order, step in ipairs(steps) do
+      local duration, change = unpack(step)
+      local fade = candle.flicker:CreateAnimation("Alpha")
+      fade:SetOrder(order)
+      fade:SetDuration(duration)
+      fade:SetChange(change)
+      fade:SetSmoothing("IN_OUT")
+    end
+
+    -- Once the night has fallen, undead rise along the bottom one after
+    -- another, a different few on every AFK. They are creature displays, so
+    -- they need no creature cache. A model frame aims its camera at the
+    -- middle of the model's bounds, so the frame size alone sets how big one
+    -- is. Bounds that reach far above the body, like the lich's, leave it
+    -- standing too low, so it is left out.
+    local undead = {
+      158,   -- skeleton
+      201,   -- green skeleton
+      1245,  -- skeleton mage
+      137,   -- ghoul
+      18114, -- white-handed ghoul
+      1200,  -- zombie
+      1201,  -- green zombie
+      1202,  -- sea-green zombie
+      915,   -- banshee
+      10690, -- green banshee
+      146,   -- ghost
+      4629,  -- shade
+      7533,  -- gargoyle
+      7534,  -- black gargoyle
+      7854,  -- blue gargoyle
+    }
+
+    local function Rise()
+      this:SetDisplayInfo(this.display)
+      this:SetFacing(this.facing)
+    end
+
+    local risen = {}
+    local rising = halloween:CreateAnimationGroup()
+    for i = 1, 7 do
+      local size = math.random(180, 240)
+      local model = CreateFrame("PlayerModel", nil, halloween)
+      model:SetSize(size, size)
+      model:SetPoint("BOTTOM", halloween, "BOTTOM", (i - 4) * 150 + math.random(-20, 20), math.random(-10, 20))
+      model.facing = (math.random() - .5) * .8
+      model:SetScript("OnShow", Rise)
+      model:Hide()
+      risen[i] = model
+
+      local rise = rising:CreateAnimation()
+      rise:SetOrder(i)
+      rise:SetDuration(.3)
+      rise:SetScript("OnFinished", function() model:Show() end)
+    end
+
+    halloween.dusk:SetScript("OnFinished", function()
+      -- shuffle as many undead to the front as there are models
+      for i, model in ipairs(risen) do
+        local j = math.random(i, #undead)
+        undead[i], undead[j] = undead[j], undead[i]
+        model.display = undead[i]
+      end
+
+      candle.flicker:Play()
+      rising:Play()
+    end)
+
+    halloween:HookScript("OnHide", function()
+      for _, model in ipairs(risen) do
+        model:Hide()
+      end
+    end)
+  end
+
   -- merry x-mas!
   if today == "1224" or today == "1225" then
     local title = (UnitFactionGroup("player") == "Horde") and PVP_RANK_18_0 or PVP_RANK_18_1
@@ -27,44 +179,83 @@ pfUI:RegisterModule("easteregg", function ()
     _G.MARKED_AFK           = "You are now |cff33ffcc" .. title .. "|r (AFK)."
     _G.MARKED_AFK_MESSAGE   = "You are now |cff33ffcc" .. title .. "|r (AFK): %s"
     _G.CLEARED_AFK          = "You are no longer |cff33ffcc" .. title .. "|r (AFK).\n|cff33ffccShagu|cffffffff wishes you a merry christmas. Thanks for using |cff33ffccpf|cffffffffUI|cffffffff!|r"
+
+    local snow = CreateScene("pfSnowfall", "merry christmas!")
+    snow.text:SetTextColor(1, .25, .25)
+
+    -- Flakes fall past the screen for good and sway on the way down. Before
+    -- each fall a flake waits above the screen for a while, which spreads
+    -- them out.
+    local flakes = {}
+    for i = 1, 200 do
+      local flake = snow:CreateTexture(nil, "OVERLAY")
+      flake.fall = flake:CreateAnimationGroup()
+      flake.fall:SetLooping("REPEAT")
+      flake.fall:SetIgnoreFramerateThrottle(true)
+      flake.path = flake.fall:CreateAnimation("Path")
+      flake.path:SetCurve("SMOOTH")
+      flake.points = {}
+      for point = 1, 6 do
+        flake.points[point] = flake.path:CreateControlPoint()
+      end
+      flakes[i] = flake
+    end
+
+    local function LetItSnow()
+      local width, height = snow:GetWidth(), snow:GetHeight()
+      for _, flake in ipairs(flakes) do
+        -- bigger flakes are closer, so they are brighter and fall faster
+        local size = math.random(2, 5)
+        local fall = height + size
+        local duration = fall / (40 + size * 20)
+        local sway = math.random(-20, 20)
+
+        flake:SetSize(size, size)
+        flake:SetColorTexture(1, 1, 1, .3 + size * .14)
+        flake:ClearAllPoints()
+        flake:SetPoint("BOTTOM", snow, "TOPLEFT", math.random() * width, 0)
+
+        flake.path:SetDuration(duration)
+        flake.path:SetStartDelay(math.random() * duration)
+        for point, control in ipairs(flake.points) do
+          control:SetOffset(point % 2 == 1 and sway or -sway, -fall * point / 6)
+        end
+        flake.fall:Play()
+      end
+    end
+
+    -- Snow piles up at the bottom for as long as the player stays AFK. The
+    -- drift plays a shrink backwards, so it grows to its full height over
+    -- ten minutes and keeps it once the group ends.
+    local pile = snow:CreateTexture(nil, "ARTWORK")
+    pile:SetPoint("BOTTOMLEFT", 0, 0)
+    pile:SetPoint("BOTTOMRIGHT", 0, 0)
+    pile:SetHeight(120)
+    pile:SetColorTexture(1, 1, 1, 1)
+    pile:SetGradientAlpha("VERTICAL", 1,1,1,.9, 1,1,1,0)
+    pile:Hide()
+
+    pile.grow = pile:CreateAnimationGroup()
+    local grow = pile.grow:CreateAnimation("Scale")
+    grow:SetOrigin("BOTTOM", 0, 0)
+    grow:SetScale(1, .01)
+    grow:SetDuration(600)
+
+    snow.dusk:SetScript("OnFinished", function()
+      LetItSnow()
+      pile:Show()
+      pile.grow:Play(true)
+    end)
+
+    snow:HookScript("OnHide", function()
+      pile:Hide()
+    end)
   end
 
   -- happy new year
   if today == "1231" or today == "0101" then
-    local fireworks = CreateFrame("Button", "pfFireworks", WorldFrame)
-    fireworks:SetFrameStrata("DIALOG")
-    fireworks:SetAllPoints()
-    fireworks:Hide()
-
-    fireworks.night = fireworks:CreateTexture("LOW")
-    fireworks.night:SetColorTexture(0,0,0,1)
-    fireworks.night:SetGradientAlpha("VERTICAL", 0,0,0,.5, 0,0,0,1)
-    fireworks.night:SetAllPoints()
-
-    fireworks.stext = fireworks:CreateFontString("Status", "LOW", "GameFontWhite")
-    fireworks.stext:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
-    fireworks.stext:SetPoint("TOP", 0, -380)
-    fireworks.stext:SetText("|cff33ffccShagu|cffffffff wishes you a")
-
-    fireworks.text = fireworks:CreateFontString("Status", "LOW", "GameFontWhite")
-    fireworks.text:SetFont(pfUI.media["font:BigNoodleTitling.ttf"], 38)
-    fireworks.text:SetPoint("TOP", 0, -400)
-    fireworks.text:SetText("happy new year!")
-
-    fireworks.dtext = fireworks:CreateFontString("Status", "LOW", "GameFontWhite")
-    fireworks.dtext:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
-    fireworks.dtext:SetPoint("TOP", 0, -430)
-    fireworks.dtext:SetText("Another year with |cff33ffccpf|rUI has passed.\nThanks for continuing to use it!\n\n|cff444444<Click> or '/afk' to exit")
-
-    fireworks:SetScript("OnClick", function()
-      this:Hide()
-    end)
-
-    -- trigger fireworks when being AFK
-    fireworks:RegisterEvent("PLAYER_FLAGS_CHANGED")
-    fireworks:SetScript("OnEvent", function()
-      this:SetShown(UnitIsAFK('player'))
-    end)
+    local fireworks = CreateScene("pfFireworks", "happy new year!",
+      "Another year with |cff33ffccpf|rUI has passed.\nThanks for continuing to use it!")
 
     -- Each explosion grows by 100px and fades out over 5/3s, then goes back
     -- to the pool.
@@ -91,25 +282,11 @@ pfUI:RegisterModule("easteregg", function ()
       tex.burst:Play()
     end
 
-    -- Fade the night in by playing a fade-out backwards. The frame keeps an
-    -- alpha of 1, which comes back when the fade ends.
-    fireworks.dusk = fireworks:CreateAnimationGroup()
-    local fade = fireworks.dusk:CreateAnimation("Alpha")
-    fade:SetChange(-1)
-    fade:SetDuration(.8)
-
-    fireworks:SetScript("OnShow", function()
-      this.dusk:Play(true)
-    end)
-
-    -- start over on the next AFK
-    fireworks:SetScript("OnHide", function()
-      this:StopAnimating()
+    fireworks:HookScript("OnHide", function()
       explosions:ReleaseAll()
     end)
 
     -- create random amount of fireworks at random positions
-    local width, height = GetScreenWidth(), GetScreenHeight()
     fireworks:SetScript("OnUpdate", function()
       if this.dusk:IsPlaying() then return end
 
@@ -119,7 +296,7 @@ pfUI:RegisterModule("easteregg", function ()
 
       if ( this.tick or 1) > GetTime() then return else this.tick = GetTime() + math.random() - .2 end
 
-      local x,y = math.random(1, width), -1*math.random(1,height)
+      local x,y = math.random(1, this:GetWidth()), -1*math.random(1, this:GetHeight())
 
       -- create the base explosion
       Explode(x, y, 25, 1, 1, 1, .5)

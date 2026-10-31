@@ -175,26 +175,6 @@ function pfUI.api.UnitInRange(unit)
   return nil
 end
 
--- [ RunOOC ]
--- Runs a function once, as soon as the combat lockdown fades.
--- func         [function]      The function that shall run ooc.
--- return:      [bool]          true if the function was added,
---                              nil if the function already exists in queue
-local queue, frame = {}
-function pfUI.api.RunOOC(func)
-  if not frame then
-    frame = CreateFrame("Frame")
-    frame:SetScript("OnUpdate", function()
-      for key, func in pairs(queue) do func(); queue[key] = nil end
-    end)
-  end
-
-  if not queue[tostring(func)] then
-    queue[tostring(func)] = func
-    return true
-  end
-end
-
 -- [ UnitHasBuff ]
 -- Returns whether a unit has the named buff or not.
 -- unit         [string]        A unit to query (string, unitID)
@@ -666,36 +646,6 @@ function pfUI.api.HookAddon(addon, func)
   EventUtil.ContinueOnPlayerLogin(function()
     EventUtil.ContinueOnAddOnLoaded(addon, func)
   end)
-end
-
--- [ QueueFunction ]
--- Add functions to a FIFO queue for execution after a short delay.
--- '...'        [vararg]        function, [arguments]
-local timer
-function pfUI.api.QueueFunction(a1,a2,a3,a4,a5,a6,a7,a8,a9)
-  if not timer then
-    timer = CreateFrame("Frame")
-    timer.queue = {}
-    timer.interval = TOOLTIP_UPDATE_TIME
-    timer.DeQueue = function()
-      local item = table.remove(timer.queue,1)
-      if item then
-        item[1](item[2],item[3],item[4],item[5],item[6],item[7],item[8],item[9])
-      end
-      if table.getn(timer.queue) == 0 then
-        timer:Hide() -- no need to run the OnUpdate when the queue is empty
-      end
-    end
-    timer:SetScript("OnUpdate",function()
-      this.sinceLast = (this.sinceLast or 0) + arg1
-      while (this.sinceLast > this.interval) do
-        this.DeQueue()
-        this.sinceLast = this.sinceLast - this.interval
-      end
-    end)
-  end
-  table.insert(timer.queue,{a1,a2,a3,a4,a5,a6,a7,a8,a9})
-  timer:Show() -- start the OnUpdate
 end
 
 -- [ Create Gold String ]

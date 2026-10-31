@@ -524,7 +524,7 @@ function pfUI.api.SkinScrollbar(frame, always)
 
   -- always show parent frame
   if always then
-    RunOOC(function()
+    RunNextFrame(function()
       parent:HookScript("OnHide", function() this:Show() end)
     end)
   end

@@ -18,7 +18,7 @@ pfUI:RegisterModule("minimap", function ()
   pfUI.minimap:SetPoint("TOPRIGHT", UIParent, -border*2, -border*2)
   UpdateMovable(pfUI.minimap)
   pfUI.minimap:SetScript("OnShow", function()
-    QueueFunction(ShowUIPanel, Minimap)
+    RunNextFrame(function() ShowUIPanel(Minimap) end)
   end)
 
   Minimap:SetParent(pfUI.minimap)

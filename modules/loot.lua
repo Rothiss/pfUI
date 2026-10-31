@@ -49,7 +49,7 @@ pfUI:RegisterModule("loot", function ()
             names = (k==1) and (i..":"..pfUI.loot.index_to_name[candidates[i]]) or (names..", "..i..":"..pfUI.loot.index_to_name[candidates[i]])
             -- fit the maximum names in a single 255 char message (15)
             if i == to or k == 15 then
-              QueueFunction(SendChatMessageWide,names)
+              SendChatMessageWide(names)
               names = ""
             end
             k = k<15 and k+1 or 1
@@ -58,7 +58,7 @@ pfUI:RegisterModule("loot", function ()
       end
       pfUI.loot:RegisterEvent("CHAT_MSG_SYSTEM")
       pfUI.loot.randomRolling = true
-      QueueFunction(RandomRoll,"1",tostring(to))
+      RandomRoll("1",tostring(to))
     end
   end
 
@@ -450,7 +450,7 @@ pfUI:RegisterModule("loot", function ()
       LootSlot(this:GetID())
       -- workaround for bugged disenchant / container loot on some servers
       if numItems == 1 then
-        QueueFunction(CloseOnClick)
+        RunNextFrame(CloseOnClick)
       end
     end)
 
@@ -604,7 +604,7 @@ pfUI:RegisterModule("loot", function ()
     if C.loot.autopickup == "1" and GetNumPartyMembers() == 0 and GetNumRaidMembers() == 0 then
       if event == "LOOT_BIND_CONFIRM" then
         local slot = arg1
-        QueueFunction(function()
+        RunNextFrame(function()
           LootSlot(slot)
           StaticPopup_Hide("LOOT_BIND")
         end)

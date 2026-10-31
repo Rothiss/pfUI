@@ -79,7 +79,7 @@ pfUI:RegisterModule("superwow", function ()
   -- SuperWoW release past 1.5
   local swVersion = tonumber(SUPERWOW_VERSION)
   if swVersion and swVersion >= 1.5 then
-    QueueFunction(function()
+    RunNextFrame(function()
       local pfCombatText_AddMessage = _G.CombatText_AddMessage
       _G.CombatText_AddMessage = function(message, a, b, c, d, e, f)
         local match, _, hex = string.find(message, ".+ %[(0x.+)%]")

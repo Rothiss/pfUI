@@ -230,19 +230,6 @@ pfUI:RegisterModule("unlock", function ()
     if pfUI_config["position"] and pfUI_config["position"][drag.fname] and pfUI_config["position"][drag.fname]["xpos"] then
       dock.xcoord:SetText(pfUI_config["position"][drag.fname]["xpos"])
       dock.ycoord:SetText(pfUI_config["position"][drag.fname]["ypos"])
-      local anchor = pfUI_config["position"][drag.fname]["anchor"] or "TOPLEFT"
-
-      for id, k in pairs(anchors) do
-        -- get human readable
-        local value, text = strsplit(":", k)
-        text = text or value
-
-        if value == anchor then
-          UIDropDownMenu_SetSelectedID(pfUI.unlock.dock.anchor, id, 0)
-          UIDropDownMenu_SetText(text, pfUI.unlock.dock.anchor)
-        end
-      end
-
       dock.reset:SetText(T["Reset"])
 
       dock.up:Enable()
@@ -269,6 +256,9 @@ pfUI:RegisterModule("unlock", function ()
       dock.left.texture:SetVertexColor(.4,.4,.4)
       dock.right.texture:SetVertexColor(.4,.4,.4)
     end
+
+    -- show the saved anchor, or none for a frame without a saved position
+    dock.anchor:GenerateMenu()
 
     -- update config button
     local cat, conf = GetConfigTable(drag.label)
@@ -539,41 +529,32 @@ pfUI:RegisterModule("unlock", function ()
   pfUI.unlock.dock.title:SetPoint("TOP", 0, -5)
 
   -- anchor
-  pfUI.unlock.dock.anchor = CreateFrame("Frame", "pfUIUnlockAnchorDropDownMenu", pfUI.unlock.dock, "UIDropDownMenuTemplate")
-  pfUI.unlock.dock.anchor:ClearAllPoints()
-  pfUI.unlock.dock.anchor:SetPoint("TOP", 0, -25)
+  local function IsDockAnchor(anchor)
+    local position = pfUI_config["position"] and pfUI_config["position"][pfUI.unlock.dock.parent.fname]
+    return position and position["xpos"] and (position["anchor"] or "TOPLEFT") == anchor
+  end
 
-  UIDropDownMenu_SetWidth(120, pfUI.unlock.dock.anchor)
-  UIDropDownMenu_SetButtonWidth(120, pfUI.unlock.dock.anchor)
-  UIDropDownMenu_JustifyText("RIGHT", pfUI.unlock.dock.anchor)
-  UIDropDownMenu_Initialize(pfUI.unlock.dock.anchor, function()
-    local info = {}
-    for id, k in pairs(anchors) do
-      -- get human readable
-      local value, text = strsplit(":", k)
-      local id = id
-      text = text or value
+  -- moves the frame's saved position to count from another point of the screen
+  local function SetDockAnchor(anchor)
+    local frame = pfUI.unlock.dock.parent.frame
+    local point, x, y = ConvertFrameAnchor(frame, anchor)
+    frame:ClearAllPoints()
+    frame:SetPoint(point, UIParent, point, x, y)
 
-      info.text = text
-      info.checked = false
-      info.func = function()
-        UIDropDownMenu_SetSelectedID(pfUI.unlock.dock.anchor, id, 0)
-        UIDropDownMenu_SetText(text, pfUI.unlock.dock.anchor)
+    SavePosition(frame)
+    UpdateDockValues()
+  end
 
-        local frame = pfUI.unlock.dock.parent.frame
-        local anchor, x, y = ConvertFrameAnchor(frame, text)
-        frame:ClearAllPoints()
-        frame:SetPoint(anchor, UIParent, anchor, x, y)
-
-        SavePosition(frame)
-        UpdateDockValues()
-      end
-
-      UIDropDownMenu_AddButton(info)
+  pfUI.unlock.dock.anchor = CreateFrame("DropdownButton", nil, pfUI.unlock.dock, "pfUIDropdownTemplate")
+  pfUI.unlock.dock.anchor:SetPoint("TOP", 0, -28)
+  pfUI.unlock.dock.anchor:SetWidth(140)
+  pfUI.unlock.dock.anchor:SetDefaultText(T["N/A"])
+  CreateBackdrop(pfUI.unlock.dock.anchor, nil, true)
+  pfUI.unlock.dock.anchor:SetupMenu(function(dropdown, rootDescription)
+    for _, anchor in ipairs(anchors) do
+      rootDescription:CreateRadio(anchor, IsDockAnchor, SetDockAnchor, anchor)
     end
   end)
-
-  SkinDropDown(pfUI.unlock.dock.anchor)
 
   -- x coordinates
   pfUI.unlock.dock.xcoordcap = pfUI.unlock.dock:CreateFontString("Status", "DIALOG", "GameFontNormal")

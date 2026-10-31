@@ -1984,8 +1984,8 @@ function pfUI.uf:RefreshUnit(unit, component)
 
     if not unit.indicator_custom and unit.config.buff_indicator == "1" then
       unit.indicator_custom = {}
-      for k, v in pairs({strsplit("#", unit.config.custom_indicator)}) do
-        unit.indicator_custom[k] = v:lower()
+      for _, v in pairs({strsplit("#", unit.config.custom_indicator)}) do
+        if v ~= "" then table.insert(unit.indicator_custom, v:lower()) end
       end
     elseif not unit.indicator_custom then
       unit.indicator_custom = {}

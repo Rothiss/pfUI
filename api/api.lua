@@ -103,13 +103,20 @@ mod = math.mod or mod
 --                              characters (bytes) in the string.
 -- 'subject'    [string]        String to split.
 -- return:      [list]          a list of strings.
-local format, sgsub = string.format, string.gsub
+local sfind, ssub, sgsub = string.find, string.sub, string.gsub
 function pfUI.api.strsplit(delimiter, subject)
   if not subject then return nil end
-  local fields = {}
-  delimiter = delimiter or ":"
-  local pattern = format("([^%s]+)", delimiter)
-  sgsub(subject, pattern, function(c) fields[table.getn(fields)+1] = c end)
+  -- a character class of the delimiter bytes, each escaped so % ] ^ - stay
+  -- literal
+  local set = "[" .. sgsub(delimiter or ":", "(%W)", "%%%1") .. "]"
+  local fields, start = {}, 1
+  local pos = sfind(subject, set)
+  while pos do
+    table.insert(fields, ssub(subject, start, pos - 1))
+    start = pos + 1
+    pos = sfind(subject, set, start)
+  end
+  table.insert(fields, ssub(subject, start))
   return unpack(fields)
 end
 

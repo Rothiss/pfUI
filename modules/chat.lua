@@ -924,12 +924,9 @@ pfUI:RegisterModule("chat", function ()
 
     if not _G["ChatFrame"..i].HookAddMessage then
       if C.chat.text.history == "1" then
-        -- write history to chat
-        local history = GetChatHistory(i)
-        for j=30,0,-1 do
-          if history[j] then
-            _G["ChatFrame"..i]:AddMessage(history[j], .7,.7,.7)
-          end
+        -- write history to chat, newest first, above the lines already there
+        for _, msg in ipairs(GetChatHistory(i)) do
+          _G["ChatFrame"..i]:BackFillMessage(msg, .7,.7,.7)
         end
       end
 

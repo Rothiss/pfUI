@@ -391,6 +391,14 @@ function pfUI.api.SkinCloseButton(button, parentFrame, offsetX, offsetY)
   button.texture:SetVertexColor(1,.25,.25,1)
 end
 
+local function ArrowButtonOnEnable()
+  this.icon:SetVertexColor(.8,.8,.8,1)
+end
+
+local function ArrowButtonOnDisable()
+  this.icon:SetVertexColor(.2,.2,.2,1)
+end
+
 function pfUI.api.SkinArrowButton(button, dir, size)
   if not button then return end
 
@@ -415,19 +423,17 @@ function pfUI.api.SkinArrowButton(button, dir, size)
 
   button.icon:SetTexture(pfUI.media["img:"..dir])
 
-  if not button.pficonfade then
-    local button, state = button, nil
-    button.pficonfade = CreateFrame("Frame", nil, button)
-    button.pficonfade:SetScript("OnUpdate", function()
-      if state == button:IsEnabled() then return end
-      state = button:IsEnabled()
+  -- the icon dims while the button is disabled
+  if not button.pfArrowHooked then
+    button:HookScript("OnEnable", ArrowButtonOnEnable)
+    button:HookScript("OnDisable", ArrowButtonOnDisable)
+    button.pfArrowHooked = true
+  end
 
-      if state > 0 then
-        button.icon:SetVertexColor(.8,.8,.8,1)
-      else
-        button.icon:SetVertexColor(.2,.2,.2,1)
-      end
-    end)
+  if button:IsEnabled() > 0 then
+    button.icon:SetVertexColor(.8,.8,.8,1)
+  else
+    button.icon:SetVertexColor(.2,.2,.2,1)
   end
 end
 
@@ -641,148 +647,137 @@ function pfUI.api.SkinSlider(frame)
 end
 
 -- [ Question Dialog ]
--- Creates a pfUI user dialog popup:
+-- Shows the pfUI user dialog popup. A call while it is shown closes it.
 -- 'text'       [string]        text that will be displayed.
 -- 'yes'        [function]      function that is triggered on 'Okay' button.
 -- 'no'         [function]      function that is triggered on 'Cancel' button.
+--                              either can be { caption, function }.
 -- 'editbox'    [bool]          if set, a inputfield will be shown. it can be.
---                              accessed with "GetParent().input".
-function pfUI.api.CreateQuestionDialog(text, yes, no, editbox, onclose)
-  -- do not allow multiple instances of question dialogs
-  if _G["pfQuestionDialog"] and _G["pfQuestionDialog"]:IsShown() then
-    _G["pfQuestionDialog"]:Hide()
-    _G["pfQuestionDialog"] = nil
-    return
-  end
-
-  local yes, no = yes, no
-  local yescap, nocap = YES, NO
-
-  if yes and type(yes) == "table" then
-    yescap = yes[1]
-    yes = yes[2]
-  end
-
-  if no and type(no) == "table" then
-    nocap = no[1]
-    no = no[2]
-  end
-
-  if not text then text = "Are you sure?" end
-
-  local rawborder, border = GetBorderSize()
+--                              accessed with "this:GetParent().input".
+-- 'onclose'    [function]      runs once the dialog has closed.
+do
   local padding = 15
+  local question
 
-  -- frame
-  local question = CreateFrame("Frame", "pfQuestionDialog", UIParent)
-  question:ClearAllPoints()
-  question:SetPoint("CENTER", 0, 0)
-  question:SetFrameStrata("TOOLTIP")
-  question:SetMovable(true)
-  question:EnableMouse(true)
-  question:RegisterForDrag("LeftButton")
-  question:SetScript("OnDragStart",function()
-    this:StartMoving()
-  end)
-
-  question:SetScript("OnDragStop",function()
-    this:StopMovingOrSizing()
-  end)
-
-  question:SetScript("OnHide", onclose)
-
-  pfUI.api.CreateBackdrop(question, nil, nil, .85)
-  pfUI.api.CreateBackdropShadow(question)
-
-  -- text
-  question.text = question:CreateFontString("Status", "LOW", "GameFontNormal")
-  question.text:SetFontObject(GameFontWhite)
-  question.text:SetPoint("TOPLEFT", question, "TOPLEFT", padding, -padding)
-  question.text:SetPoint("TOPRIGHT", question, "TOPRIGHT", -padding, -padding)
-  question.text:SetText(text)
-
-  -- editbox
-  if editbox then
-    question.input = CreateFrame("EditBox", "pfQuestionDialogEdit", question)
-    pfUI.api.CreateBackdrop(question.input)
-    question.input:SetTextColor(.2,1,.8,1)
-    question.input:SetJustifyH("CENTER")
-    question.input:SetAutoFocus(false)
-    question.input:SetPoint("TOPLEFT", question.text, "BOTTOMLEFT", border, -padding)
-    question.input:SetPoint("TOPRIGHT", question.text, "BOTTOMRIGHT", -border, -padding)
-    question.input:SetHeight(20)
-
-    question.input:SetFontObject(GameFontNormal)
-    question.input:SetScript("OnEscapePressed", function() this:ClearFocus() end)
-    question.input:SetAutoFocus(true)
+  local function QuestionOnHide()
+    -- onclose may show the next question in this frame, so it runs once
+    -- the hide is over
+    if this.onclose then
+      RunNextFrame(this.onclose)
+      this.onclose = nil
+    end
   end
 
-  -- buttons
-  question.yes = CreateFrame("Button", "pfQuestionDialogYes", question, "UIPanelButtonTemplate")
-  pfUI.api.SkinButton(question.yes)
-  question.yes:SetSize(100, 22)
-  question.yes:SetText(yescap)
-  question.yes:SetScript("OnClick", function()
-    if yes then yes() end
+  -- the answer runs with 'this' on its button, where it finds the input
+  local function AnswerOnClick()
+    if this.answer then this.answer() end
     this:GetParent():Hide()
-  end)
-
-  if question.input then
-    question.yes:SetPoint("TOPRIGHT", question.input, "BOTTOM", -3*border, -padding)
-  else
-    question.yes:SetPoint("TOPRIGHT", question.text, "BOTTOM", -3*border, -padding)
   end
 
-  question.no = CreateFrame("Button", "pfQuestionDialogNo", question, "UIPanelButtonTemplate")
-  pfUI.api.SkinButton(question.no)
-  question.no:SetSize(100, 22)
-  question.no:SetText(nocap)
-  question.no:SetScript("OnClick", function()
-    if no then no() end
-    this:GetParent():Hide()
-  end)
+  local function CreateQuestion()
+    local _, border = GetBorderSize()
 
-  if question.input then
-    question.no:SetPoint("TOPLEFT", question.input, "BOTTOM", 3*border, -padding)
-  else
-    question.no:SetPoint("TOPLEFT", question.text, "BOTTOM", 3*border, -padding)
+    local f = CreateFrame("Frame", nil, UIParent)
+    f:SetFrameStrata("TOOLTIP")
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", function() this:StartMoving() end)
+    f:SetScript("OnDragStop", function() this:StopMovingOrSizing() end)
+    f:SetScript("OnHide", QuestionOnHide)
+    f:Hide()
+
+    CreateBackdrop(f, nil, nil, .85)
+    CreateBackdropShadow(f)
+
+    f.text = f:CreateFontString(nil, "LOW", "GameFontWhite")
+    f.text:SetPoint("TOP", 0, -padding)
+
+    f.input = CreateFrame("EditBox", nil, f)
+    CreateBackdrop(f.input)
+    f.input:SetTextColor(.2,1,.8,1)
+    f.input:SetJustifyH("CENTER")
+    f.input:SetPoint("TOPLEFT", f.text, "BOTTOMLEFT", border, -padding)
+    f.input:SetPoint("TOPRIGHT", f.text, "BOTTOMRIGHT", -border, -padding)
+    f.input:SetHeight(20)
+    f.input:SetFontObject(GameFontNormal)
+    f.input:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+    f.input:SetAutoFocus(true)
+
+    f.yes = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    SkinButton(f.yes)
+    f.yes:SetSize(100, 22)
+    f.yes:SetScript("OnClick", AnswerOnClick)
+
+    f.no = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    SkinButton(f.no)
+    f.no:SetSize(100, 22)
+    f.no:SetScript("OnClick", AnswerOnClick)
+
+    f.close = CreateFrame("Button", nil, f)
+    f.close:SetPoint("TOPRIGHT", -border, -border)
+    CreateBackdrop(f.close)
+    f.close:SetSize(10, 10)
+    f.close.texture = f.close:CreateTexture()
+    f.close.texture:SetTexture(pfUI.media["img:close"])
+    f.close.texture:SetAllPoints(f.close)
+    f.close.texture:SetVertexColor(1,.25,.25,1)
+    f.close:SetScript("OnEnter", function()
+      this.backdrop:SetBackdropBorderColor(1,.25,.25,1)
+    end)
+    f.close:SetScript("OnLeave", function()
+      CreateBackdrop(this)
+    end)
+    f.close:SetScript("OnClick", function()
+      this:GetParent():Hide()
+    end)
+
+    return f
   end
 
-  question.close = CreateFrame("Button", "pfQuestionDialogClose", question)
-  question.close:SetPoint("TOPRIGHT", -border, -border)
-  pfUI.api.CreateBackdrop(question.close)
-  question.close:SetSize(10, 10)
-  question.close.texture = question.close:CreateTexture("pfQuestionDialogCloseTex")
-  question.close.texture:SetTexture(pfUI.media["img:close"])
-  question.close.texture:ClearAllPoints()
-  question.close.texture:SetAllPoints(question.close)
-  question.close.texture:SetVertexColor(1,.25,.25,1)
-  question.close:SetScript("OnEnter", function ()
-    this.backdrop:SetBackdropBorderColor(1,.25,.25,1)
-  end)
+  function pfUI.api.CreateQuestionDialog(text, yes, no, editbox, onclose)
+    question = question or CreateQuestion()
 
-  question.close:SetScript("OnLeave", function ()
-    pfUI.api.CreateBackdrop(this)
-  end)
+    -- do not allow multiple instances of question dialogs
+    if question:IsShown() then
+      question:Hide()
+      return
+    end
 
-  question.close:SetScript("OnClick", function()
-   this:GetParent():Hide()
-  end)
+    local yescap, nocap = YES, NO
+    if type(yes) == "table" then yescap, yes = yes[1], yes[2] end
+    if type(no) == "table" then nocap, no = no[1], no[2] end
 
-  -- resize window
-  local textspace = question.text:GetHeight() + padding
-  local inputspace = 0
-  if question.input then inputspace = question.input:GetHeight() + padding end
-  local buttonspace = question.no:GetHeight() + padding
-  question:SetHeight(textspace + inputspace + buttonspace + padding)
+    question.onclose = onclose
+    question.yes.answer = yes
+    question.yes:SetText(yescap)
+    question.no.answer = no
+    question.no:SetText(nocap)
 
-  local width = 200
-
-  -- delay the auto sizing, to make sure the font rendering happened
-  RunNextFrame(function()
-    if question.text:GetStringWidth() > width then width = question.text:GetStringWidth() end
+    -- the dialog is as wide as the longest line of text, and at least 200
+    question.text:SetText(text or "Are you sure?")
+    local width = math.max(200, question.text:GetUnboundedStringWidth())
+    question.text:SetWidth(width)
     question:SetWidth(width + 2*padding)
-  end)
+
+    -- the buttons go below the input field when it is shown
+    local _, border = GetBorderSize()
+    local above = editbox and question.input or question.text
+    question.input:SetShown(editbox)
+    question.input:SetText("")
+    question.yes:ClearAllPoints()
+    question.yes:SetPoint("TOPRIGHT", above, "BOTTOM", -3*border, -padding)
+    question.no:ClearAllPoints()
+    question.no:SetPoint("TOPLEFT", above, "BOTTOM", 3*border, -padding)
+
+    local height = padding + question.text:GetStringHeight() + padding + question.no:GetHeight() + padding
+    if editbox then height = height + question.input:GetHeight() + padding end
+    question:SetHeight(height)
+
+    question:ClearAllPoints()
+    question:SetPoint("CENTER", 0, 0)
+    question:Show()
+  end
 end
 
 

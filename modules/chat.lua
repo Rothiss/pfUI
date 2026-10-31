@@ -278,22 +278,14 @@ pfUI:RegisterModule("chat", function ()
   pfUI.chat:RegisterEvent("UI_SCALE_CHANGED")
 
   local function ChatOnMouseWheel()
-    if (arg1 > 0) then
-      if IsShiftKeyDown() then
-        this:ScrollToTop()
-      else
-        for i=1, C.chat.global.scrollspeed do
-          this:ScrollUp()
-        end
-      end
-    elseif (arg1 < 0) then
-      if IsShiftKeyDown() then
-        this:ScrollToBottom()
-      else
-        for i=1, C.chat.global.scrollspeed do
-          this:ScrollDown()
-        end
-      end
+    if not IsShiftKeyDown() then
+      this:ScrollByAmount(arg1 * C.chat.global.scrollspeed)
+    elseif arg1 > 0 then
+      -- stops with the oldest line on top, as the wheel does; ScrollToTop
+      -- would leave it alone on the bottom line
+      this:ScrollByAmount(this:GetMaxScrollRange())
+    else
+      this:ScrollToBottom()
     end
   end
 

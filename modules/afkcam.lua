@@ -74,11 +74,7 @@ pfUI:RegisterModule("afkcam", function ()
     chat:RegisterEvent(ctype)
   end
   chat:SetScript("OnMouseWheel",function()
-    if arg1 > 0 then
-      this:ScrollUp()
-    else
-      this:ScrollDown()
-    end
+    this:ScrollByAmount(arg1)
   end)
   overlay.chat = chat
 

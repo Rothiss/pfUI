@@ -2073,6 +2073,7 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(nil, T["Offhand Bar Color"], C.unitframes, "swingtimerohcolor", "color")
       CreateConfig(nil, T["Ranged Bar Color"], C.unitframes, "swingtimerrangedcolor", "color")
       CreateConfig(nil, T["Ranged Warn Color (Hunter)"], C.unitframes, "swingtimerrangedwarncolor", "color")
+      CreateConfig(nil, T["Out Of Range Color"], C.unitframes, "swingtimeroutrangecolor", "color")
       CreateConfig(nil, T["Show On Next Attack Queue Color"], C.unitframes, "swingtimerhsqueue", "checkbox")
       CreateConfig(nil, T["Show Attack Speed"], C.unitframes, "swingtimerattackspeed", "checkbox")
 

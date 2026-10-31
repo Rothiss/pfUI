@@ -110,6 +110,12 @@ pfUI:RegisterModule("addons", function ()
     return selected_addons
   end
 
+  local selectedProfile
+
+  local function IsSelectedProfile(profile)
+    return profile == selectedProfile
+  end
+
   local function SetAddonProfile(profile)
     -- create new profile if not existing
     if not pfUI_addon_profiles[profile] then
@@ -117,7 +123,8 @@ pfUI:RegisterModule("addons", function ()
     end
 
     -- set dropdown to profile
-    pfUI.addons.profile.dropdown:SetSelectionByText(profile)
+    selectedProfile = profile
+    pfUI.addons.profile.dropdown:GenerateMenu()
 
     -- load profile
     local selected = {}
@@ -163,7 +170,7 @@ pfUI:RegisterModule("addons", function ()
   pfUI.addons.profile.del:SetText("-")
   pfUI.addons.profile.del:SetTextColor(1,.5,.5,1)
   pfUI.addons.profile.del:SetScript("OnClick", function() -- TODO
-    local id, name = pfUI.addons.profile.dropdown:GetSelection()
+    local name = selectedProfile
     if not name then return end
     CreateQuestionDialog(T["Delete profile"] .. " '|cff33ffcc" .. name .. "|r'?", function()
       pfUI_addon_profiles[name] = nil
@@ -193,26 +200,13 @@ pfUI:RegisterModule("addons", function ()
   end)
 
   -- addon profile: dropdown
-  pfUI.addons.profile.dropdown = CreateDropDownButton("pfAddonListProfileList", pfUI.addons.profile)
-  pfUI.addons.profile.dropdown:SetBackdrop(nil)
-  pfUI.addons.profile.dropdown:ClearAllPoints()
+  pfUI.addons.profile.dropdown = CreateFrame("DropdownButton", nil, pfUI.addons.profile, "pfUIDropdownTemplate")
   pfUI.addons.profile.dropdown:SetPoint("RIGHT", pfUI.addons.profile.add, "LEFT", -2, 0)
   pfUI.addons.profile.dropdown:SetWidth(220)
-  pfUI.addons.profile.dropdown:SetMenu(function()
-    local menu = {}
-
-    for name, list in pairs(pfUI_addon_profiles) do
-      local name = name
-      local entry = {}
-      entry.text = name
-      entry.checked = false
-      entry.func = function()
-        SetAddonProfile(name)
-      end
-      table.insert(menu, entry)
+  pfUI.addons.profile.dropdown:SetupMenu(function(dropdown, rootDescription)
+    for name in pairs(pfUI_addon_profiles) do
+      rootDescription:CreateRadio(name, IsSelectedProfile, SetAddonProfile, name)
     end
-
-    return menu
   end)
 
   local function AddDependencyLines(header, deps)
@@ -263,9 +257,7 @@ pfUI:RegisterModule("addons", function ()
   local function InputOnClick(self)
     SetAddonEnabled(self:GetParent().addon.index, self:GetChecked())
 
-    local _, name = pfUI.addons.profile.dropdown:GetSelection()
-    name = name or T["Current"]
-    pfUI_addon_profiles[name] = GetSelectedAddonsList()
+    pfUI_addon_profiles[selectedProfile or T["Current"]] = GetSelectedAddonsList()
   end
 
   local function InitRow(row, addon)

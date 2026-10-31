@@ -48,9 +48,8 @@ pfUI:RegisterModule("gui", function ()
     end})
 
     function EntryUpdate()
-      -- detect and skip during dropdowns
-      local focus = GetMouseFocus()
-      if focus and focus.parent and focus.parent.menu then
+      -- skip while the cursor is over an open menu
+      if Menu.GetManager():ContainsCursor() then
         if this.over then
           this.tex:Hide()
           this.over = nil
@@ -344,45 +343,43 @@ pfUI:RegisterModule("gui", function ()
 
       -- use dropdown widget
       if widget == "dropdown" and values then
-        frame.input = CreateDropDownButton(nil, frame)
-        frame.input:SetBackdrop(nil)
-        frame.input.menuframe:SetParent(pfUI.gui)
+        local function IsSelected(value)
+          return category[config] == value
+        end
 
+        local function SetSelected(value)
+          if category[config] ~= value then
+            category[config] = value
+            if ufunc then ufunc() else pfUI.gui.settingChanged = true end
+            pfUI.events:TriggerEvent("config:changed", category, config)
+          end
+        end
+
+        frame.input = CreateFrame("DropdownButton", nil, frame, "pfUIDropdownTemplate")
         frame.input:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
         frame.input:SetWidth(180)
-        frame.input:SetMenu(function()
-          local menu = {}
-
-          for i, k in pairs(_G.type(values) == "function" and values() or values) do
-            local entry = {}
+        frame.input:SetupMenu(function(dropdown, rootDescription)
+          for _, k in pairs(_G.type(values) == "function" and values() or values) do
             -- get human readable
             local value, text = strsplit(":", k)
-            text = text or value
-
-            entry.text = text
-            entry.func = function()
-              if category and category[config] ~= value then
-                category[config] = value
-                if ufunc then ufunc() else pfUI.gui.settingChanged = true end
-                pfUI.events:TriggerEvent("config:changed", category, config)
-              end
-            end
-
-            if category and category[config] == value then
-              frame.input.current = i
-            end
-
-            table.insert(menu, entry)
+            rootDescription:CreateRadio(text or value, IsSelected, SetSelected, value)
           end
-
-          return menu
         end)
-
-        frame.input:SetSelection(frame.input.current)
       end
 
       -- use list widget
       if widget == "list" then
+        -- index of the selected entry among the "#" separated ones
+        local selected
+
+        local function IsSelected(index)
+          return index == selected
+        end
+
+        local function Select(index)
+          selected = index
+        end
+
         frame.del = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
         SkinButton(frame.del)
         frame.del:SetWidth(16)
@@ -392,15 +389,16 @@ pfUI:RegisterModule("gui", function ()
         frame.del:SetText("-")
         frame.del:SetTextColor(1,.5,.5,1)
         frame.del:SetScript("OnClick", function()
-          local sel = frame.input:GetSelection()
+          if not selected then return end
           local newconf = ""
-          for id, val in pairs({strsplit("#", category[config])}) do
-            if id ~= sel then newconf = newconf .. "#" .. val end
+          for id, val in ipairs({strsplit("#", category[config])}) do
+            if id ~= selected and val ~= "" then newconf = newconf .. "#" .. val end
           end
+          selected = nil
           category[config] = newconf
           if ufunc then ufunc() else pfUI.gui.settingChanged = true end
           pfUI.events:TriggerEvent("config:changed", category, config)
-          frame.input:UpdateMenu()
+          frame.input:GenerateMenu()
         end)
 
         frame.add = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
@@ -416,21 +414,19 @@ pfUI:RegisterModule("gui", function ()
             category[config] = category[config] .. "#" .. this:GetParent().input:GetText()
             if ufunc then ufunc() else pfUI.gui.settingChanged = true end
             pfUI.events:TriggerEvent("config:changed", category, config)
-            frame.input:UpdateMenu()
+            frame.input:GenerateMenu()
           end, false, true)
         end)
 
-        frame.input = CreateDropDownButton(nil, frame)
-        frame.input:SetBackdrop(nil)
-        frame.input.menuframe:SetParent(pfUI.gui)
+        frame.input = CreateFrame("DropdownButton", nil, frame, "pfUIDropdownTemplate")
         frame.input:SetPoint("RIGHT", frame.add, "LEFT", -2, 0)
         frame.input:SetWidth(140)
-        frame.input:SetMenu(function()
-          local menu = {}
-          for i, val in pairs({strsplit("#", category[config])}) do
-            table.insert(menu, { text = val })
+        frame.input:SetupMenu(function(dropdown, rootDescription)
+          for id, val in ipairs({strsplit("#", category[config])}) do
+            if val ~= "" then
+              rootDescription:CreateRadio(val, IsSelected, Select, id)
+            end
           end
-          return menu
         end)
       end
 
@@ -2700,8 +2696,8 @@ pfUI:RegisterModule("gui", function ()
           elseif is_horizontal then
             if uneven ~= "Left" and uneven ~= "Right" then C.bars["bar"..id].uneven = "Left" end
           end
-          if uneven_frame and uneven_frame.input and uneven_frame.input.UpdateMenu then
-            uneven_frame.input:UpdateMenu()
+          if uneven_frame then
+            uneven_frame.input:GenerateMenu()
           end
           if U["bars"] then U["bars"]() end
         end

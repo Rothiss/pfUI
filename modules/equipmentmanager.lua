@@ -204,66 +204,37 @@ pfUI:RegisterModule("equipmentmanager", function()
   end)
 
   -- ============================================================
-  -- Per-row context menu (single instance, repositioned per click).
-  -- Triggered by the gear icon on each set row.
+  -- Per-row context menu, opened from the gear icon on each set row.
   -- ============================================================
 
-  local rowMenu = CreateFrame("Frame", "pfEqMgrRowMenu", UIParent)
-  rowMenu:SetFrameStrata("DIALOG")
-  rowMenu:SetSize(140, 50);
-  rowMenu:Hide()
-  CreateBackdrop(rowMenu, nil, nil, .95)
-  CreateBackdropShadow(rowMenu)
-  rowMenu:EnableMouse(true)
-
-  -- Close on click outside via GLOBAL_MOUSE_DOWN (fires on any click
-  -- without consuming it). The anchorBtn check defers the gear-click
-  -- toggle to the gear's own OnClick so opening doesn't trigger close.
-  rowMenu:RegisterEvent("GLOBAL_MOUSE_DOWN")
-  rowMenu:SetScript("OnEvent", function()
-    if not this:IsShown() then return end
-    if MouseIsOverHitRect(this) then return end
-    if this.anchorBtn and MouseIsOverHitRect(this.anchorBtn) then return end
-    this:Hide()
-  end)
-  tinsert(UISpecialFrames, "pfEqMgrRowMenu")  -- Escape closes it
-
-  rowMenu.changeBtn = CreateFrame("Button", nil, rowMenu, "UIPanelButtonTemplate")
-  rowMenu.changeBtn:SetSize(130, 20);
-  rowMenu.changeBtn:SetPoint("TOPLEFT", rowMenu, "TOPLEFT", 5, -3)
-  rowMenu.changeBtn:SetText(EQUIPMENT_SET_EDIT)
-  SkinButton(rowMenu.changeBtn)
-  rowMenu.changeBtn:SetScript("OnClick", function()
-    rowMenu:Hide()
-    if not rowMenu.targetSetID then return end
-    local name, icon = C_EquipmentSet.GetEquipmentSetInfo(rowMenu.targetSetID)
-    selectedSetID = rowMenu.targetSetID
+  local function EditSet(setID)
+    local name, icon = C_EquipmentSet.GetEquipmentSetInfo(setID)
+    selectedSetID = setID
     OpenNamePopup("save", name, icon)
-  end)
+  end
 
-  rowMenu.deleteBtn = CreateFrame("Button", nil, rowMenu, "UIPanelButtonTemplate")
-  rowMenu.deleteBtn:SetSize(130, 20);
-  rowMenu.deleteBtn:SetPoint("TOP", rowMenu.changeBtn, "BOTTOM", 0, -2)
-  rowMenu.deleteBtn:SetText(DELETE)
-  SkinButton(rowMenu.deleteBtn)
-  rowMenu.deleteBtn:SetScript("OnClick", function()
-    rowMenu:Hide()
-    if not rowMenu.targetSetID then return end
-    local targetID = rowMenu.targetSetID
-    local name = C_EquipmentSet.GetEquipmentSetInfo(targetID)
+  local function DeleteSet(setID)
+    local name = C_EquipmentSet.GetEquipmentSetInfo(setID)
     StaticPopupDialogs["PFUI_EQMGR_DELETE"] = {
       text = string.format(CONFIRM_DELETE_EQUIPMENT_SET, name or "?"),
       button1 = YES, button2 = NO,
       OnAccept = function()
-        pendingIgnoredToggles[targetID] = nil
-        C_EquipmentSet.DeleteEquipmentSet(targetID)
-        if selectedSetID == targetID then selectedSetID = nil end
+        pendingIgnoredToggles[setID] = nil
+        C_EquipmentSet.DeleteEquipmentSet(setID)
+        if selectedSetID == setID then selectedSetID = nil end
         pfUI.equipmentmanager.Refresh()
       end,
       timeout = 0, whileDead = 1, hideOnEscape = 1, exclusive = 1,
     }
     StaticPopup_Show("PFUI_EQMGR_DELETE")
-  end)
+  end
+
+  -- The row owns the menu, not the gear: the gear hides when the cursor
+  -- leaves the row for the menu, and a menu closes with its owner.
+  local function GenerateSetMenu(row, rootDescription)
+    rootDescription:CreateButton(EQUIPMENT_SET_EDIT, EditSet, row.setID)
+    rootDescription:CreateButton(DELETE, DeleteSet, row.setID)
+  end
 
   -- ============================================================
   -- Set list (left column)
@@ -303,20 +274,9 @@ pfUI:RegisterModule("equipmentmanager", function()
     -- moving onto the gear does not leave the row
     row.gear:SetPropagateMouseMotion(true)
     row.gear:Hide()
+    row.menuMixin = pfUIMenuStyleMixin
     row.gear:SetScript("OnClick", function()
-      if not row.setID then return end
-      -- Toggle: clicking the gear that owns the open menu closes it.
-      -- GLOBAL_MOUSE_DOWN's anchorBtn check excludes the gear, so the
-      -- close has to happen here.
-      if rowMenu:IsShown() and rowMenu.targetSetID == row.setID then
-        rowMenu:Hide()
-        return
-      end
-      rowMenu.targetSetID = row.setID
-      rowMenu.anchorBtn = row.gear
-      rowMenu:ClearAllPoints()
-      rowMenu:SetPoint("TOPRIGHT", row.gear, "BOTTOMRIGHT", 0, 0)
-      rowMenu:Show()
+      if row.setID then MenuUtil.CreateContextMenu(row, GenerateSetMenu) end
     end)
 
     row:SetScript("OnClick", function()
@@ -902,19 +862,6 @@ pfUI:RegisterModule("equipmentmanager", function()
     b:SetSize(size or 14, size or 14)
     SkinArrowButton(b, dir, size or 14)
     return b
-  end
-
-  -- Dropdown entries carry a `.value`; select one by value instead of index.
-  local function SelectDropdownValue(dd, value)
-    local menu = dd:GetMenu()
-    for i, entry in ipairs(menu or {}) do
-      if entry.value == value then
-        dd:SetSelection(i)
-        return
-      end
-    end
-    dd.id = nil
-    dd.text:SetText("")
   end
 
   local function Print(msg)
@@ -1783,9 +1730,10 @@ pfUI:RegisterModule("equipmentmanager", function()
   end
 
   local function EditorDropdown(row)
-    local dd = CreateDropDownButton(nil, editor)
+    local dd = CreateFrame("DropdownButton", nil, editor, "pfUIDropdownTemplate")
     dd:SetWidth(190)
     dd:SetPoint("TOPRIGHT", editor, "TOPRIGHT", 0, EDITOR_ROW_Y[row])
+    CreateBackdrop(dd, nil, true)
     return dd
   end
 
@@ -1801,41 +1749,49 @@ pfUI:RegisterModule("equipmentmanager", function()
     RefreshTriggerPanel()
   end
 
+  -- The radio callbacks for one field of the selected trigger; a trigger
+  -- without the field reads as `default`.
+  local function TriggerField(field, default)
+    local function IsSelected(value)
+      local t = SelectedTrigger()
+      return t ~= nil and (t[field] or default) == value
+    end
+    local function SetSelected(value)
+      local t = SelectedTrigger()
+      if not t then return end
+      t[field] = value
+      OnTriggerEdited()
+    end
+    return IsSelected, SetSelected
+  end
+
   EditorLabel(T["When"], 1)
   local ddType = EditorDropdown(1)
-  ddType:SetMenu(function()
-    local menu = {}
+  local IsType = TriggerField("type")
+  local function SetType(key)
+    local t = SelectedTrigger()
+    if not t or t.type == key then return end
+    t.type = key
+    t.value = DefaultTriggerValue(key)
+    OnTriggerEdited()
+  end
+  ddType:SetupMenu(function(dropdown, rootDescription)
     for _, info in ipairs(TRIGGER_TYPES) do
       if info.value ~= "list" or info.options then
-        local key = info.key
-        table.insert(menu, { text = info.text, value = key, func = function()
-          local t = SelectedTrigger()
-          if not t or t.type == key then return end
-          t.type = key
-          t.value = DefaultTriggerValue(key)
-          OnTriggerEdited()
-        end })
+        rootDescription:CreateRadio(info.text, IsType, SetType, info.key)
       end
     end
-    return menu
   end)
 
   local valueLabel = EditorLabel(T["Value"], 2)
   local ddValue = EditorDropdown(2)
-  ddValue:SetMenu(function()
-    local menu = {}
+  local IsValue, SetValue = TriggerField("value")
+  ddValue:SetupMenu(function(dropdown, rootDescription)
     local t = SelectedTrigger()
     local info = t and TRIGGER_TYPE[t.type]
     for _, o in ipairs(info and info.options or {}) do
-      local value = o.value
-      table.insert(menu, { text = o.text, value = value, func = function()
-        local t = SelectedTrigger()
-        if not t then return end
-        t.value = value
-        OnTriggerEdited()
-      end })
+      rootDescription:CreateRadio(o.text, IsValue, SetValue, o.value)
     end
-    return menu
   end)
 
   local editValue = CreateTextBox(nil, editor)
@@ -1907,39 +1863,22 @@ pfUI:RegisterModule("equipmentmanager", function()
 
   EditorLabel(T["Equip"], 3)
   local ddSet = EditorDropdown(3)
-  ddSet:SetMenu(function()
-    local menu = {}
+  local IsSet, SetSet = TriggerField("setID")
+  ddSet:SetupMenu(function(dropdown, rootDescription)
     for _, id in ipairs(GetVisibleSetIDs()) do
-      local setID = id
-      table.insert(menu, { text = SetName(setID), value = setID, func = function()
-        local t = SelectedTrigger()
-        if not t then return end
-        t.setID = setID
-        OnTriggerEdited()
-      end })
+      rootDescription:CreateRadio(SetName(id), IsSet, SetSet, id)
     end
-    return menu
   end)
 
   EditorLabel(T["When It Ends"], 4)
   local ddLeave = EditorDropdown(4)
-  ddLeave:SetMenu(function()
-    local function Choose(value)
-      return function()
-        local t = SelectedTrigger()
-        if not t then return end
-        t.leave = value
-        OnTriggerEdited()
-      end
-    end
-    local menu = {
-      { text = T["Restore Previous Gear"], value = "restore", func = Choose("restore") },
-      { text = T["Do Nothing"], value = "none", func = Choose("none") },
-    }
+  local IsLeave, SetLeave = TriggerField("leave", "restore")
+  ddLeave:SetupMenu(function(dropdown, rootDescription)
+    rootDescription:CreateRadio(T["Restore Previous Gear"], IsLeave, SetLeave, "restore")
+    rootDescription:CreateRadio(T["Do Nothing"], IsLeave, SetLeave, "none")
     for _, id in ipairs(GetVisibleSetIDs()) do
-      table.insert(menu, { text = T["Equip"] .. " " .. SetName(id), value = id, func = Choose(id) })
+      rootDescription:CreateRadio(T["Equip"] .. " " .. SetName(id), IsLeave, SetLeave, id)
     end
-    return menu
   end)
 
   editor.noSets = editor:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -1984,7 +1923,7 @@ pfUI:RegisterModule("equipmentmanager", function()
     editor:Show()
     editor.placeholder:Hide()
 
-    SelectDropdownValue(ddType, t.type)
+    ddType:GenerateMenu()
 
     local info = TRIGGER_TYPE[t.type]
     local kind = info and info.value
@@ -1993,7 +1932,7 @@ pfUI:RegisterModule("equipmentmanager", function()
     editValue:SetShown(kind == "text")
     btnCurrentZone:SetShown(t.type == "zone")
     if kind == "list" then
-      SelectDropdownValue(ddValue, t.value)
+      ddValue:GenerateMenu()
     elseif kind == "text" then
       editValue:ClearAllPoints()
       editValue:SetPoint("TOPLEFT", editor, "TOPRIGHT", -190, EDITOR_ROW_Y[2])
@@ -2014,8 +1953,8 @@ pfUI:RegisterModule("equipmentmanager", function()
     local hasSets = table.getn(GetVisibleSetIDs()) > 0
     ddSet:SetShown(hasSets)
     editor.noSets:SetShown(not hasSets)
-    SelectDropdownValue(ddSet, t.setID)
-    SelectDropdownValue(ddLeave, t.leave or "restore")
+    ddSet:GenerateMenu()
+    ddLeave:GenerateMenu()
   end
 
   triggerPanel:SetScript("OnShow", function() RefreshTriggerPanel() end)
@@ -2027,7 +1966,6 @@ pfUI:RegisterModule("equipmentmanager", function()
     RefreshTriggerRows()
   end)
   triggerPanel:SetScript("OnHide", function()
-    for _, dd in ipairs({ ddType, ddValue, ddSet, ddLeave }) do dd:HideMenu() end
     editValue:ClearFocus()
   end)
 

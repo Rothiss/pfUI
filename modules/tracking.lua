@@ -42,7 +42,23 @@ pfUI:RegisterModule("tracking", function ()
   fade:SetDuration(.5)
   fade:SetSmoothing("IN_OUT")
 
-  pfUI.tracking.menu = CreateFrame("Frame", "pfUIDropDownMenuTracking", nil, "UIDropDownMenuTemplate")
+  pfUI.tracking.menuMixin = pfUIMenuStyleMixin
+
+  local function IsTracking(spell)
+    return spell.texture == state.texture
+  end
+
+  local function Track(spell)
+    SetTracking(spell.index)
+  end
+
+  local function GenerateTrackingMenu(owner, rootDescription)
+    rootDescription:CreateTitle(T["Minimap Tracking"])
+    for _, spell in pairs(state.spells) do
+      local icon = CreateTextureMarkup(spell.texture, 64, 64, 16, 16, .1, .9, .1, .9)
+      rootDescription:CreateRadio(icon .. " " .. spell.name, IsTracking, Track, spell)
+    end
+  end
 
   pfUI.tracking:RegisterEvent("PLAYER_ENTERING_WORLD")
   pfUI.tracking:RegisterEvent("PLAYER_AURAS_CHANGED")
@@ -59,8 +75,7 @@ pfUI:RegisterModule("tracking", function ()
   pfUI.tracking:RegisterForClicks("LeftButtonUp", "RightButtonUp")
   pfUI.tracking:SetScript("OnClick", function()
     if arg1 == "RightButton" then
-      pfUI.tracking:InitMenu()
-      ToggleDropDownMenu(1, nil, pfUI.tracking.menu, this, -5, -5)
+      MenuUtil.CreateContextMenu(this, GenerateTrackingMenu)
     end
     if arg1 == "LeftButton" and state.texture then
       CancelTrackingBuff()
@@ -127,27 +142,5 @@ pfUI:RegisterModule("tracking", function ()
 
   function pfUI.tracking:PlayerIsDruidInCatForm(playerClass)
     return playerClass == "DRUID" and GetShapeshiftFormID() == 1
-  end
-
-  function pfUI.tracking:InitMenu()
-    UIDropDownMenu_Initialize(pfUI.tracking.menu, function ()
-      UIDropDownMenu_AddButton({text = T["Minimap Tracking"], isTitle = 1})
-      for _, spell in pairs(state.spells) do
-        UIDropDownMenu_AddButton({
-          text = spell.name,
-          icon = spell.texture,
-          tCoordLeft = .1,
-          tCoordRight = .9,
-          tCoordTop = .1,
-          tCoordBottom = .9,
-          checked = spell.texture == state.texture,
-          arg1 = spell,
-          func = function (arg1)
-            SetTracking(arg1.index)
-            CloseDropDownMenus()
-          end
-        })
-      end
-    end, "MENU")
   end
 end)

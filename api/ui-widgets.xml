@@ -102,4 +102,52 @@
       <OnLoad method="InitScrollBar" inherit="prepend"/>
     </Scripts>
   </Frame>
+
+  <!--
+  A ClassicAPI dropdown in pfUI's style: the selection as right-aligned text
+  and pfUI's arrow box at the right. Its menu takes pfUIMenuStyleMixin. Fill it
+  with dropdown:SetupMenu(function(dropdown, rootDescription) ... end), and call
+  dropdown:GenerateMenu() when the data behind the selection changes.
+  -->
+  <DropdownButton name="pfUIDropdownTemplate" mixin="pfUIDropdownMixin" virtual="true">
+    <Size y="20"/>
+    <KeyValues>
+      <KeyValue key="menuMixin" value="pfUIMenuStyleMixin" type="global"/>
+      <KeyValue key="menuPointY" value="-2" type="number"/>
+    </KeyValues>
+    <Frames>
+      <Frame parentKey="Arrow">
+        <Size x="16" y="16"/>
+        <Anchors>
+          <Anchor point="RIGHT" x="-2"/>
+        </Anchors>
+        <Layers>
+          <Layer level="ARTWORK">
+            <Texture parentKey="Icon">
+              <Anchors>
+                <Anchor point="TOPLEFT" x="3" y="-3"/>
+                <Anchor point="BOTTOMRIGHT" x="-3" y="3"/>
+              </Anchors>
+            </Texture>
+          </Layer>
+        </Layers>
+      </Frame>
+    </Frames>
+    <Layers>
+      <Layer level="OVERLAY">
+        <FontString parentKey="Text" inherits="GameFontWhite" wordwrap="false" justifyH="RIGHT">
+          <Anchors>
+            <Anchor point="LEFT" x="2"/>
+            <Anchor point="RIGHT" relativeKey="$parent.Arrow" relativePoint="LEFT" x="-4"/>
+          </Anchors>
+        </FontString>
+      </Layer>
+    </Layers>
+    <Scripts>
+      <OnLoad method="OnLoad"/>
+      <OnShow method="OnShow"/>
+      <OnEnter method="OnEnter"/>
+      <OnLeave method="OnLeave"/>
+    </Scripts>
+  </DropdownButton>
 </Ui>

@@ -100,219 +100,53 @@ do -- statusbars
   end
 end
 
-do -- dropdown
-  local function ListEntryOnShow()
-    this.icon:SetShown(this.parent.id == this.id)
+-- [ pfUIMenuStyleMixin ]
+-- Style for ClassicAPI's menus: pfUI's backdrop behind the entries. A dropdown
+-- takes it as its menuMixin, and a context menu takes it from the menuMixin
+-- field of its owner.
+_G.pfUIMenuStyleMixin = CreateFromMixins(MenuStyleMixin)
+
+-- Menus share pooled frames that clear their backdrop on release, so the
+-- backdrop goes on the frame itself.
+function pfUIMenuStyleMixin:Generate()
+  CreateBackdrop(self, nil, true)
+end
+
+do
+  local inset = { left = 4, top = 4, right = 4, bottom = 4 }
+  function pfUIMenuStyleMixin:GetInset()
+    return inset
   end
 
-  local function ListEntryOnClick()
-    this.parent:SetSelection(this.id)
-
-    if this.parent.mode == "MULTISELECT" then
-      this.parent:ShowMenu()
-    else
-      this.parent:HideMenu()
-    end
-
-    if this.parent.menu[this.id].func then
-      this.parent.menu[this.id].func()
-    end
+  -- room for a submenu arrow or a color swatch, as in the stock styles
+  local padding = { width = 10, height = 0 }
+  function pfUIMenuStyleMixin:GetChildExtentPadding()
+    return padding
   end
+end
 
-  local function ListEntryOnEnter()
-    this.hover:Show()
-  end
+-- [ pfUIDropdownTemplate ]
+-- Mixin of the template in ui-widgets.xml: a dropdown that shows its selection
+-- as text, with pfUI's arrow box at the right.
+_G.pfUIDropdownMixin = CreateFromMixins(ButtonStateBehaviorMixin, DropdownSelectionTextMixin)
 
-  local function ListEntryOnLeave()
-    this.hover:Hide()
-  end
+function pfUIDropdownMixin:OnLoad()
+  self.Text:SetFont(pfUI.font_default, pfUI_config.global.font_size - 1, "OUTLINE")
+  CreateBackdrop(self.Arrow, nil, true)
+  self.Arrow.Icon:SetTexture(pfUI.media["img:down"])
+  self.Arrow.Icon:SetVertexColor(.8, .8, .8)
+  self.Arrow.Icon:SetAlpha(.8)
 
-  local function ListButtonOnClick()
-    if this.ToggleMenu then
-      this:ToggleMenu()
-    else
-      this:GetParent():ToggleMenu()
-    end
-  end
+  ButtonStateBehaviorMixin.OnLoad(self)
+  DropdownSelectionTextMixin.OnLoad(self)
+end
 
-  local function MenuOnUpdate()
-    if not this:IsMouseOver(100, -100, -100, 100) then
-      this.button:HideMenu()
-    end
-  end
-
-  local function ListButtonOnEnter()
-    this.button:SetBackdropBorderColor(this.button.cr,this.button.cg,this.button.cb,(this.button.ca or 1))
-  end
-
-  local function ListButtonOnLeave()
-    this.button:SetBackdropBorderColor(this.button.rr,this.button.rg,this.button.rb,(this.button.ra or 1))
-  end
-
-  local handlers = {
-    ["SetSelection"] = function(self, id)
-      if id and self.menu and self.menu[id] then
-        self.text:SetText(self.menu[id].text)
-        self.id = id
-      end
-    end,
-    ["SetSelectionByText"] = function(self, name)
-      self:UpdateMenu()
-      for id, entry in pairs(self.menu) do
-        if entry.text == name then
-          self:SetSelection(id)
-          return true
-        end
-      end
-
-      self.text:SetText(name)
-      return nil
-    end,
-    ["GetSelection"] = function(self)
-      self:UpdateMenu()
-      if self.menu and self.menu[self.id] then
-        return self.id, self.menu[self.id].text, self.menu[self.id].func
-      end
-    end,
-    ["SetMenu"] = function(self, menu)
-      if type(menu) == "function" then
-        self.menu = menu()
-        self.menufunc = menu
-      else
-        self.menu = menu
-        self.menufunc = nil
-      end
-    end,
-    ["GetMenu"] = function(self)
-      self:UpdateMenu()
-      return self.menu
-    end,
-    ["ShowMenu"] = function(self)
-      self:UpdateMenu()
-      self.menuframe:SetFrameLevel(self:GetFrameLevel() + 8)
-      self.menuframe:SetHeight(table.getn(self.menu)*20+4)
-      self.menuframe:Show()
-    end,
-    ["HideMenu"] = function(self)
-      self.menuframe:Hide()
-    end,
-    ["ToggleMenu"] = function(self)
-      if self.menuframe:IsShown() then
-        self:HideMenu()
-      else
-        self:ShowMenu()
-      end
-    end,
-    ["UpdateMenu"] = function(self)
-      -- run/reload menu function if available
-      if self.menufunc then self.menu = self.menufunc() end
-      if not self.menu then return end
-
-      -- set caption to the current value
-      self.text:SetText(self.menu[self.id] and self.menu[self.id].text or "")
-
-      -- refresh menu buttons
-      for id, element in pairs(self.menuframe.elements) do
-        element:Hide()
-      end
-
-      for id, data in pairs(self.menu) do
-        self:CreateMenuEntry(id)
-      end
-    end,
-    ["CreateMenuEntry"] = function(self, id)
-      if not self.menu[id] then return end
-
-      local frame, entry
-      for count, existing in pairs(self.menuframe.elements) do
-        if not existing:IsShown() then
-          frame = existing
-          entry = count
-          break
-        end
-      end
-
-      if not frame and not entry then
-        entry = table.getn(self.menuframe.elements) + 1
-        frame = CreateFrame("Button", nil, self.menuframe)
-        frame:SetFrameStrata("FULLSCREEN")
-        frame:ClearAllPoints()
-        frame:SetPoint("TOPLEFT", self.menuframe, "TOPLEFT", 2, -(entry-1)*20-2)
-        frame:SetPoint("TOPRIGHT", self.menuframe, "TOPRIGHT", -2, -(entry-1)*20-2)
-        frame:SetHeight(20)
-        frame.parent = self
-
-        frame.icon = frame:CreateTexture(nil, "OVERLAY")
-        frame.icon:SetPoint("RIGHT", frame, "RIGHT", -2, 0)
-        frame.icon:SetSize(16, 16)
-        frame.icon:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
-
-        frame.text = frame:CreateFontString(nil, "OVERLAY")
-        frame.text:SetFontObject(GameFontWhite)
-        frame.text:SetFont(pfUI.font_default, pfUI_config.global.font_size-1, "OUTLINE")
-        frame.text:SetJustifyH("RIGHT")
-        frame.text:SetPoint("LEFT", frame, "LEFT", 2, 0)
-        frame.text:SetPoint("RIGHT", frame.icon, "LEFT", -2, 0)
-
-        frame.hover = frame:CreateTexture(nil, "BACKGROUND")
-        frame.hover:SetAllPoints(frame)
-        frame.hover:SetTexture(.4,.4,.4,.4)
-        frame.hover:Hide()
-
-        table.insert(self.menuframe.elements, frame)
-      end
-
-      frame.id = id
-      frame.text:SetText(self.menu[id].text)
-
-      frame:SetScript("OnShow",  ListEntryOnShow)
-      frame:SetScript("OnClick", ListEntryOnClick)
-      frame:SetScript("OnEnter", ListEntryOnEnter)
-      frame:SetScript("OnLeave", ListEntryOnLeave)
-      frame:Show()
-    end,
-  }
-  function pfUI.api.CreateDropDownButton(name, parent)
-    local frame = CreateFrame("Button", name, parent)
-    frame:SetScript("OnEnter", ListButtonOnEnter)
-    frame:SetScript("OnLeave", ListButtonOnLeave)
-    frame:SetScript("OnClick", ListButtonOnClick)
-    frame:SetHeight(20)
-    frame.id = nil
-
-    CreateBackdrop(frame, nil, true)
-
-    local button = CreateFrame("Button", nil, frame)
-    button:SetPoint("RIGHT", frame, "RIGHT", -2, 0)
-    button:SetSize(16, 16)
-    button:SetScript("OnClick", ListButtonOnClick)
-    SkinArrowButton(button, "down")
-    button.icon:SetVertexColor(1,.9,.1)
-
-    local text = frame:CreateFontString(nil, "OVERLAY")
-    text:SetFontObject(GameFontWhite)
-    text:SetFont(pfUI.font_default, pfUI_config.global.font_size-1, "OUTLINE")
-    text:SetPoint("RIGHT", button, "LEFT", -4, 0)
-    text:SetJustifyH("RIGHT")
-
-    local menuframe = CreateFrame("Frame", tostring(frame).."menu", parent)
-    menuframe.button = frame
-    menuframe.elements = {}
-    menuframe:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -2)
-    menuframe:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 2)
-    menuframe:SetScript("OnUpdate", MenuOnUpdate)
-    menuframe:Hide()
-    CreateBackdrop(menuframe, nil, true)
-
-    for name, func in pairs(handlers) do
-      frame[name] = func
-    end
-
-    frame.menuframe = menuframe
-    frame.button = button
-    frame.text = text
-
-    return frame
+-- the arrow box takes the class color while the cursor is over the dropdown
+function pfUIDropdownMixin:OnButtonStateChanged()
+  if self:IsOver() then
+    self.Arrow:SetBackdropBorderColor(PFUI_CLASS_COLORS[UnitClassBase("player")]:GetRGB())
+  else
+    self.Arrow:SetBackdropBorderColor(GetStringColor(pfUI_config.appearance.border.color))
   end
 end
 
@@ -1149,11 +983,11 @@ function pfUI.api.CreateIconPicker(name, parent, extraType, nameLabelText)
   grid:SetSize(gridWidth + 4 + 7 + 10, gridHeight + 10)
 
   -- Filter dropdown: All / Spells / Items
-  local filterDropdown = CreateFrame("Frame", name.."Filter", parent, "UIDropDownMenuTemplate")
-  filterDropdown:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -80)
+  local function IsFilter(value)
+    return currentFilter == value
+  end
   local function ApplyFilter(value)
     currentFilter = value
-    UIDropDownMenu_SetSelectedValue(filterDropdown, value)
     if provider then
       if value == "spells" then provider:SetIconTypes({ IconDataProviderIconType.Spell })
       elseif value == "items" then provider:SetIconTypes({ IconDataProviderIconType.Item })
@@ -1162,24 +996,15 @@ function pfUI.api.CreateIconPicker(name, parent, extraType, nameLabelText)
       RefreshIconGrid()
     end
   end
-  UIDropDownMenu_Initialize(filterDropdown, function()
-    local info
-    info = {}; info.text = ICON_FILTER_ALL; info.value = "all"
-    info.func = function() ApplyFilter("all") end
-    info.checked = currentFilter == "all"
-    UIDropDownMenu_AddButton(info)
-    info = {}; info.text = ICON_FILTER_SPELL; info.value = "spells"
-    info.func = function() ApplyFilter("spells") end
-    info.checked = currentFilter == "spells"
-    UIDropDownMenu_AddButton(info)
-    info = {}; info.text = ICON_FILTER_ITEM; info.value = "items"
-    info.func = function() ApplyFilter("items") end
-    info.checked = currentFilter == "items"
-    UIDropDownMenu_AddButton(info)
+  local filterDropdown = CreateFrame("DropdownButton", nil, parent, "pfUIDropdownTemplate")
+  filterDropdown:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -14, -84)
+  filterDropdown:SetWidth(140)
+  CreateBackdrop(filterDropdown, nil, true)
+  filterDropdown:SetupMenu(function(dropdown, rootDescription)
+    rootDescription:CreateRadio(ICON_FILTER_ALL, IsFilter, ApplyFilter, "all")
+    rootDescription:CreateRadio(ICON_FILTER_SPELL, IsFilter, ApplyFilter, "spells")
+    rootDescription:CreateRadio(ICON_FILTER_ITEM, IsFilter, ApplyFilter, "items")
   end)
-  UIDropDownMenu_SetWidth(120, filterDropdown)
-  UIDropDownMenu_SetSelectedValue(filterDropdown, "all")
-  SkinDropDown(filterDropdown)
 
   -- the selected icon gets a gold border in the grid and shows in the preview
   local function UpdateSelection()

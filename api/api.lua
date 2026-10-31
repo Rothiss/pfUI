@@ -580,11 +580,11 @@ function pfUI.api.SendChatMessageWide(msg)
 end
 
 -- [ CopyText ]
--- Copies text to the clipboard and says so in chat
+-- Copies text to the clipboard and says so in the colour of a UI_INFO_MESSAGE
 -- 'text'       [string]          the text to copy
 function pfUI.api.CopyText(text)
   CopyToClipboard(text)
-  DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccpf|cffffffffUI|r: " .. T["Copied to clipboard"])
+  UIErrorsFrame:AddMessage(T["Copied to clipboard"], 1, 1, 0, 1)
 end
 
 -- [ GroupInfoByName ]

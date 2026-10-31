@@ -8,7 +8,7 @@ pfUI:RegisterModule("focus", function ()
   UpdateMovable(pfUI.uf.focus)
   pfUI.uf.focus:Hide()
 
-  pfUI.uf.focustarget = pfUI.uf:CreateUnitFrame("FocusTarget", nil, C.unitframes.focustarget)
+  pfUI.uf.focustarget = pfUI.uf:CreateUnitFrame("FocusTarget", nil, C.unitframes.focustarget, .2)
   pfUI.uf.focustarget:UpdateFrameSize()
   pfUI.uf.focustarget:SetPoint("BOTTOMLEFT", pfUI.uf.focus, "TOP", 0, 10)
   UpdateMovable(pfUI.uf.focustarget)
@@ -16,8 +16,9 @@ pfUI:RegisterModule("focus", function ()
 
   -- PLAYER_FOCUS_CHANGED drives immediate refresh on focus assign / clear.
   -- Between events, ClassicAPI fires UNIT_* (health/mana/aura/...) with
-  -- arg1 == "focus" and arg1 == "focustarget", so both frames update
-  -- event-driven like target and need no polling tick.
+  -- arg1 == "focus" and arg1 == "focustarget", so the bars update
+  -- event-driven like target. No event reports the focus changing its
+  -- target, so focustarget ticks like targettarget.
   pfUI.events:RegisterFrameEventAndCallback("PLAYER_FOCUS_CHANGED", function()
     pfUI.uf.focus.instantRefresh = true
     pfUI.uf:RefreshUnit(pfUI.uf.focus, "all")

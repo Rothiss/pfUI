@@ -508,6 +508,10 @@ pfUI:RegisterModule("unlock", function ()
       UpdateMovable(frame)
     end
 
+    -- show the unit frames whose unit came and hide the ones whose unit went
+    -- while unlocked
+    pfUI.uf:UpdateAllVisibility()
+
     SetDockToFrame(nil)
     pfUI.unlock:Hide()
     pfUI.gui:Show()

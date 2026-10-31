@@ -116,6 +116,7 @@ end
 pfUI.api.RegisterSlashCommand("PFTEST", { "/pftest", "/pfuftest" }, function()
   pfUI.uf.showall = not pfUI.uf.showall
   if pfUI.uf.raid and pfUI.uf.raid.LayoutPets then pfUI.uf.raid:LayoutPets() end
+  pfUI.uf:UpdateAllVisibility()
 end, true)
 
 -- Buff indicators are identified by a spell id, resolved once into the aura's
@@ -214,12 +215,31 @@ local function DebuffOnClick()
   end
 end
 
-local visibilityscan = CreateFrame("Frame", "pfUnitFrameVisibility", UIParent)
-visibilityscan.frames = {}
-visibilityscan:SetScript("OnUpdate", function()
-  if ( this.limit or 1) > GetTime() then return else this.limit = GetTime() + .2 end
-  for frame in pairs(this.frames) do frame:UpdateVisibility() end
+-- Every enabled unit frame. Group, target and pet events re-check a frame's
+-- visibility in OnEvent. A frame with a tick shows another unit's target or a
+-- pet that can go out of sight, and no event reports either, so a timer
+-- re-checks those frames, hidden ones included.
+local visibilityframes = {}
+C_Timer.NewTicker(.2, function()
+  for frame in pairs(visibilityframes) do
+    if frame.tick then frame:UpdateVisibility() end
+  end
 end)
+
+-- Re-check every unit frame, for the changes no event reports: unlock mode
+-- and /pftest.
+function pfUI.uf:UpdateAllVisibility()
+  for frame in pairs(visibilityframes) do frame:UpdateVisibility() end
+end
+
+-- the events that can bring a frame's unit into or out of existence
+local VISIBILITY_EVENTS = {
+  PLAYER_ENTERING_WORLD = true,
+  PARTY_MEMBERS_CHANGED = true,
+  RAID_ROSTER_UPDATE = true,
+  PLAYER_TARGET_CHANGED = true,
+  UNIT_PET = true,
+}
 
 -- ============================================================================
 -- GetUnitStats - health + power for a unit token.
@@ -380,8 +400,8 @@ function pfUI.uf:UpdateVisibility()
     self._label, self._id = nil, nil
   end
 
-  -- this runs for every frame five times a second, so only touch the
-  -- attribute when the unit actually changed
+  -- this runs on every refresh, so only touch the attribute when the unit
+  -- actually changed
   local unitstr = self.label .. self.id
   if unitstr ~= self.unitstr then
     self.unitstr = unitstr
@@ -422,8 +442,7 @@ function pfUI.uf:UpdateVisibility()
   -- unit's events, and OnEvent compares against the cached string instead of
   -- rebuilding label..id -- and calling UnitGUID -- for every unit event fired
   -- by anything, anywhere. A frame that is not in use drops them entirely; the
-  -- roster events that would bring it back are registered plainly, and
-  -- visibilityscan re-runs this every 0.2s regardless, so it recovers on its own.
+  -- VISIBILITY_EVENTS that bring it back are registered plainly.
   self:RegisterUnitEvents(visibility ~= "hide" and self.unitstr or nil)
 
   -- vanilla visibility
@@ -969,10 +988,10 @@ function pfUI.uf.OnEvent()
     this:UnregisterAllEvents()
     this:SetScript("OnEvent", nil)
     this:SetScript("OnUpdate", nil)
-    -- visibilityscan is a separate frame and keeps ticking, so leaving this one
-    -- on its list would have UpdateVisibility re-register the unit events we
-    -- just dropped -- straight back into the crash 132 this branch prevents
-    visibilityscan.frames[this] = nil
+    -- the visibility timer keeps ticking, so leaving this frame on its list
+    -- would have UpdateVisibility re-register the unit events we just
+    -- dropped -- straight back into the crash 132 this branch prevents
+    visibilityframes[this] = nil
     return
   end
   
@@ -989,6 +1008,12 @@ function pfUI.uf.OnEvent()
 
   -- abort on broken unitframes (e.g focus)
   if not this.label then return end
+
+  -- a hidden frame runs no OnUpdate, so its unit coming into existence has to
+  -- show it from here
+  if VISIBILITY_EVENTS[event] and not (event == "PLAYER_TARGET_CHANGED" and pfScanActive) then
+    this:UpdateVisibility()
+  end
 
   -- update regular frames
   if event == "PLAYER_ENTERING_WORLD" then
@@ -1307,8 +1332,7 @@ local UNIT_EVENTS = {
 
 -- Point this frame's unit-event subscriptions at `unitstr`, or drop them when
 -- the frame has no unit. Cheap to call repeatedly: it no-ops unless the unit
--- actually changed, which matters because visibilityscan runs UpdateVisibility
--- for every frame five times a second.
+-- actually changed, which matters because every refresh runs UpdateVisibility.
 function pfUI.uf:RegisterUnitEvents(unitstr)
   if self.eventunit == unitstr then return end
   self.eventunit = unitstr
@@ -1415,8 +1439,7 @@ function pfUI.uf:EnableScripts()
   f:SetScript("OnEvent", pfUI.uf.OnEvent)
   f:SetScript("OnUpdate", pfUI.uf.OnUpdate)
 
-  -- add frame to visibility refresh handler
-  visibilityscan.frames[f] = true
+  visibilityframes[f] = true
 end
 
 function pfUI.uf:CreateUnitFrame(unit, id, config, tick)

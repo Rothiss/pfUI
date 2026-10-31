@@ -1,5 +1,5 @@
 pfUI:RegisterModule("gui", function ()
-  local Reload, U, CreateConfig, CreateTabFrame, CreateArea, CreateGUIEntry, EntryUpdate
+  local Reload, U, CreateConfig, CreateTabFrame, CreateArea, CreateGUIEntry, EntryOnEnter, EntryOnLeave
 
   -- "searchDB" gets populated when CreateConfig is called. The table holds
   -- information about the title, its parent buttons and the frame itself:
@@ -47,24 +47,12 @@ pfUI:RegisterModule("gui", function ()
       end
     end})
 
-    function EntryUpdate()
-      -- skip while the cursor is over an open menu
-      if Menu.GetManager():ContainsCursor() then
-        if this.over then
-          this.tex:Hide()
-          this.over = nil
-        end
-        return
-      end
+    function EntryOnEnter()
+      this.tex:Show()
+    end
 
-      local over = MouseIsOverHitRect(this)
-      if over and not this.over then
-        this.tex:Show()
-        this.over = true
-      elseif not over and this.over then
-        this.tex:Hide()
-        this.over = nil
-      end
+    function EntryOnLeave()
+      this.tex:Hide()
     end
 
     function CreateConfig(ufunc, caption, category, config, widget, values, skip, named, type)
@@ -115,7 +103,11 @@ pfUI:RegisterModule("gui", function ()
       if not widget or (widget and widget ~= "button") then
 
         if widget ~= "header" then
-          frame:SetScript("OnUpdate", EntryUpdate)
+          -- light up while the cursor is over the row; its widgets pass
+          -- their mouse motion on to it below
+          frame:SetMouseMotionEnabled(true)
+          frame:SetScript("OnEnter", EntryOnEnter)
+          frame:SetScript("OnLeave", EntryOnLeave)
           frame.tex = frame:CreateTexture(nil, "BACKGROUND")
           frame.tex:SetTexture(1,1,1,.05)
           frame.tex:SetAllPoints()
@@ -430,6 +422,10 @@ pfUI:RegisterModule("gui", function ()
         end)
       end
 
+      for _, child in ipairs({ frame:GetChildren() }) do
+        child:SetPropagateMouseMotion(true)
+      end
+
       return frame
     end
 
@@ -692,7 +688,10 @@ pfUI:RegisterModule("gui", function ()
     SkinButton(pfUI.gui.share)
 
     -- searchbar
-    local function SearchEntryClick()
+    local results     -- the result list, made with the search page on the first search
+    local highlighted -- the config row the last clicked result points at
+
+    local function SearchResultClick()
       -- clear search focus
       pfUI.gui.search:ClearFocus()
 
@@ -702,35 +701,44 @@ pfUI:RegisterModule("gui", function ()
       end
 
       -- highlight matched entry
-      if not this.obj[-1].highlight then
-        this.obj[-1].highlight = this.obj[-1]:CreateTexture(nil, "OVERLAY")
-        this.obj[-1].highlight:SetAllPoints()
-        this.obj[-1].highlight:SetTexture(.2,1,.8,.2)
+      if highlighted then highlighted.highlight:Hide() end
+      highlighted = this.obj[-1]
+      if not highlighted.highlight then
+        highlighted.highlight = highlighted:CreateTexture(nil, "OVERLAY")
+        highlighted.highlight:SetAllPoints()
+        highlighted.highlight:SetTexture(.2,1,.8,.2)
       end
-      this.obj[-1].highlight:Show()
+      highlighted.highlight:Show()
     end
 
-    local function CreateSearchEntry(parent, i)
-      local f = CreateFrame("Button", nil, parent)
-      f:SetPoint("TOPLEFT", 5, -5 + (i-1)*-25)
-      f:SetWidth(565)
-      f:SetHeight(20)
-      f:SetScript("OnClick", SearchEntryClick)
-      f:SetScript("OnUpdate", EntryUpdate)
+    local function InitSearchResult(f, obj)
+      -- one-time setup of a pooled row
+      if not f.text then
+        f:SetScript("OnClick", SearchResultClick)
+        f:SetScript("OnEnter", EntryOnEnter)
+        f:SetScript("OnLeave", EntryOnLeave)
 
-      f.text = f:CreateFontString("Status", "LOW", "GameFontWhite")
-      f.text:SetFont(pfUI.font_default, pfUI_config.global.font_size, "OUTLINE")
-      f.text:SetAllPoints()
-      f.text:SetJustifyH("LEFT")
-      f.text:SetJustifyV("CENTER")
-      f.text:SetTextColor(.5,.5,.5)
+        f.text = f:CreateFontString(nil, "LOW", "GameFontWhite")
+        f.text:SetFont(pfUI.font_default, pfUI_config.global.font_size, "OUTLINE")
+        f.text:SetAllPoints()
+        f.text:SetJustifyH("LEFT")
+        f.text:SetJustifyV("CENTER")
+        f.text:SetTextColor(.5,.5,.5)
 
-      f.tex = f:CreateTexture(nil, "BACKGROUND")
-      f.tex:SetTexture(1,1,1,.05)
-      f.tex:SetAllPoints()
-      f.tex:Hide()
+        f.tex = f:CreateTexture(nil, "BACKGROUND")
+        f.tex:SetTexture(1,1,1,.05)
+        f.tex:SetAllPoints()
+        f.tex:Hide()
+      end
 
-      return f
+      f.obj = obj
+
+      -- the path of submenus, then the entry
+      local caption = ""
+      for x=table.getn(obj),1,-1 do
+        caption = caption .. "|cff33ffcc" .. obj[x].text:GetText() .. "|r » "
+      end
+      f.text:SetText(caption .. "|cffffffff" .. obj[0])
     end
 
     pfUI.gui.search = CreateFrame("EditBox", nil, pfUI.gui)
@@ -757,50 +765,34 @@ pfUI:RegisterModule("gui", function ()
       local defval = "["..T["Search"].."]"
 
       -- initialize search window
-      CreateGUIEntry(defval, nil, nop)
+      if not results then
+        CreateGUIEntry(defval)
+        results = CreateFrame("Frame", nil, pfUI.gui.frames[defval].area, "pfUIScrollBoxListTemplate")
+        SetAllPointsOffset(results, pfUI.gui.frames[defval].area, 2)
+
+        local view = CreateScrollBoxListLinearView(0, 0, 0, 0, 5)
+        view:SetElementExtent(20)
+        view:SetElementInitializer("Button", InitSearchResult)
+        ScrollUtil.InitScrollBoxListWithScrollBar(results.ScrollBox, results.ScrollBar, view)
+      end
       pfUI.gui.frames[defval]:Click()
 
-      local scroll = pfUI.gui.frames[defval].area.scroll.content
-      local parent = pfUI.gui.frames[defval].area.scroll
-      scroll.results = scroll.results or {}
-
-      for i=1,table.getn(scroll.results) do
-        scroll.results[i]:Hide()
-        if scroll.results[i].obj and scroll.results[i].obj[-1].highlight then
-          scroll.results[i].obj[-1].highlight:Hide()
-        end
+      if highlighted then
+        highlighted.highlight:Hide()
+        highlighted = nil
       end
 
-      if strlen(this:GetText()) < 1 then
-        parent:UpdateScrollChildRect()
-        return
-      end
-
-      local i = 1
+      -- the matching entries, from the top of the list
+      local matches = {}
       local search = strlower(this:GetText())
-      for name, obj in pairs(searchDB) do
-        local title = obj[0] and strlower(obj[0])
-        if strfind(title, search) then
-          -- build caption string
-          local caption = ""
-          for x=table.getn(obj),1,-1 do
-            caption = caption .. "|cff33ffcc" .. obj[x].text:GetText() .. "|r » "
+      if search ~= "" then
+        for _, obj in pairs(searchDB) do
+          if strfind(strlower(obj[0]), search, 1, true) then
+            table.insert(matches, obj)
           end
-          caption = caption .. "|cffffffff" .. obj[0]
-
-          -- build search entry button
-          scroll.results[i] = scroll.results[i] or CreateSearchEntry(scroll, i)
-          scroll.results[i].obj = obj
-          scroll.results[i].text:SetText(caption)
-          scroll.results[i]:Show()
-
-          i = i + 1
         end
       end
-
-      -- measure the new results and start at the top
-      parent:UpdateScrollChildRect()
-      parent:SetVerticalScroll(0)
+      results.ScrollBox:SetDataProvider(CreateDataProvider(matches))
     end)
 
     pfUI.gui.search:SetScript("OnEditFocusGained", function(self)

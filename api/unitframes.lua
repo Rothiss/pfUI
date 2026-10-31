@@ -313,6 +313,7 @@ function pfUI.api.UnitHasAggro(unit)
   if not data then data = { }; aggrodata[unit] = data end
   data.check = now
   data.state = 0
+  data.guid = UnitGUID(unit)
 
   if UnitExists(unit) and UnitIsFriend(unit, "player") then
     for i = 1, table.getn(aggroScan) do
@@ -328,6 +329,21 @@ function pfUI.api.UnitHasAggro(unit)
 
   return data.state
 end
+
+-- A unit turned to someone else, so two kinds of cached answer may be stale:
+-- every unit that had aggro (the attacker may have left it) and the new
+-- target. Those recompute on their next read instead of riding out the
+-- cache; the rest stay cached, since the retarget changes nothing for them.
+-- Units without a token of their own (a raid member's target) still fire it
+-- with their GUID, which composes with "target" like any token.
+pfUI.events:RegisterFrameEventAndCallback("UNIT_TARGET", function(_, unit)
+  local target = UnitGUID(unit .. "target")
+  for _, data in pairs(aggrodata) do
+    if data.state > 0 or (target and data.guid == target) then
+      data.check = 0
+    end
+  end
+end)
 
 function pfUI.uf:UpdateVisibility()
   local self = self or this

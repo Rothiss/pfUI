@@ -907,14 +907,6 @@ pfUI:RegisterModule("gui", function ()
         "HORIZONTAL:" .. T["Horizontal"],
         "VERTICAL:" .. T["Vertical"],
       },
-      ["uf_animationspeed"] = {
-        "1:" .. T["Instant"],
-        "2:" .. T["Very Fast"],
-        "3:" .. T["Fast"],
-        "5:" .. T["Medium"],
-        "8:" .. T["Slow"],
-        "13:" .. T["Very Slow"],
-      },
       ["xpanchors"] = {
         "__NONONIL__:" .. T["No Anchor"],
         "pfChatLeft:" .. T["Left Chat Frame"],
@@ -965,6 +957,12 @@ pfUI:RegisterModule("gui", function ()
         "TOP:" .. T["Center"],
         "TOPRIGHT:" .. T["Right"]
       },
+      ["uf_portrait_style"] = {
+        "3d:" .. T["3D"],
+        "2d:" .. T["2D"],
+        "classround:" .. T["Class Icon (Round)"],
+        "classsquare:" .. T["Class Icon (Square)"]
+      },
       ["uf_portrait_position"] = {
         "bar:" .. T["Healthbar Embedded"],
         "left:" .. T["Left"],
@@ -982,6 +980,12 @@ pfUI:RegisterModule("gui", function ()
         "BOTTOMLEFT:" .. T["Bottom Left"],
         "BOTTOMRIGHT:" .. T["Bottom Right"],
         "off:" .. T["Disabled"]
+      },
+      ["cooldown_timers"] = {
+        "off:" .. T["None"],
+        "text:" .. T["Numbers"],
+        "sweep:" .. T["Sweep"],
+        "both:" .. T["Numbers And Sweep"]
       },
       ["uf_debuff_indicator"] = {
         "0:" .. T["Disabled"],
@@ -1599,21 +1603,26 @@ pfUI:RegisterModule("gui", function ()
     end)
 
     CreateGUIEntry(T["Settings"], T["Cooldown"], function()
-      CreateConfig(U["buff"], T["Show Milliseconds When Timer Runs Out"], C.appearance.cd, "milliseconds", "checkbox")
-      CreateConfig(nil, T["Cooldown Color (Less than 3 Sec)"], C.appearance.cd, "lowcolor", "color")
-      CreateConfig(nil, T["Cooldown Color (Seconds)"], C.appearance.cd, "normalcolor", "color")
-      CreateConfig(nil, T["Cooldown Color (Minutes)"], C.appearance.cd, "minutecolor", "color")
-      CreateConfig(nil, T["Cooldown Color (Hours)"], C.appearance.cd, "hourcolor", "color")
-      CreateConfig(nil, T["Cooldown Color (Days)"], C.appearance.cd, "daycolor", "color")
-      CreateConfig(nil, T["Use Dynamic Font Size"], C.appearance.cd, "dynamicsize", "checkbox")
-      CreateConfig(nil, T["Cooldown Text Font"], C.appearance.cd, "font", "dropdown", pfUI.gui.dropdowns.fonts)
-      CreateConfig(nil, T["Cooldown Text Font Size"], C.appearance.cd, "font_size")
-      CreateConfig(nil, T["Cooldown Text Font Size (Blizzard Frames)"], C.appearance.cd, "font_size_blizz")
-      CreateConfig(nil, T["Cooldown Text Font Size (Foreign Frames)"], C.appearance.cd, "font_size_foreign")
-      CreateConfig(nil, T["Cooldown Text Time Threshold"], C.appearance.cd, "threshold")
-      CreateConfig(nil, T["Enable Durations On Blizzard Frames"], C.appearance.cd, "blizzard", "checkbox")
-      CreateConfig(nil, T["Enable Durations On Foreign Frames"], C.appearance.cd, "foreign", "checkbox")
-      CreateConfig(nil, T["Hide Foreign Cooldown Animations"], C.appearance.cd, "hideanim", "checkbox")
+      CreateConfig(nil, COUNTDOWN_FOR_COOLDOWNS_TEXT, "CVAR", "countdownForCooldowns", "checkbox")
+      CreateConfig(UpdateCooldowns, T["Font"], C.cooldown, "font", "dropdown", pfUI.gui.dropdowns.fonts)
+      CreateConfig(nil, T["Font Size"], C.cooldown, "font_size")
+      CreateConfig(nil, T["Scale Font Size With Icon"], C.cooldown, "dynamicsize", "checkbox")
+      CreateConfig(UpdateCooldowns, T["Hide Numbers On Spell Cooldowns Up To (Seconds)"], C.cooldown, "threshold")
+      CreateConfig(UpdateCooldowns, T["Show Tenths Below 5 Seconds"], C.cooldown, "milliseconds", "checkbox")
+      CreateConfig(UpdateCooldowns, T["Cooldown Color (5 Seconds Or Less)"], C.cooldown, "lowcolor", "color")
+      CreateConfig(UpdateCooldowns, T["Cooldown Color (Seconds)"], C.cooldown, "normalcolor", "color")
+      CreateConfig(UpdateCooldowns, T["Cooldown Color (Minutes)"], C.cooldown, "minutecolor", "color")
+      CreateConfig(UpdateCooldowns, T["Cooldown Color (Hours)"], C.cooldown, "hourcolor", "color")
+      CreateConfig(UpdateCooldowns, T["Cooldown Color (Days)"], C.cooldown, "daycolor", "color")
+
+      -- the timers of cooldowns no other page covers. Other addons' cooldowns
+      -- only lose numbers or sweep (see api/cooldown.lua), so giving them
+      -- back takes a reload
+      local timers = pfUI.gui.dropdowns.cooldown_timers
+      CreateConfig(nil, T["Timers"], nil, nil, "header")
+      CreateConfig(UpdateCooldowns, T["Spellbook And Character"], C.cooldown, "blizzard_timers", "dropdown", timers)
+      CreateConfig(UpdateCooldowns, T["Loss Of Control"], C.cooldown, "lossofcontrol_timers", "dropdown", timers)
+      CreateConfig(nil, T["Other Addons"], C.cooldown, "foreign_timers", "dropdown", timers)
     end)
 
     CreateGUIEntry(T["Settings"], T["Screenshot"], function()
@@ -1641,115 +1650,6 @@ pfUI:RegisterModule("gui", function ()
       local header = CreateConfig(nil, T["Nameplate Update Rate"], nil, nil, "header")
       header:GetParent().objectCount = header:GetParent().objectCount - 1
       header:SetHeight(20)
-      
-      local targetCustom  -- declare first so callback can use it
-      
-      CreateConfig(function()
-        -- Callback when dropdown changes - update custom field immediately
-        if targetCustom and targetCustom.input then
-          local isCustom = pfUI.throttle:IsCustom("nameplates_target")
-          if not isCustom then
-            -- Preset selected - show FPS from preset, make readonly
-            targetCustom.input:EnableMouse(false)
-            targetCustom.input:EnableKeyboard(false)
-            targetCustom.input:ClearFocus()
-            targetCustom.input:SetTextColor(.5,.5,.5,1)
-            targetCustom.input:SetText(tostring(pfUI.throttle:GetFps("nameplates_target")))
-          else
-            -- Custom selected - make editable
-            targetCustom.input:EnableMouse(true)
-            targetCustom.input:EnableKeyboard(true)
-            targetCustom.input:SetTextColor(.2,1,.8,1)
-            if _G.pfUI_throttle.nameplates_target_custom then
-              targetCustom.input:SetText(_G.pfUI_throttle.nameplates_target_custom)
-            end
-          end
-        end
-      end, T["Target Plates"], _G.pfUI_throttle, "nameplates_target", "dropdown", {
-        "very_slow:" .. T["Very Slow"] .. " (2 FPS)",
-        "slow:" .. T["Slow"] .. " (5 FPS)",
-        "normal:" .. T["Normal"] .. " (10 FPS)",
-        "fast:" .. T["Fast"] .. " (20 FPS)",
-        "very_fast:" .. T["Very Fast"] .. " (30 FPS)",
-        "fastest:" .. T["Fastest"] .. " (50 FPS)",
-        "custom:" .. T["Custom"],
-      })
-      
-      -- Now create custom field AFTER dropdown
-      targetCustom = CreateConfig(nil, T["Custom FPS"], _G.pfUI_throttle, "nameplates_target_custom")
-      
-      -- Set initial state
-      local isCustom = pfUI.throttle:IsCustom("nameplates_target")
-      if not isCustom then
-        targetCustom.input:EnableMouse(false)
-        targetCustom.input:EnableKeyboard(false)
-        targetCustom.input:SetTextColor(.5,.5,.5,1)
-        targetCustom.input:SetText(tostring(pfUI.throttle:GetFps("nameplates_target")))
-      else
-        targetCustom.input:EnableMouse(true)
-        targetCustom.input:EnableKeyboard(true)
-        targetCustom.input:SetTextColor(.2,1,.8,1)
-        if _G.pfUI_throttle.nameplates_target_custom then
-          targetCustom.input:SetText(_G.pfUI_throttle.nameplates_target_custom)
-        end
-      end
-      
-      -- Spacer after custom field
-      local spacer1 = CreateConfig(nil, " ", nil, nil, "header")
-      spacer1:GetParent().objectCount = spacer1:GetParent().objectCount - 1
-      spacer1:SetHeight(5)
-      
-      local normalCustom
-      
-      CreateConfig(function()
-        if normalCustom and normalCustom.input then
-          local isCustom = pfUI.throttle:IsCustom("nameplates")
-          if not isCustom then
-            normalCustom.input:EnableMouse(false)
-            normalCustom.input:EnableKeyboard(false)
-            normalCustom.input:ClearFocus()
-            normalCustom.input:SetTextColor(.5,.5,.5,1)
-            normalCustom.input:SetText(tostring(pfUI.throttle:GetFps("nameplates")))
-          else
-            normalCustom.input:EnableMouse(true)
-            normalCustom.input:EnableKeyboard(true)
-            normalCustom.input:SetTextColor(.2,1,.8,1)
-            if _G.pfUI_throttle.nameplates_custom then
-              normalCustom.input:SetText(_G.pfUI_throttle.nameplates_custom)
-            end
-          end
-        end
-      end, T["Normal Plates"], _G.pfUI_throttle, "nameplates", "dropdown", {
-        "very_slow:" .. T["Very Slow"] .. " (2 FPS)",
-        "slow:" .. T["Slow"] .. " (5 FPS)",
-        "normal:" .. T["Normal"] .. " (10 FPS)",
-        "fast:" .. T["Fast"] .. " (20 FPS)",
-        "very_fast:" .. T["Very Fast"] .. " (30 FPS)",
-        "fastest:" .. T["Fastest"] .. " (50 FPS)",
-        "custom:" .. T["Custom"],
-      })
-      
-      normalCustom = CreateConfig(nil, T["Custom FPS"], _G.pfUI_throttle, "nameplates_custom")
-      
-      local isCustom2 = pfUI.throttle:IsCustom("nameplates")
-      if not isCustom2 then
-        normalCustom.input:EnableMouse(false)
-        normalCustom.input:EnableKeyboard(false)
-        normalCustom.input:SetTextColor(.5,.5,.5,1)
-        normalCustom.input:SetText(tostring(pfUI.throttle:GetFps("nameplates")))
-      else
-        normalCustom.input:EnableMouse(true)
-        normalCustom.input:EnableKeyboard(true)
-        normalCustom.input:SetTextColor(.2,1,.8,1)
-        if _G.pfUI_throttle.nameplates_custom then
-          normalCustom.input:SetText(_G.pfUI_throttle.nameplates_custom)
-        end
-      end
-      
-      -- Spacer after custom field
-      local spacer2 = CreateConfig(nil, " ", nil, nil, "header")
-      spacer2:GetParent().objectCount = spacer2:GetParent().objectCount - 1
-      spacer2:SetHeight(5)
 
       local castbarCustom
 
@@ -1783,71 +1683,30 @@ pfUI:RegisterModule("gui", function ()
 
       castbarCustom = CreateConfig(nil, T["Custom FPS"], _G.pfUI_throttle, "nameplates_castbar_custom")
 
-      local spacer3 = CreateConfig(nil, " ", nil, nil, "header")
-      spacer3:GetParent().objectCount = spacer3:GetParent().objectCount - 1
-      spacer3:SetHeight(5)
-
-      local massCustom
-      
-      CreateConfig(function()
-        if massCustom and massCustom.input then
-          local isCustom = pfUI.throttle:IsCustom("nameplates_mass")
-          if not isCustom then
-            massCustom.input:EnableMouse(false)
-            massCustom.input:EnableKeyboard(false)
-            massCustom.input:ClearFocus()
-            massCustom.input:SetTextColor(.5,.5,.5,1)
-            massCustom.input:SetText(tostring(pfUI.throttle:GetFps("nameplates_mass")))
-          else
-            massCustom.input:EnableMouse(true)
-            massCustom.input:EnableKeyboard(true)
-            massCustom.input:SetTextColor(.2,1,.8,1)
-            if _G.pfUI_throttle.nameplates_mass_custom then
-              massCustom.input:SetText(_G.pfUI_throttle.nameplates_mass_custom)
-            end
-          end
-        end
-      end, T["Mass Pulls (20+ Plates)"], _G.pfUI_throttle, "nameplates_mass", "dropdown", {
-        "very_slow:" .. T["Very Slow"] .. " (2 FPS)",
-        "slow:" .. T["Slow"] .. " (5 FPS)",
-        "normal:" .. T["Normal"] .. " (10 FPS)",
-        "fast:" .. T["Fast"] .. " (20 FPS)",
-        "very_fast:" .. T["Very Fast"] .. " (30 FPS)",
-        "fastest:" .. T["Fastest"] .. " (50 FPS)",
-        "custom:" .. T["Custom"],
-      })
-      
-      massCustom = CreateConfig(nil, T["Custom FPS"], _G.pfUI_throttle, "nameplates_mass_custom")
-      
-      local isCustom3 = pfUI.throttle:IsCustom("nameplates_mass")
-      if not isCustom3 then
-        massCustom.input:EnableMouse(false)
-        massCustom.input:EnableKeyboard(false)
-        massCustom.input:SetTextColor(.5,.5,.5,1)
-        massCustom.input:SetText(tostring(pfUI.throttle:GetFps("nameplates_mass")))
+      local isCustom = pfUI.throttle:IsCustom("nameplates_castbar")
+      if not isCustom then
+        castbarCustom.input:EnableMouse(false)
+        castbarCustom.input:EnableKeyboard(false)
+        castbarCustom.input:SetTextColor(.5,.5,.5,1)
+        castbarCustom.input:SetText(tostring(pfUI.throttle:GetFps("nameplates_castbar")))
       else
-        massCustom.input:EnableMouse(true)
-        massCustom.input:EnableKeyboard(true)
-        massCustom.input:SetTextColor(.2,1,.8,1)
-        if _G.pfUI_throttle.nameplates_mass_custom then
-          massCustom.input:SetText(_G.pfUI_throttle.nameplates_mass_custom)
+        castbarCustom.input:EnableMouse(true)
+        castbarCustom.input:EnableKeyboard(true)
+        castbarCustom.input:SetTextColor(.2,1,.8,1)
+        if _G.pfUI_throttle.nameplates_castbar_custom then
+          castbarCustom.input:SetText(_G.pfUI_throttle.nameplates_castbar_custom)
         end
       end
-      
+
       -- Spacer before reset button
       local spacer = CreateConfig(nil, " ", nil, nil, "header")
       spacer:GetParent().objectCount = spacer:GetParent().objectCount - 1
       spacer:SetHeight(10)
-      
+
       -- Reset to defaults button
       CreateConfig(nil, T["Reset to Defaults"], nil, nil, "button", function()
-        pfUI.throttle:ResetToDefault("nameplates_target")
-        pfUI.throttle:ResetToDefault("nameplates")
-        pfUI.throttle:ResetToDefault("nameplates_mass")
-        -- Also reset custom fields to their default FPS values
-        _G.pfUI_throttle.nameplates_target_custom = "50"
-        _G.pfUI_throttle.nameplates_custom = "10"
-        _G.pfUI_throttle.nameplates_mass_custom = "7"
+        pfUI.throttle:ResetToDefault("nameplates_castbar")
+        _G.pfUI_throttle.nameplates_castbar_custom = "100"
         Reload()
       end, true)
     end)
@@ -2050,9 +1909,9 @@ pfUI:RegisterModule("gui", function ()
 
     CreateGUIEntry(T["Unit Frames"], T["General"], function()
       CreateConfig(nil, T["Disable pfUI Unit Frames"], C.unitframes, "disable", "checkbox")
-      CreateConfig(nil, T["Healthbar Animation Speed"], C.unitframes, "animation_speed", "dropdown", pfUI.gui.dropdowns.uf_animationspeed)
+      CreateConfig(nil, T["Animate Health And Power Bars"], C.unitframes, "animatebars", "checkbox")
       CreateConfig(nil, T["Portrait Alpha"], C.unitframes, "portraitalpha")
-      CreateConfig(nil, T["Always Use 2D Portraits"], C.unitframes, "always2dportrait", "checkbox")
+      CreateConfig(nil, T["Portrait Style"], C.unitframes, "portraitstyle", "dropdown", pfUI.gui.dropdowns.uf_portrait_style)
       CreateConfig(nil, T["Enable 2D Portraits As Fallback"], C.unitframes, "portraittexture", "checkbox")
       CreateConfig(nil, T["Unit Frame Layout"], C.unitframes, "layout", "dropdown", pfUI.gui.dropdowns.uf_layout)
       CreateConfig(nil, T["Combopoint Width"], C.unitframes, "combowidth")
@@ -2136,6 +1995,10 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(nil, T["Druid Mana Bar Texture"], C.unitframes, "druidmanatexture", "dropdown", pfUI.gui.dropdowns.uf_bartexture, nil, nil, nil)
 
 
+      CreateConfig(nil, T["Target Indicators"], nil, nil, "header")
+      CreateConfig(nil, T["Target Indicator Font Size"], C.unitframes, "indicator_font_size", nil, nil, nil, nil, nil)
+      CreateConfig(nil, T["Show Line of Sight Indicator"], C.unitframes, "los_indicator", "checkbox", nil, nil, nil, nil)
+
       CreateConfig(nil, T["SuperWoW Settings"], nil, nil, "header")
       CreateConfig(nil, T["Track Group on Minimap"], C.unitframes, "track_group", "checkbox", nil, nil, nil, nil)
 
@@ -2146,8 +2009,6 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(nil, T["Reactive Indicator Size"], C.unitframes, "reactive_size", nil, nil, nil, nil, nil)
 
       CreateConfig(nil, T["UnitXP Settings"], nil, nil, "header")
-      CreateConfig(nil, T["Font Size for all UnitXP texts"], C.unitframes, "unitxp_font_size", nil, nil, nil, nil, nil)
-      CreateConfig(nil, T["Show Line of Sight Indicator"], C.unitframes, "los_indicator", "checkbox", nil, nil, nil, nil)
       CreateConfig(nil, T["Show Behind Indicator"], C.unitframes, "behind_indicator", "checkbox", nil, nil, nil, nil)
       CreateConfig(nil, T["Show Distance of Target"], C.unitframes, "distance_indicator", "checkbox", nil, nil, nil, nil)
       CreateConfig(nil, T["Hide yd characters"], C.unitframes, "hide_distance_yd", "checkbox", nil, nil, nil, nil)
@@ -2264,6 +2125,7 @@ pfUI:RegisterModule("gui", function ()
           CreateConfig(U["raid"], T["Raid Padding"], C.unitframes[c], "raidpadding")
           CreateConfig(U["raid"], T["Raid Layout"], C.unitframes[c], "raidlayout", "dropdown", pfUI.gui.dropdowns.uf_raidlayout)
           CreateConfig(U["raid"], T["Raid Fill Direction"], C.unitframes[c], "raidfill", "dropdown", pfUI.gui.dropdowns.orientation)
+          CreateConfig(U["raid"], T["Grow Right To Left"], C.unitframes[c], "raidgrowleft", "checkbox")
           CreateConfig(U["raid"], T["Collapse Empty Slots"], C.unitframes[c], "collapse", "checkbox")
         elseif c == "raidpet" then
           CreateConfig(U[c], T["Layout"], nil, nil, "header")
@@ -2324,17 +2186,15 @@ pfUI:RegisterModule("gui", function ()
         CreateConfig(U[c], T["Automatic Level Text Color"], C.unitframes[c], "levelcolor", "checkbox")
         CreateConfig(U[c], T["Automatic Class Text Color"], C.unitframes[c], "classcolor", "checkbox")
 
-        CreateConfig(U[c], T["Timer"], nil, nil, "header")
-        CreateConfig(U[c], T["Show Timer Text"], C.unitframes[c], "cooldown_text", "checkbox")
-        CreateConfig(U[c], T["Show Timer Animation"], C.unitframes[c], "cooldown_anim", "checkbox")
-        CreateConfig(U[c], T["Reverse Timer Animation"], C.unitframes[c], "cooldown_reverse", "checkbox")
-
         CreateConfig(U[c], T["Buffs"], nil, nil, "header")
+        CreateConfig(UpdateCooldowns, T["Buff And Debuff Timers"], C.unitframes[c], "aura_timers", "dropdown", pfUI.gui.dropdowns.cooldown_timers)
         CreateConfig(U[c], T["Buff Position"], C.unitframes[c], "buffs", "dropdown", pfUI.gui.dropdowns.uf_buff_position)
         CreateConfig(U[c], T["Buff Size"], C.unitframes[c], "buffsize")
         CreateConfig(U[c], T["Buff Limit"], C.unitframes[c], "bufflimit")
         CreateConfig(U[c], T["Buffs Per Row"], C.unitframes[c], "buffperrow")
         CreateConfig(U[c], T["Own Buff Size"], C.unitframes[c], "ownbuffsize")
+        CreateConfig(U[c], T["Buff X-Offset"], C.unitframes[c], "buffoffx")
+        CreateConfig(U[c], T["Buff Y-Offset"], C.unitframes[c], "buffoffy")
         CreateConfig(U[c], T["Buff X-Spacing"], C.unitframes[c], "buffspacingx")
         CreateConfig(U[c], T["Buff Y-Spacing"], C.unitframes[c], "buffspacingy")
 
@@ -2344,6 +2204,8 @@ pfUI:RegisterModule("gui", function ()
         CreateConfig(U[c], T["Debuff Limit"], C.unitframes[c], "debufflimit")
         CreateConfig(U[c], T["Debuffs Per Row"], C.unitframes[c], "debuffperrow")
         CreateConfig(U[c], T["Own Debuff Size"], C.unitframes[c], "owndebuffsize")
+        CreateConfig(U[c], T["Debuff X-Offset"], C.unitframes[c], "debuffoffx")
+        CreateConfig(U[c], T["Debuff Y-Offset"], C.unitframes[c], "debuffoffy")
         CreateConfig(U[c], T["Debuff X-Spacing"], C.unitframes[c], "debuffspacingx")
         CreateConfig(U[c], T["Debuff Y-Spacing"], C.unitframes[c], "debuffspacingy")
 
@@ -2358,8 +2220,8 @@ pfUI:RegisterModule("gui", function ()
 
         CreateConfig(U[c], T["Buff/Debuff Indicators"], nil, nil, "header")
         CreateConfig(U[c], T["Enable Indicators"], C.unitframes[c], "buff_indicator", "checkbox")
-        CreateConfig(U[c], T["Show Time Left"], C.unitframes[c], "indicator_time", "checkbox")
         CreateConfig(U[c], T["Show Stacks"], C.unitframes[c], "indicator_stacks", "checkbox")
+        CreateConfig(UpdateCooldowns, T["Indicator Timers"], C.unitframes[c], "indicator_timers", "dropdown", pfUI.gui.dropdowns.cooldown_timers)
         CreateConfig(U[c], T["Indicator Size"], C.unitframes[c], "indicator_size")
         CreateConfig(U[c], T["Indicator Spacing"], C.unitframes[c], "indicator_spacing", "dropdown", pfUI.gui.dropdowns.spacing)
         CreateConfig(U[c], T["Indicator Position"], C.unitframes[c], "indicator_pos", "dropdown", pfUI.gui.dropdowns.positions)
@@ -2446,7 +2308,7 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(nil, T["Bagslots Per Row"], C.appearance.bags, "bagrowlength")
       CreateConfig(nil, T["Bankslots Per Row"], C.appearance.bags, "bankrowlength")
       CreateConfig(nil, T["Item Slot Size"], C.appearance.bags, "icon_size")
-      CreateConfig(Reload, T["Reverse Cooldown Animation"], C.appearance.bags, "cooldown_reverse", "checkbox")
+      CreateConfig(UpdateCooldowns, T["Cooldown Timers"], C.appearance.bags, "timers", "dropdown", pfUI.gui.dropdowns.cooldown_timers)
       CreateConfig(nil, T["Auto Sell Grey Items"], C.global, "autosell", "checkbox")
       CreateConfig(nil, T["Auto Repair Items"], C.global, "autorepair", "checkbox")
       CreateConfig(nil, T["Auto Sort When Opening Bags"], C.appearance.bags, "autoSortOnOpen", "checkbox")
@@ -2495,10 +2357,9 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(U["buff"], T["Number Of Weapon Buffs Per Row"], C.buffs, "wepbuffrowsize")
       CreateConfig(U["buff"], T["Number Of Buffs Per Row"], C.buffs, "buffrowsize")
       CreateConfig(U["buff"], T["Number Of Debuffs Per Row"], C.buffs, "debuffrowsize")
+      CreateConfig(UpdateCooldowns, T["Duration Timers"], C.buffs, "timers", "dropdown", pfUI.gui.dropdowns.cooldown_timers)
       CreateConfig(U["buff"], T["Show Duration Inside Buff"], C.buffs, "textinside", "checkbox")
-      CreateConfig(U["buff"], T["Buff Font Size"], C.buffs, "fontsize")
-      CreateConfig(U["buff"], T["Show Timer Animation"], C.buffs, "cooldown_anim", "checkbox")
-      CreateConfig(U["buff"], T["Reverse Timer Animation"], C.buffs, "cooldown_reverse", "checkbox")
+      CreateConfig(U["buff"], T["Stack Count Font Size"], C.buffs, "fontsize")
     end)
 
     CreateGUIEntry(T["Buffs"], T["Totem Icons"], function()
@@ -2506,7 +2367,7 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(U["totems"], T["Icon Size"], C.totems, "iconsize")
       CreateConfig(U["totems"], T["Spacing"], C.totems, "spacing", "dropdown", pfUI.gui.dropdowns.spacing)
       CreateConfig(U["totems"], T["Show Background"], C.totems, "showbg", "checkbox")
-      CreateConfig(U["totems"], T["Reverse Cooldown Animation"], C.totems, "cooldown_reverse", "checkbox")
+      CreateConfig(UpdateCooldowns, T["Duration Timers"], C.totems, "timers", "dropdown", pfUI.gui.dropdowns.cooldown_timers)
     end)
 
     CreateGUIEntry(T["Buffs"], T["Player Buff Bar"], function()
@@ -2573,6 +2434,7 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(U["bars"], T["Self Cast: Right Click"], C.bars, "rightself", "checkbox")
       CreateConfig(U["bars"], T["Button Animation"], C.bars, "animation", "dropdown", pfUI.gui.dropdowns.actionbuttonanimations)
       CreateConfig(U["bars"], T["Button Animation Trigger"], C.bars, "animmode", "dropdown", pfUI.gui.dropdowns.animationmode)
+      CreateConfig(UpdateCooldowns, T["Cooldown Timers"], C.bars, "timers", "dropdown", pfUI.gui.dropdowns.cooldown_timers)
       CreateConfig(U["bars"], T["Show Animation On Hidden Bars"], C.bars, "animalways", "checkbox")
       CreateConfig(U["bars"], T["Show Reagent Count"], C.bars, "reagents", "checkbox")
       CreateConfig(U["bars"], T["Highlight Equipped Items"], C.bars, "showequipped", "checkbox")
@@ -2595,8 +2457,6 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(U["bars"], T["Item Count Text Color"], C.bars, "count_color", "color")
       CreateConfig(U["bars"], T["Keybind Text Size"], C.bars, "bind_size")
       CreateConfig(U["bars"], T["Keybind Text Color"], C.bars, "bind_color", "color")
-      CreateConfig(nil, T["Cooldown Text Size"], C.bars, "cd_size")
-      CreateConfig(Reload, T["Reverse Cooldown Animation"], C.bars, "cooldown_reverse", "checkbox")
 
       CreateConfig(nil, T["Auto Paging"], nil, nil, "header")
       CreateConfig(U["bars"], T["Switch Pages On Alt Key Press"], C.bars, "pagemasteralt", "checkbox")
@@ -2804,6 +2664,7 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(nil, T["Always Show Health In Percent"], C.tooltip, "alwaysperc", "checkbox")
       CreateConfig(nil, T["Show Movement Speed"], C.tooltip, "movespeed", "checkbox")
       CreateConfig(nil, T["Show Unit Buffs"], C.tooltip, "showbuffs", "checkbox")
+      CreateConfig(UpdateCooldowns, T["Unit Buff Timers"], C.tooltip, "aura_timers", "dropdown", pfUI.gui.dropdowns.cooldown_timers)
       CreateConfig(nil, T["Show Unit IDs"], C.tooltip, "unitid", "checkbox")
     end)
 
@@ -2967,10 +2828,7 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(U["nameplates"], T["Debuff Icon Offset"], C.nameplates, "debuffoffset")
       CreateConfig(U["nameplates"], T["Debuff Icon Size"], C.nameplates, "debuffsize")
       CreateConfig(U["nameplates"], T["Show Debuff Stacks"], C.nameplates.debuffs, "showstacks", "checkbox")
-      CreateConfig(U["nameplates"], T["Enable Debuff Timers"], C.nameplates, "debufftimers", "checkbox")
-      CreateConfig(U["nameplates"], T["Show Timer Text"], C.nameplates, "debufftext", "checkbox")
-      CreateConfig(U["nameplates"], T["Show Timer Animation"], C.nameplates, "debuffanim", "checkbox")
-      CreateConfig(U["nameplates"], T["Reverse Timer Animation"], C.nameplates, "debreverse", "checkbox")
+      CreateConfig(UpdateCooldowns, T["Debuff Timers"], C.nameplates, "debuff_timers", "dropdown", pfUI.gui.dropdowns.cooldown_timers)
 
       CreateConfig(U["nameplates"], T["Filter Mode"], C.nameplates.debuffs, "filter", "dropdown", pfUI.gui.dropdowns.buffbarfilter)
       CreateConfig(U["nameplates"], T["Blacklist"], C.nameplates.debuffs, "blacklist", "list")

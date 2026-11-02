@@ -1,5 +1,3 @@
-pfUI.api = { }
-
 -- load pfUI environment
 setfenv(1, pfUI:GetEnvironment())
 
@@ -59,20 +57,6 @@ function pfUI.api.GetUnitDistance(unit1, unit2)
   return nil
 end
 
--- [ UnitInLineOfSight ]
--- Returns true if unit1 has line of sight to unit2
--- Requires UnitXP_SP3
-function pfUI.api.UnitInLineOfSight(unit1, unit2)
-  if not pfUI.api.HasUnitXP() then return nil end
-  if not unit2 then
-    unit2 = unit1
-    unit1 = "player"
-  end
-  local success, inSight = pcall(UnitXP, "inSight", unit1, unit2)
-  if success then return inSight end
-  return nil
-end
-
 -- [ UnitIsBehind ]
 -- Returns true if unit1 is behind unit2
 -- Requires UnitXP_SP3
@@ -92,41 +76,11 @@ gfind = string.gmatch or string.gfind
 mod = math.mod or mod
 
 -- [ strsplit ]
--- Splits a string using a delimiter. Self-contained on purpose: it does NOT
--- delegate to the global strsplit / string.split, because third-party addons
--- clobber those (e.g. BigWigs' SpellRequests redefines string:split to return
--- a table, which would make this return a single table instead of r,g,b,a and
--- break color/version parsing depending on load order). Delimiter chars are
--- treated as a set (any one char splits), and empty fields are preserved
--- ("a,,b" -> "a", "", "b"), matching real strsplit semantics.
--- 'delimiter'  [string]        characters that will be interpreted as delimiter
---                              characters (bytes) in the string.
--- 'subject'    [string]        String to split.
--- return:      [list]          a list of strings.
-local sfind, ssub, sgsub = string.find, string.sub, string.gsub
-function pfUI.api.strsplit(delimiter, subject)
-  if not subject then return nil end
-  -- a character class of the delimiter bytes, each escaped so % ] ^ - stay
-  -- literal
-  local set = "[" .. sgsub(delimiter or ":", "(%W)", "%%%1") .. "]"
-  local fields, start = {}, 1
-  local pos = sfind(subject, set)
-  while pos do
-    table.insert(fields, ssub(subject, start, pos - 1))
-    start = pos + 1
-    pos = sfind(subject, set, start)
-  end
-  table.insert(fields, ssub(subject, start))
-  return unpack(fields)
-end
-
--- [ isempty ]
--- Returns true if a table is empty or not existing, otherwise false.
--- 'tbl'         [table]        the table that shall be checked
--- return:      [boolean]       result of the check.
-function pfUI.api.isempty(tbl)
-  return next(tbl or {}) == nil
-end
+-- ClassicAPI's strsplit, taken from the ClassicAPI table, which no addon can
+-- overwrite. Third-party addons replace the global strsplit / string.split
+-- (e.g. BigWigs' SpellRequests makes string:split return a table), and bare
+-- strsplit calls inside the pfUI environment resolve to this copy.
+pfUI.api.strsplit = ClassicAPI.strsplit
 
 -- [ checkversion ]
 -- Compares a given version (major,minor,fix) and compares it to the current
@@ -150,8 +104,7 @@ function pfUI.api.checkversion(chkmajor, chkminor, chkfix)
 end
 
 -- [ UnitInRange ]
--- Returns whether a party/raid member is nearby.
--- It takes care of the rangecheck module if existing.
+-- Returns whether a party/raid member is nearby, by the configured range check.
 -- unit         [string]        A unit to query (string, unitID)
 -- return:      [bool]          "1" if in range otherwise "nil"
 function pfUI.api.UnitInRange(unit)
@@ -166,20 +119,21 @@ function pfUI.api.UnitInRange(unit)
   -- returned nil above, matching the pre-collapse behavior.
   if C.unitframes.rangecheck == "0" then return 1 end
 
-  -- UnitXP precise mode: skip librange entirely, use direct distance check
+  -- UnitXP precise mode: direct distance check against the configured range
   if C.unitframes.rangecheck_mode == "unitxp" and _G.UnitXP then
     local threshold = tonumber(C.unitframes.rangecheck_distance) or 40
     local success, distance = pcall(_G.UnitXP, "distanceBetween", "player", unit)
     if success and distance then
       return distance <= threshold and 1 or nil
     end
-    -- fallthrough to librange if UnitXP fails
+    -- fallthrough to the 40y check if UnitXP fails
   end
 
-  if pfUI.api.librange then
-    return pfUI.api.librange:UnitInSpellRange(unit)
-  end
-  return nil
+  -- ClassicAPI's 40y check, _G-qualified since the bare name is this function
+  -- inside the pfUI environment. A unit it can't place (outside the client's
+  -- sync range) counts as in range.
+  local inRange, checked = _G.UnitInRange(unit)
+  return (inRange or not checked) and 1 or nil
 end
 
 -- [ UnitHasBuff ]
@@ -305,28 +259,6 @@ function pfUI.api.round(input, places)
     for i = 1, places do pow = pow * 10 end
     return floor(input * pow + 0.5) / pow
   end
-end
-
--- [ clamp ]
--- Clamps a number between given range.
--- 'x'          [number]        the number that should be clamped.
--- 'min'        [number]        minimum value.
--- 'max'        [number]        maximum value.
--- returns:     [number]        clamped value: 'x', 'min' or 'max' value itself.
-function pfUI.api.clamp(x, min, max)
-  if type(x) == "number" and type(min) == "number" and type(max) == "number" then
-    return x < min and min or x > max and max or x
-  else
-    return x
-  end
-end
-
--- [ modf ]
--- Returns integral and fractional part of a number.
--- 'f'          [float]        the number to breakdown.
--- returns:     [int],[float]  whole and fractional part.
-function pfUI.api.modf(f)
-  return math.modf(f)
 end
 
 -- [ GetServerEpoch ]
@@ -516,37 +448,32 @@ function pfUI.api.GetBagFamily(bag)
 end
 
 -- [ Abbreviate ]
--- Abbreviates a number from 1234 to 1.23k
+-- Abbreviates a number from 1234 to 1.23k, as the unitframes.abbrevnum
+-- setting asks: "0" full numbers, "1" 2 decimals (4250 -> 4.25k),
+-- "2" 1 decimal rounded down (4250 -> 4.2k)
 -- 'number'     [number]           the number that should be abbreviated
 -- 'returns:    [string]           the abbreviated value
+local function CreateAbbreviateFormatter(step, rounding)
+  local Down = Enum.NumericRuleFormatRounding.Down
+  local formatter = C_StringUtil.CreateNumericRuleFormatter()
+  formatter:SetBreakpoints({
+    { threshold = 0,       format = "%d",  components = { { step = 1, rounding = Down } } },
+    { threshold = 1000,    format = "%gk", components = { { div = 1000,    step = step, rounding = rounding } } },
+    { threshold = 1000000, format = "%gm", components = { { div = 1000000, step = step, rounding = rounding } } },
+  })
+  return formatter
+end
+
+local abbreviateFormatters = {
+  ["1"] = CreateAbbreviateFormatter(0.01, Enum.NumericRuleFormatRounding.Nearest),
+  ["2"] = CreateAbbreviateFormatter(0.1, Enum.NumericRuleFormatRounding.Down),
+}
+
 function pfUI.api.Abbreviate(number)
-  local mode = pfUI_config.unitframes.abbrevnum
-  -- mode "0" = disabled (full numbers)
-  -- mode "1" = 2 decimals (4250 -> 4.25k) [legacy/default]
-  -- mode "2" = 1 decimal (4250 -> 4.2k) - always rounds DOWN
-  
-  if mode == "1" or mode == "2" then
-    local sign = number < 0 and -1 or 1
-    number = math.abs(number)
-
-    if number > 1000000 then
-      if mode == "2" then
-        -- 1 decimal, round DOWN: 4.18m -> 4.1m
-        return (floor(number/100000) / 10 * sign) .. "m"
-      else
-        return pfUI.api.round(number/1000000*sign, 2) .. "m"
-      end
-    elseif number > 1000 then
-      if mode == "2" then
-        -- 1 decimal, round DOWN: 4180 -> 4.1k (not 4.2k)
-        return (floor(number/100) / 10 * sign) .. "k"
-      else
-        return pfUI.api.round(number/1000*sign, 2) .. "k"
-      end
-    end
-  end
-
-  return math.floor(number)
+  local formatter = abbreviateFormatters[pfUI_config.unitframes.abbrevnum]
+  if not formatter then return math.floor(number) end
+  if number < 0 then return "-" .. formatter:FormatNumber(-number) end
+  return formatter:FormatNumber(number)
 end
 
 -- [ SendChatMessageWide ]
@@ -669,48 +596,23 @@ end
 -- [ Enable Movable ]
 -- Set all necessary functions to make a already existing frame movable.
 -- 'name'       [frame/string]  Name of the Frame that should be movable
--- 'addon'      [string]        Addon that must be loaded before being able to access the frame
 -- 'blacklist'  [table]         A list of frames that should be deactivated for mouse usage
 local function OnDragStart() this:StartMoving() end
 local function OnDragStop() this:StopMovingOrSizing() end
-function pfUI.api.EnableMovable(name, addon, blacklist)
-  if addon then
-    local scan = CreateFrame("Frame")
-    scan:RegisterEvent("ADDON_LOADED")
-    scan:SetScript("OnEvent", function()
-      if arg1 == addon then
-        local frame = _G[name]
-
-        if blacklist then
-          for _, disable in pairs(blacklist) do
-            _G[disable]:EnableMouse(false)
-          end
-        end
-
-        frame:SetMovable(true)
-        frame:EnableMouse(true)
-        frame:RegisterForDrag("LeftButton")
-        frame:SetScript("OnDragStart", OnDragStart)
-        frame:SetScript("OnDragStop", OnDragStop)
-
-        this:UnregisterAllEvents()
-      end
-    end)
-  else
-    if blacklist then
-      for _, disable in pairs(blacklist) do
-        _G[disable]:EnableMouse(false)
-      end
+function pfUI.api.EnableMovable(name, blacklist)
+  if blacklist then
+    for _, disable in pairs(blacklist) do
+      _G[disable]:EnableMouse(false)
     end
-
-    local frame = name
-    if type(name) == "string" then frame = _G[name] end
-    frame:SetMovable(true)
-    frame:EnableMouse(true)
-    frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", OnDragStart)
-    frame:SetScript("OnDragStop", OnDragStop)
   end
+
+  local frame = name
+  if type(name) == "string" then frame = _G[name] end
+  frame:SetMovable(true)
+  frame:EnableMouse(true)
+  frame:RegisterForDrag("LeftButton")
+  frame:SetScript("OnDragStart", OnDragStart)
+  frame:SetScript("OnDragStop", OnDragStop)
 end
 
 -- [ Copy Table ]
@@ -1514,72 +1416,6 @@ function pfUI.api.DisableAutohide(frame)
   frame.hover:Hide()
   frame.hover.fade:Stop()
   frame:SetAlpha(1)
-end
-
--- [ GetColoredTime ] --
--- 'remaining'   the time in seconds that should be converted
--- return        a colored string including a time unit (m/h/d)
-local color_day, color_hour, color_minute, color_low, color_normal
-function pfUI.api.GetColoredTimeString(remaining)
-  if not remaining then return "" end
-
-  -- Show days if remaining is > 99 Hours (99 * 60 * 60)
-  if remaining > 356400 then
-    if not color_day then
-      local r,g,b,a = pfUI.api.GetStringColor(C.appearance.cd.daycolor)
-      color_day = pfUI.api.rgbhex(r,g,b)
-    end
-
-    return color_day .. round(remaining / 86400) .. "|rd"
-
-  -- Show hours if remaining is > 99 Minutes (99 * 60)
-  elseif remaining > 5940 then
-    if not color_hour then
-      local r,g,b,a = pfUI.api.GetStringColor(C.appearance.cd.hourcolor)
-      color_hour = pfUI.api.rgbhex(r,g,b)
-    end
-
-    return color_hour .. round(remaining / 3600) .. "|rh"
-
-  -- Show minutes if remaining is > 99 Seconds (99)
-  elseif remaining > 99 then
-    if not color_minute then
-      local r,g,b,a = pfUI.api.GetStringColor(C.appearance.cd.minutecolor)
-      color_minute = pfUI.api.rgbhex(r,g,b)
-    end
-
-    return color_minute .. round(remaining / 60) .. "|rm"
-
-  -- Show milliseconds on low
-  elseif remaining <= 5 and pfUI_config.appearance.cd.milliseconds == "1" then
-    if not color_low then
-      local r,g,b,a = pfUI.api.GetStringColor(C.appearance.cd.lowcolor)
-      color_low = pfUI.api.rgbhex(r,g,b)
-    end
-
-    return color_low .. string.format("%.1f", round(remaining,1))
-
-  -- Show seconds on low
-  elseif remaining <= 5 then
-    if not color_low then
-      local r,g,b,a = pfUI.api.GetStringColor(C.appearance.cd.lowcolor)
-      color_low = pfUI.api.rgbhex(r,g,b)
-    end
-
-    return color_low .. round(remaining)
-
-  -- Show seconds on normal
-  elseif remaining >= 0 then
-    if not color_normal then
-      local r, g, b, a = pfUI.api.GetStringColor(C.appearance.cd.normalcolor)
-      color_normal = pfUI.api.rgbhex(r,g,b)
-    end
-    return color_normal .. round(remaining)
-
-  -- Return empty
-  else
-    return ""
-  end
 end
 
 -- [ GetColorGradient ] --

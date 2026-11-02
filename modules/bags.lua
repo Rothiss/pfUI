@@ -415,11 +415,8 @@ pfUI:RegisterModule("bags", function ()
       -- reaches it after that
       local slotframe = pfUI.bags[bag].slots[slot].frame
       local cdname = slotframe:GetName() .. "Cooldown"
-      slotframe.cd = CreateFrame("Cooldown", cdname, slotframe, "CooldownFrameTemplate")
+      slotframe.cd = CreateCooldown(slotframe, "spell", C.appearance.bags, "timers", cdname)
       _G[cdname] = slotframe.cd
-      slotframe.cd.pfCooldownStyleAnimation = 1
-      slotframe.cd:SetReverse(C.appearance.bags.cooldown_reverse == "1")
-      slotframe.cd.pfCooldownType = "NOGCD"
 
       if not pfUI.bags[bag].slots[slot].frame.backdrop then
         CreateBackdrop(pfUI.bags[bag].slots[slot].frame, default_border)
@@ -588,31 +585,16 @@ pfUI:RegisterModule("bags", function ()
           frame.bagslots.slots[slot].slot = slot
         end
 
-        local SlotEnter = frame.bagslots.slots[slot].frame:GetScript("OnEnter")
-        frame.bagslots.slots[slot].frame:SetScript("OnEnter", function()
+        frame.bagslots.slots[slot].frame:HookScript("OnEnter", function()
           for slot, f in ipairs(pfUI.bags[this.slot + 1].slots) do
             CreateBackdrop(f.frame, default_border)
             f.frame.backdrop:SetBackdropBorderColor(.2,1,.8,1)
           end
-          SlotEnter(this)
         end)
 
-        local SlotLeave = frame.bagslots.slots[slot].frame:GetScript("OnLeave")
-        frame.bagslots.slots[slot].frame:SetScript("OnLeave", function()
+        frame.bagslots.slots[slot].frame:HookScript("OnLeave", function()
           pfUI.bag:UpdateBag(this.slot + 1)
-          SlotLeave()
         end)
-
-        -- On TBC, the OnEvent function of the template scans for framenames,
-        -- and obviously doesn't know the pf-Names. Therefore, triggering
-        -- the update function on each frame manually
-        if frame == pfUI.bag.left and BankFrameItemButton_Update then
-          local SlotUpdate = frame.bagslots.slots[slot].frame:GetScript("OnUpdate")
-          frame.bagslots.slots[slot].frame:SetScript("OnUpdate", function()
-            if SlotUpdate then SlotUpdate(this) end
-            BankFrameItemButton_Update(this)
-          end)
-        end
       end
 
       local left = (slot-min)*(frame.button_size/5*4+default_border*2) + default_border

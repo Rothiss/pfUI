@@ -34,10 +34,8 @@ pfUI:RegisterModule("lossofcontrol", function ()
   frame.icon.tex = frame.icon:CreateTexture(nil, "ARTWORK")
   HandleIcon(frame.icon, frame.icon.tex)
 
-  frame.cd = CreateFrame("Cooldown", nil, frame.icon, "CooldownFrameTemplate")
+  frame.cd = CreateCooldown(frame.icon, "timer", C.cooldown, "lossofcontrol_timers")
   frame.cd:SetAllPoints(frame.icon.tex)
-  frame.cd.pfCooldownStyleAnimation = 1
-  frame.cd.pfCooldownType = "ALL"
 
   frame.label = frame:CreateFontString(nil, "OVERLAY")
   frame.label:SetFont(pfUI.font_default, 20, "OUTLINE")
@@ -69,10 +67,10 @@ pfUI:RegisterModule("lossofcontrol", function ()
     self:Show()
   end
 
-  -- a refreshed debuff (UNIT_AURA) or a second kick on the same school
+  -- a refreshed debuff (UNIT_AURA_DELTA) or a second kick on the same school
   -- (SPELL_UPDATE_COOLDOWN) changes the timer without a loss of control event
   frame:SetScript("OnShow", function()
-    this:RegisterUnitEvent("UNIT_AURA", "player")
+    this:RegisterUnitEvent("UNIT_AURA_DELTA", "player")
     this:RegisterEvent("SPELL_UPDATE_COOLDOWN")
   end)
   frame:SetScript("OnHide", function()

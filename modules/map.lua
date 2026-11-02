@@ -33,6 +33,10 @@ pfUI:RegisterModule("map", function ()
   local alpha = C.position["WorldMapFrame"].alpha
   local scale = C.position["WorldMapFrame"].scale
 
+  -- the hooks go on once, however often the loader runs: turtle-wow.lua also
+  -- calls it, outside of an event
+  local hooked
+
   local pfMapLoader = CreateFrame("Frame")
   pfMapLoader:RegisterEvent("PLAYER_ENTERING_WORLD")
   pfMapLoader:SetScript("OnEvent", function()
@@ -46,9 +50,8 @@ pfUI:RegisterModule("map", function ()
     WorldMapFrame:EnableMouse(true)
     WorldMapFrame:RegisterForDrag("LeftButton")
 
-    -- make sure the hooks get only applied once
-    if not this.hooked then
-      this.hooked = true
+    if not hooked then
+      hooked = true
 
       WorldMapFrame:HookScript("OnShow", function()
         -- customize
@@ -64,14 +67,14 @@ pfUI:RegisterModule("map", function ()
 
       WorldMapFrame:HookScript("OnMouseWheel", function()
         if IsShiftKeyDown() then
-          alpha = clamp(WorldMapFrame:GetAlpha() + arg1/10, 0.1, 1.0)
+          alpha = Clamp(WorldMapFrame:GetAlpha() + arg1/10, 0.1, 1.0)
           WorldMapFrame:SetAlpha(alpha)
         end
 
         if IsControlKeyDown() then
           local oldscale = WorldMapFrame:GetScale()
           local point, rel, relpoint, offx, offy = WorldMapFrame:GetPoint()
-          scale = clamp(oldscale + arg1/10, 0.1, 2.0)
+          scale = Clamp(oldscale + arg1/10, 0.1, 2.0)
 
           -- recalculate world frame position based on old and new scale
           if point == "TOPLEFT" and relpoint == "TOPLEFT" then

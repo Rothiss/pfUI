@@ -42,7 +42,7 @@ pfUI:RegisterSkin("Character", function ()
   CharacterFrame.backdrop:SetPoint("TOPLEFT", 10, -10)
   CharacterFrame.backdrop:SetPoint("BOTTOMRIGHT", -30, 72)
   CharacterFrame:SetHitRectInsets(10,30,10,72)
-  EnableMovable("CharacterFrame", nil, CHARACTERFRAME_SUBFRAMES)
+  EnableMovable("CharacterFrame", CHARACTERFRAME_SUBFRAMES)
 
   SkinCloseButton(CharacterFrameCloseButton, CharacterFrame.backdrop, -6, -6)
 
@@ -192,6 +192,14 @@ pfUI:RegisterSkin("Character", function ()
       SetAllPointsOffset(frame.backdrop, frame, 0)
 
       HandleIcon(frame.backdrop, _G["Character"..slotName.."IconTexture"])
+
+      -- native cooldown frame in place of the template's indicator Model,
+      -- which has no countdown numbers. PaperDollItemSlotButton_Update reads
+      -- the "<button>Cooldown" global on every update. 1.12 binds a frame's
+      -- name only while that global is unset, so the global is rebound by
+      -- hand; the Model starts hidden and nothing reaches it after that
+      local cdname = "Character"..slotName.."Cooldown"
+      _G[cdname] = CreateCooldown(frame, "spell", C.cooldown, "blizzard_timers", cdname)
 
       CreateFontString(frame, "scoreText", "OVERLAY", 12)
       frame.scoreText:SetPoint("TOPRIGHT", 0, 0)

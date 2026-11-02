@@ -78,10 +78,7 @@ pfUI:RegisterModule("turtle-wow", function ()
     end)
   end
 
-  local delay = CreateFrame("Frame")
-  delay:SetScript("OnUpdate", function()
-    this:Hide()
-
+  RunNextFrame(function()
     -- correct positions of new game menu layout
     if GameMenuButtonShop and (GameMenuButtonPFUI or GameMenuButtonPFUIAddOns) then
       -- calculate new offset for the shop button
@@ -239,7 +236,9 @@ pfUI:RegisterModule("turtle-wow", function ()
   -- castbar.lua reads pfUI.synthetic_casts[unit] as a fallback when
   -- C_Spell.UnitCastingInfo returns nil.
   pfUI_locale["enUS"]["customcast"]["TRUESHOT"] = "Steady Shot"
-  pfUI_locale["zhCN"]["customcast"]["TRUESHOT"] = "稳固射击"
+  if pfUI_locale["zhCN"] then -- loaded on zhCN clients only
+    pfUI_locale["zhCN"]["customcast"]["TRUESHOT"] = "稳固射击"
+  end
   pfUI.synthetic_casts = pfUI.synthetic_casts or {}
 
   local steadyShotName = L["customcast"]["TRUESHOT"]

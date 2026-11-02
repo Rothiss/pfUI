@@ -25,7 +25,7 @@ setfenv(1, pfUI:GetEnvironment())
 -- return instantly when another libpredict is already active
 if pfUI.api.libpredict then return end
 
-local heals, events, hots = {}, {}, {}
+local heals, hots = {}, {}
 local spell_queue = { "DUMMY", "DUMMYRank 9", "TARGET" }
 local player = UnitName("player")
 local cache, gear_string = {}, ""
@@ -96,12 +96,10 @@ end
 libpredict:RegisterEvent("PLAYER_ENTERING_WORLD")
 libpredict:RegisterEvent("RAID_ROSTER_UPDATE")
 libpredict:RegisterEvent("PARTY_MEMBERS_CHANGED")
-local origOnEvent = libpredict:GetScript("OnEvent")
-libpredict:SetScript("OnEvent", function()
+libpredict:HookScript("OnEvent", function()
   if event == "PLAYER_ENTERING_WORLD" or event == "RAID_ROSTER_UPDATE" or event == "PARTY_MEMBERS_CHANGED" then
     cacheRaidNames()
   end
-  if origOnEvent then origOnEvent() end
 end)
 
 -- Own cast-time spell started (heals + rez)
@@ -135,19 +133,6 @@ local function OnOwnCastStart(spellId, castGUID)
   if spell_queue[1] == spellName and cache[spell_queue[2]] then
     local amount   = cache[spell_queue[2]][1]
     local casttime = castTime
-
-    if spellName == REGROWTH then
-      local fullSpell = spell_queue[2]
-      local _, _, rankStr = fullSpell and string.find(fullSpell, "Rank (%d+)")
-      local rankNum = rankStr and tonumber(rankStr) or nil
-      if libpredict.sender.regrowth_timer then
-        libpredict.sender.regrowth_target_next = target
-        libpredict.sender.regrowth_rank_next = rankNum
-      else
-        libpredict.sender.regrowth_target = target
-        libpredict.sender.regrowth_rank = rankNum
-      end
-    end
 
     if spellName == PRAYER_OF_HEALING then
       -- target is already correctly set from spell_queue[3]:
@@ -209,34 +194,35 @@ local function OnOwnCastSucceeded(spellId, castGUID)
 
   libpredict:HealStop(player)
   local spellName = C_Spell.GetSpellName(spellId)
-  if spellName == REGROWTH then
-    local now = pfUI.uf.now or GetTime()
-    if libpredict.sender.regrowth_timer then
-      libpredict.sender.regrowth_start_next = now
-    else
-      libpredict.sender.regrowth_start = now
-    end
-    libpredict.sender.regrowth_timer = now + 0.1
-  end
   libpredict.sender.castGUID = nil
   libpredict.sender.current_cast = nil
   libpredict.sender.current_cast_target = nil
 
   if not target then return end
 
-  -- Instant HoTs — classify by name (rank-independent) instead of a
-  -- hardcoded per-rank ID table.
+  -- HoTs — classify by name (rank-independent) instead of a hardcoded
+  -- per-rank ID table.
   local hotType
   if spellName == REJUVENATION then hotType = "Reju"
   elseif spellName == RENEW then hotType = "Renew"
+  elseif spellName == REGROWTH then hotType = "Regr"
   end
   if hotType then
-    local duration = hotType == "Reju" and rejuvDuration or renewDuration
     local rank = 0
     local rankSub = C_Spell.GetSpellSubtext(spellId)
     if rankSub and rankSub ~= "" then
       rank = tonumber((string.gsub(rankSub, "Rank ", ""))) or 0
     end
+    if hotType == "Regr" then
+      -- Regrowth's HoT follows its direct heal a moment later
+      local start = GetTime()
+      C_Timer.After(0.1, function()
+        libpredict:Hot(player, target, hotType, 20, start, "UNIT_SPELLCAST_SUCCEEDED", rank)
+        libpredict.sender:SendHealCommMsg(hotType .. "/" .. target .. "/20/" .. rank .. "/")
+      end)
+      return
+    end
+    local duration = hotType == "Reju" and rejuvDuration or renewDuration
     libpredict:Hot(player, target, hotType, duration, nil, "UNIT_SPELLCAST_SUCCEEDED", rank)
     libpredict.sender:SendHealCommMsg(hotType .. "/" .. target .. "/" .. duration .. "/" .. rank .. "/")
   end
@@ -328,20 +314,11 @@ local function RefreshResFrames(guid)
   end
 end
 
-libpredict:SetScript("OnUpdate", function()
-  -- throttle cleanup - no need to check every frame
-  local now = pfUI.uf.now or GetTime()
-  if (this.tick or 0) > now then return end
-  this.tick = now + pfUI.throttle:Get("libpredict")  -- Default: Normal (10 FPS)
-
-  -- update on timeout events
-  for timestamp, targets in pairs(events) do
-    if now >= timestamp then
-      events[timestamp] = nil
-    end
-  end
-
-  -- drop resurrection offers the target accepted or let run out
+-- Drop resurrection offers the target accepted or let run out. Nothing reports
+-- either, so a ticker checks while any offer is open.
+local resTicker
+local function CheckResOffers()
+  local now = GetTime()
   for guid, expiry in pairs(resOffers) do
     local unit = UnitTokenFromGUID(guid)
     if now >= expiry or not (unit and UnitIsDeadOrGhost(unit)) then
@@ -349,7 +326,11 @@ libpredict:SetScript("OnUpdate", function()
       RefreshResFrames(guid)
     end
   end
-end)
+  if not next(resOffers) then
+    resTicker:Cancel()
+    resTicker = nil
+  end
+end
 
 function libpredict:ParseComm(sender, msg)
   local msgtype, target, heal, time, rank
@@ -498,11 +479,6 @@ function libpredict:ParseChatMessage(sender, msg)
   end
 end
 
-function libpredict:AddEvent(time, target)
-  events[time] = events[time] or {}
-  table.insert(events[time], target)
-end
-
 function libpredict:Heal(sender, target, amount, duration, senderGuid)
   if not sender or not target or not amount or not duration then
     return
@@ -513,7 +489,6 @@ function libpredict:Heal(sender, target, amount, duration, senderGuid)
   heals[target] = heals[target] or {}
   heals[target][sender] = { amount, timeout }
   if senderGuid then healGuidToName[senderGuid] = sender end
-  libpredict:AddEvent(timeout, target)
 end
 
 -- Debug flag
@@ -598,7 +573,6 @@ function libpredict:HealDelay(sender, delay)
     for tsender, amount in pairs(heals[target]) do
       if sender == tsender then
         amount[2] = amount[2] + delay
-        libpredict:AddEvent(amount[2], target)
       end
     end
   end
@@ -634,7 +608,27 @@ end
 
 local realm = GetRealmName()
 local resetcache = CreateFrame("Frame")
-local hotsetbonus = libtipscan:GetScanner("hotsetbonus")
+
+-- set bonus spells that lengthen a HoT
+local REJUVENATION_SET_BONUS = 21871 -- Stormrage Raiment (8)
+local RENEW_SET_BONUS = 26171        -- Garments of the Oracle (5)
+
+-- the set bonus spells the equipped gear grants
+local function GetActiveSetBonuses()
+  local pieces = {}
+  for slot = 1, 19 do
+    local setID = C_Item.GetItemSetID({ equipmentSlotIndex = slot })
+    if setID then pieces[setID] = (pieces[setID] or 0) + 1 end
+  end
+
+  local active = {}
+  for setID, count in pairs(pieces) do
+    for _, bonus in ipairs(C_Item.GetItemSetInfo(setID).bonuses) do
+      if count >= bonus.threshold then active[bonus.spellID] = true end
+    end
+  end
+  return active
+end
 resetcache:RegisterEvent("PLAYER_ENTERING_WORLD")
 resetcache:RegisterEvent("LEARNED_SPELL_IN_TAB")
 resetcache:RegisterEvent("CHARACTER_POINTS_CHANGED")
@@ -659,19 +653,9 @@ resetcache:SetScript("OnEvent", function()
     if gear == gear_string then return end
     gear_string = gear
 
-    local setBonusCounter
-    setBonusCounter = 0
-    for i=1,10 do --there is no need to check slots above 10
-      hotsetbonus:SetInventoryItem("player", i)
-      if hotsetbonus:Find(L["healduration"]["Rejuvenation"]) then setBonusCounter = setBonusCounter + 1 end
-    end
-    rejuvDuration = setBonusCounter == 8 and 15 or 12
-    setBonusCounter = 0
-    for i =1,10 do
-      hotsetbonus:SetInventoryItem("player", i)
-      if hotsetbonus:Find(L["healduration"]["Renew"]) then setBonusCounter = setBonusCounter + 1 end
-    end
-    renewDuration = setBonusCounter == 5 and 18 or 15
+    local bonuses = GetActiveSetBonuses()
+    rejuvDuration = bonuses[REJUVENATION_SET_BONUS] and 15 or 12
+    renewDuration = bonuses[RENEW_SET_BONUS] and 18 or 15
   end
 
   -- flag all cached heals for renewal
@@ -924,39 +908,33 @@ libpredict.sender.SendResCommMsg = function(self, msg)
   -- BG groups are handled by RAID channel
 end
 
-libpredict.sender:SetScript("OnUpdate", function()
-  -- trigger delayed regrowth timers
-  local now = pfUI.uf.now or GetTime()
-  if this.regrowth_timer and now > this.regrowth_timer then
-    local target = this.regrowth_target or player
-    local duration = 20
-    local startTime = this.regrowth_start
-    local rank = this.regrowth_rank
-
-    libpredict:Hot(player, target, "Regr", duration, startTime, "OnUpdate", rank)
-    local rankStr = rank and tostring(rank) or "0"
-    libpredict.sender:SendHealCommMsg("Regr/"..target.."/"..duration.."/"..rankStr.."/")
-    
-    -- Apply next queued Regrowth if available
-    this.regrowth_target = this.regrowth_target_next
-    this.regrowth_start = this.regrowth_start_next
-    this.regrowth_rank = this.regrowth_rank_next
-    this.regrowth_target_next = nil
-    this.regrowth_start_next = nil
-    this.regrowth_rank_next = nil
-    this.regrowth_timer = nil
+-- Own casts arrive as "player". Other casters only matter as group members
+-- (the only names resolveNameFromGuid knows), so their events are filtered to
+-- the group's tokens, and solo nobody else's casts arrive at all. A member in
+-- a raid also fires as raidN for its own casts; the handler drops those by
+-- UnitIsUnit, and other repeats by castGUID.
+local GROUP_CAST_EVENTS = {
+  "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_INTERRUPTED",
+}
+local castunits = {}
+local function RegisterCastEvents()
+  local n, token = 0, IsInRaid() and "raid" or "party"
+  castunits[1] = "player"
+  for i = 1, IsInRaid() and GetNumRaidMembers() or GetNumPartyMembers() do
+    castunits[i + 1] = token .. i
+    n = i
   end
-end)
-
--- Own casts arrive as "player"; every other caster fires once per unit token
--- it currently holds (raidN, target, nameplateN, ...), so other-unit handlers
--- drop the repeats by castGUID.
-libpredict.sender:RegisterEvent("UNIT_SPELLCAST_SENT")
-libpredict.sender:RegisterEvent("UNIT_SPELLCAST_START")
-libpredict.sender:RegisterEvent("UNIT_SPELLCAST_DELAYED")
-libpredict.sender:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
-libpredict.sender:RegisterEvent("UNIT_SPELLCAST_FAILED")
-libpredict.sender:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
+  for i = table.getn(castunits), n + 2, -1 do castunits[i] = nil end
+  for i = 1, table.getn(GROUP_CAST_EVENTS) do
+    libpredict.sender:RegisterUnitEvent(GROUP_CAST_EVENTS[i], unpack(castunits))
+  end
+end
+RegisterCastEvents()
+libpredict.sender:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player")
+libpredict.sender:RegisterUnitEvent("UNIT_SPELLCAST_DELAYED", "player")
+libpredict.sender:RegisterUnitEvent("UNIT_SPELLCAST_FAILED", "player")
+libpredict.sender:RegisterEvent("PARTY_MEMBERS_CHANGED")
+libpredict.sender:RegisterEvent("RAID_ROSTER_UPDATE")
 libpredict.sender:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 
 -- Shared cleanup helper for failed/interrupted casts
@@ -971,12 +949,6 @@ local function onCastFailed()
     s:SendHealCommMsg("Resurrection/stop/")
     s:SendResCommMsg("RESNO " .. (target or ""))
     s.resurrecting = nil
-  end
-  if s.current_cast == REGROWTH then
-    s.regrowth_timer = nil
-    s.regrowth_start = nil
-    s.regrowth_target_next = nil
-    s.regrowth_start_next = nil
   end
   s.castGUID = nil
   s.current_cast = nil
@@ -1024,6 +996,7 @@ local function OnResurrect()
   -- arg8=destGUID
   resOffers[arg8] = GetTime() + RES_OFFER_TIMEOUT
   RefreshResFrames(arg8)
+  resTicker = resTicker or C_Timer.NewTicker(.1, CheckResOffers)
 end
 
 local lastOtherCast = {}  -- [event] = castGUID of the last other-unit event handled
@@ -1032,6 +1005,9 @@ libpredict.sender:SetScript("OnEvent", function()
   if event == "COMBAT_LOG_EVENT_UNFILTERED" then
     if arg2 == "SPELL_HEAL" then OnHeal()
     elseif arg2 == "SPELL_RESURRECT" then OnResurrect() end
+    return
+  elseif event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
+    RegisterCastEvents()
     return
   end
 

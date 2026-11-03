@@ -1497,7 +1497,6 @@ pfUI:RegisterModule("combatlog", function ()
           valueType = 2;
 
           -- Result String
-          resultStr = format(_G["ACTION_SPELL_PERIODIC_LEECH_RESULT"], nil, nil, nil, nil, nil, nil, nil, CombatLog_String_PowerType(powerType), nil, extraAmount) --"($extraAmount $powerType Gained)"
 
           -- Disable appropriate sections
           if ( not resultStr ) then
@@ -1588,7 +1587,6 @@ pfUI:RegisterModule("combatlog", function ()
         valueType = 2;
 
         -- Result String
-        resultStr = format(_G["ACTION_SPELL_LEECH_RESULT"], nil, nil, nil, nil, nil, nil, nil, CombatLog_String_PowerType(powerType), nil, extraAmount)
 
         -- Disable appropriate sections
         if ( not resultStr ) then

@@ -23,8 +23,6 @@ jobs:
           target_repo_token: ${{ secrets.GITHUB_TOKEN }}
           upstream_sync_repo: brues-code/pfUI
           upstream_sync_branch: master
-          upstream_pull_args: --tags
-          target_branch_push_args: --tags
 
       - name: Notify Discord
         if: always() && (steps.sync.outputs.has_new_commits == 'true' || failure())

@@ -362,7 +362,7 @@ pfUI.events:RegisterCallback("aggro:changed", function(_, old, new)
     if frame.aggro then
       local guid = UnitGUID(frame.label .. frame.id)
       if guid and (guid == old or guid == new) then
-        frame.update_combat = true
+        pfUI.uf:QueueUpdate(frame, "combat")
       end
     end
   end
@@ -498,10 +498,18 @@ function pfUI.uf:UpdateVisibility()
   self.chain = visibility ~= "hide" and unitstr:match("^(.+)target$") or nil
   if self.chain then
     local guid = UnitName(unitstr) and UnitGUID(unitstr)
-    if guid ~= self.unitguid then self.update_full = true end
+    if guid ~= self.unitguid then pfUI.uf:QueueUpdate(self, "full") end
     self.unitguid = guid
     self:RegisterUnitEvents(guid and CHAIN_TOKENS[unitstr] and unitstr or guid)
   else
+    -- A pet frame's token gets the pet's unit events, but a new pet behind it
+    -- (summoned, or remapped by raid.lua) comes with none of its own; the
+    -- visibility timer's GUID compare turns it into the full refresh.
+    if self.tick then
+      local guid = UnitGUID(unitstr)
+      if guid ~= self.unitguid then pfUI.uf:QueueUpdate(self, "full") end
+      self.unitguid = guid
+    end
     self:RegisterUnitEvents(visibility ~= "hide" and unitstr or nil)
   end
   self:RegisterChainEvents(self.chain)
@@ -773,7 +781,6 @@ function pfUI.uf:UpdateConfig()
   if f.config.hitindicator == "1" then
     f.feedbackText:SetFont(pfUI.media[f.config.hitindicatorfont], f.config.hitindicatorsize, "OUTLINE")
     f.feedbackFontHeight = f.config.hitindicatorsize
-    f.feedbackStartTime = GetTime()
     if f.config.portrait == "bar" or f.config.portrait == "off" then
       f.feedbackText:SetParent(f.texts)
       f.feedbackText:ClearAllPoints()
@@ -785,6 +792,7 @@ function pfUI.uf:UpdateConfig()
     end
     f.combatfeedback = true
   else
+    f.feedback:Stop()
     f.feedbackText:Hide()
     f.combatfeedback = nil
   end
@@ -853,12 +861,16 @@ function pfUI.uf:UpdateConfig()
   f.incHeal.texture:SetVertexColor(cr, cg, cb, ca)
   f.incHeal:Hide()
 
-  if f.config.verticalbar == "0" then
-    f.incHeal:ClearAllPoints()
-    f.incHeal:SetPoint("TOPLEFT", f.hp.bar, "TOPLEFT", 0, 0)
+  -- the bar texture covers only the fill, so a prediction anchored to it
+  -- starts at the edge of the health and follows it as the bar animates.
+  -- An inverted bar fills with the missing health, so it starts at the bar.
+  f.incHeal:ClearAllPoints()
+  if f.config.invert_healthbar == "1" then
+    f.incHeal:SetPoint(f.config.verticalbar == "0" and "TOPLEFT" or "BOTTOM", f.hp.bar)
+  elseif f.config.verticalbar == "0" then
+    f.incHeal:SetPoint("TOPLEFT", f.hp.bar:GetStatusBarTexture(), "TOPRIGHT")
   else
-    f.incHeal:ClearAllPoints()
-    f.incHeal:SetPoint("BOTTOM", f.hp.bar, "BOTTOM", 0, 0)
+    f.incHeal:SetPoint("BOTTOMLEFT", f.hp.bar:GetStatusBarTexture(), "TOPLEFT")
   end
 
   f.ressIcon:SetFrameLevel(16)
@@ -1031,6 +1043,8 @@ end
 function pfUI.uf.OnShow()
   RegisterShownEvents(this)
   pfUI.uf:RefreshUnit(this, "all")
+  -- flags left from while the frame was off screen, and the portrait's model
+  pfUI.uf:QueueUpdate(this)
 end
 
 function pfUI.uf.OnHide()
@@ -1047,7 +1061,6 @@ function pfUI.uf.OnEvent()
   if event == "PLAYER_LOGOUT" then
     this:UnregisterAllEvents()
     this:SetScript("OnEvent", nil)
-    this:SetScript("OnUpdate", nil)
     -- the visibility timer keeps ticking, so leaving this frame on its list
     -- would have UpdateVisibility re-register the unit events we just
     -- dropped -- straight back into the crash 132 this branch prevents
@@ -1063,13 +1076,13 @@ function pfUI.uf.OnEvent()
      event == "RAID_ROSTER_UPDATE" or
      event == "PLAYER_UPDATE_RESTING"
   then
-    this.update_indicators = true
+    pfUI.uf:QueueUpdate(this, "indicators")
   end
 
   -- abort on broken unitframes (e.g focus)
   if not this.label then return end
 
-  -- a hidden frame runs no OnUpdate, so its unit coming into existence has to
+  -- a hidden frame does not refresh, so its unit coming into existence has to
   -- show it from here
   if VISIBILITY_EVENTS[event] then
     this:UpdateVisibility()
@@ -1077,11 +1090,11 @@ function pfUI.uf.OnEvent()
 
   -- update regular frames
   if event == "PLAYER_ENTERING_WORLD" then
-    this.update_full = true
+    pfUI.uf:QueueUpdate(this, "full")
     -- Clear GUID tracking on zone change for full rebuild
     if pfUI.uf.ClearGuidTracking then pfUI.uf.ClearGuidTracking() end
   elseif this.label == "target" and event == "PLAYER_TARGET_CHANGED" then
-    this.update_full = true
+    pfUI.uf:QueueUpdate(this, "full")
     -- immediately update raid icon to avoid delay on target swap
     if this.raidIcon and this.config and this.config.raidicon == "1" then
       local raidIcon = UnitName("target") and GetRaidTargetIndex("target")
@@ -1100,26 +1113,26 @@ function pfUI.uf.OnEvent()
       local oldGuid = pfUI.uf.guidTracker.frameToGuid[this]
       if newGuid ~= oldGuid then
         pfUI.uf.guidTracker.frameToGuid[this] = newGuid
-        this.update_full = true
+        pfUI.uf:QueueUpdate(this, "full")
       end
     else
-      this.update_full = true
+      pfUI.uf:QueueUpdate(this, "full")
     end
   elseif ( this.label == "raid" or this.label == "party" ) and event == "RAID_ROSTER_UPDATE" then
-    -- Note: Smart GUID-based updates are handled in raid.lua OnUpdate
+    -- Note: Smart GUID-based updates are handled in raid.lua UpdateRoster
     -- after frame IDs are reassigned. We don't set update_full here anymore
     -- for raid frames to avoid the freeze.
     if this.label == "party" then
       -- Party frames still need the old logic (no smart tracking yet)
-      this.update_full = true
+      pfUI.uf:QueueUpdate(this, "full")
     end
     -- Raid frames: update_full is set by raid.lua GUID tracker
   elseif this.label == "pet" and event == "UNIT_PET" then
-    this.update_full = true
+    pfUI.uf:QueueUpdate(this, "full")
   elseif this.label == "player" and (event == "PLAYER_AURAS_CHANGED" or event == "PLAYER_EQUIPMENT_CHANGED") then
-    this.update_aura = true
+    pfUI.uf:QueueUpdate(this, "aura")
   elseif this.label == "pet" and event == "UNIT_HAPPINESS" then
-    this.update_full = true
+    pfUI.uf:QueueUpdate(this, "full")
   elseif event == "UNIT_IN_RANGE_UPDATE" then
     -- registered for the frame's unit alone, and fired in the filter's lower
     -- case spelling, which a GUID's compare below would miss
@@ -1131,223 +1144,179 @@ function pfUI.uf.OnEvent()
   -- GUID, so filtering on one of the two never wakes the frame twice.
   elseif arg1 and arg1 == this.eventunit then
     if event == "UNIT_PORTRAIT_UPDATE" or event == "UNIT_MODEL_CHANGED" then
-      this.update_portrait = true
+      pfUI.uf:QueueUpdate(this, "portrait")
     elseif event == "UNIT_AURA" then
-      this.update_aura = true
+      pfUI.uf:QueueUpdate(this, "aura")
     elseif event == "UNIT_AURA_DELTA" then
       -- an aura that only refreshed or restacked leaves every aura in its
       -- slot, so the icons need their timers and stacks, not a rebuild
       if arg2.isFullUpdate or arg2.addedAuraInstanceIDs or arg2.removedAuraInstanceIDs then
-        this.update_aura = true
+        pfUI.uf:QueueUpdate(this, "aura")
       else
-        this.update_auratime = true
+        pfUI.uf:QueueUpdate(this, "auratime")
       end
     elseif event == "UNIT_POWER_UPDATE" or event == "UNIT_MAXPOWER" then
       -- every power of the unit reports, a cat druid's mana regen too; redraw
       -- for the one the bar shows, and for mana under a druid mana bar
       local _, shown = UnitPowerType(arg1)
       if arg2 == shown or (arg2 == "MANA" and this.druidmana) then
-        this.update_base = true
+        pfUI.uf:QueueUpdate(this, "base")
       end
     elseif event == "UNIT_FACTION" then
       -- the PvP flag, the reaction colour and the tapped grey
-      this.update_indicators = true
-      this.update_base = true
+      pfUI.uf:QueueUpdate(this, "indicators")
+      pfUI.uf:QueueUpdate(this, "base")
     elseif event == "UNIT_FLAGS" then
-      this.update_combat = true
+      pfUI.uf:QueueUpdate(this, "combat")
     elseif event == "UNIT_DISTANCE_CHECK_UPDATE" then
       -- the portrait trades the question mark for the model, the frame fades
       -- by sight, and an attacker that left with the member is let go
-      this.update_portrait = true
-      this.update_combat = true
+      pfUI.uf:QueueUpdate(this, "portrait")
+      pfUI.uf:QueueUpdate(this, "combat")
     elseif event == "UNIT_CONNECTION" then
-      this.update_full = true
+      pfUI.uf:QueueUpdate(this, "full")
     elseif event == "UNIT_COMBAT" then
+      -- every hit starts the fade over
+      this.feedback:Stop()
       CombatFeedback_OnCombatEvent(arg2, arg3, arg4, arg5)
+      this.feedback:Play()
     elseif event == "INCOMING_RESURRECT_CHANGED" then
-      this.update_indicators = true
+      pfUI.uf:QueueUpdate(this, "indicators")
     else
-      this.update_base = true
+      pfUI.uf:QueueUpdate(this, "base")
     end
   end
 end
 
--- Local reference for performance
-local _GetTime = GetTime
+-- Drain the update flags the events set, then hand a 3D portrait its unit.
+-- A frame that is not on screen keeps its flags; OnShow flushes them.
+local function Flush(frame)
+  frame.queued = nil
+  if not frame:IsVisible() then return end
 
--- Global cached time for libpredict and other functions
-pfUI.uf.now = 0
-
--- ============================================================================
--- OnUpdate - draining the event-set update flags, heal prediction, and the
--- two polls no event replaces (a UnitXP range threshold, the pet frames).
--- ============================================================================
-function pfUI.uf.OnUpdate()
-  local now = _GetTime()
-  pfUI.uf.now = now
-      
-  -- update combat feedback (no throttle - needs immediate feedback)
-  if this.feedbackText then CombatFeedback_OnUpdate(arg1) end
-
-  -- Throttle raid/party frames for performance
-  if this.label == "raid" or this.label == "party" then
-    if (this.throttleTick or 0) > now then
-      return
-    end
-    this.throttleTick = now + 0.1  -- Default: 10 FPS
-  end
-
-  if this.label then
-    -- what no event reports: a UnitXP range threshold, and the pet frames
-    -- (created with a tick)
-    if this.rangepoll or this.tick then
-      -- Validate tick value - it should be an interval (e.g. 0.5), not a timestamp
-      local tickInterval = this.tick
-      if tickInterval and tickInterval > 10 then
-        -- tick is a timestamp, not an interval - ignore it
-        tickInterval = nil
-      end
-      -- Reset lastTick if it's invalid (much larger than now, e.g. from corrupted state)
-      if this.lastTick and this.lastTick > now + 10 then
-        this.lastTick = nil
-      end
-      if not this.lastTick then this.lastTick = now + (tickInterval or .5) end
-      if this.lastTick < now then
-        local unitstr = this.label .. this.id
-        this.lastTick = now + (tickInterval or .5)
-
-        if this.rangepoll then pfUI.uf:RefreshUnitState(this) end
-
-        -- A pet's full refresh rescans every aura and the portrait, so only
-        -- do it when the unit behind the frame changes or once a second;
-        -- other ticks refresh the bars only.
-        if this.tick then
-          local guid = UnitGUID(unitstr)
-          if guid ~= this.tickGuid or (this.tickFull or 0) < now then
-            this.tickGuid = guid
-            this.tickFull = now + 1
-            pfUI.uf:RefreshUnit(this, "all")
-          else
-            pfUI.uf:RefreshUnit(this, "base")
-          end
-        end
-      end
-    end
-
-    -- Heal Prediction (throttled to 0.1s for responsiveness)
-    if libpredict and this.incHeal then
-      if not this.lastHealTick then this.lastHealTick = now end
-      if this.lastHealTick < now then
-        this.lastHealTick = now + 0.1
-        
-        local unit = this.label .. this.id
-        local heal = libpredict:UnitGetIncomingHeals(unit)
-        
-        local health, maxHealth = UnitHealth(unit), UnitHealthMax(unit)
-
-        if heal - health - maxHealth ~= this.predictstate then
-          local overhealperc = tonumber(this.config.overhealperc)
-          this.predictstate = heal - health - maxHealth
-
-          if heal > 0 and (health < maxHealth or overhealperc > 0 ) then
-            local width = this.config.width
-            local height = this.config.height
-
-            if this.config.verticalbar == "0" then
-              local healthWidth = width * (health / maxHealth)
-              local incWidth = width * heal / maxHealth
-              if healthWidth + incWidth > width * (1+(overhealperc/100)) then
-                incWidth = width * (1+overhealperc/100) - healthWidth
-              end
-
-              if this.config.invert_healthbar == "1" then
-                this.incHeal:SetWidth(incWidth)
-              else
-                this.incHeal:SetWidth(incWidth + healthWidth)
-              end
-            else
-              local healthHeight = height * (health / maxHealth)
-              local incHeight = height * heal / maxHealth
-              if healthHeight + incHeight > height * (1+(overhealperc/100)) then
-                incHeight = height * (1+overhealperc/100) - healthHeight
-              end
-
-              if this.config.invert_healthbar == "1" then
-                this.incHeal:SetHeight(incHeight)
-              else
-                this.incHeal:SetHeight(incHeight + healthHeight)
-              end
-            end
-
-            this.incHeal:Show()
-          else
-            this.incHeal:Hide()
-          end
-        end
-      end
-    end
-  end
-
-  -- ============================================================================
-  -- EVENT-BASED UPDATES (Health, Mana, Auras, etc.)
-  -- ============================================================================
-  
-
-  -- process all queued unit events
-  if this.update_full then
+  if frame.update_full then
     -- process full updates, indicators and combat state included
-    pfUI.uf:RefreshUnit(this, "all")
+    pfUI.uf:RefreshUnit(frame, "all")
 
     -- clear update caches
-    this.update_full = nil
-    this.update_base = nil
-    this.update_aura = nil
-    this.update_auratime = nil
-    this.update_portrait = nil
-    this.update_indicators = nil
-    this.update_combat = nil
+    frame.update_full = nil
+    frame.update_base = nil
+    frame.update_aura = nil
+    frame.update_auratime = nil
+    frame.update_portrait = nil
+    frame.update_indicators = nil
+    frame.update_combat = nil
   else
-    if this.update_indicators then
-      pfUI.uf:RefreshIndicators(this)
-      this.update_indicators = nil
+    if frame.update_indicators then
+      pfUI.uf:RefreshIndicators(frame)
+      frame.update_indicators = nil
     end
 
-    if this.update_combat then
-      pfUI.uf:RefreshCombat(this)
-      this.update_combat = nil
+    if frame.update_combat then
+      pfUI.uf:RefreshCombat(frame)
+      frame.update_combat = nil
     end
 
     -- process individual events; a rebuild re-times the icons as well
-    if this.update_aura then
-      pfUI.uf:RefreshUnit(this, "aura")
-      this.update_aura = nil
-      this.update_auratime = nil
-      this.update_base = true
-    elseif this.update_auratime then
-      pfUI.uf:RefreshUnit(this, "auratime")
-      this.update_auratime = nil
+    if frame.update_aura then
+      pfUI.uf:RefreshUnit(frame, "aura")
+      frame.update_aura = nil
+      frame.update_auratime = nil
+      frame.update_base = true
+    elseif frame.update_auratime then
+      pfUI.uf:RefreshUnit(frame, "auratime")
+      frame.update_auratime = nil
     end
 
-    if this.update_portrait then
-      pfUI.uf:RefreshUnit(this, "portrait")
-      this.update_portrait = nil
-      this.update_base = true
+    if frame.update_portrait then
+      pfUI.uf:RefreshUnit(frame, "portrait")
+      frame.update_portrait = nil
+      frame.update_base = true
     end
 
-    if this.update_base then
-      pfUI.uf:RefreshUnit(this, "base")
-      this.update_base = nil
+    if frame.update_base then
+      pfUI.uf:RefreshUnit(frame, "base")
+      frame.update_base = nil
     end
   end
 
-  -- update portrait on first visible frame
-  if this.portrait and this.portrait.model and this.portrait.model.update then
-    this.portrait.model.lastUnit = UnitName(this.portrait.model.update)
-    this.portrait.model:SetUnit(this.portrait.model.update)
-    this.portrait.model:SetCamera(0)
-    this.portrait.model.update = nil
+  -- a model takes its unit only once it is on screen, so it waits for this
+  local model = frame.portrait and frame.portrait.model
+  if model and model.update then
+    model.lastUnit = UnitName(model.update)
+    model:SetUnit(model.update)
+    model:SetCamera(0)
+    model.update = nil
   end
 end
+
+-- Flag `kind` ("full", "base", "aura", "auratime", "portrait", "indicators",
+-- "combat", or nil for none) for the frame's next flush, and schedule that
+-- flush: the next frame, or within 0.1s for the raid and party frames, which
+-- batch their bursts.
+function pfUI.uf:QueueUpdate(frame, kind)
+  if kind then frame["update_" .. kind] = true end
+  if frame.queued then return end
+  frame.queued = true
+  if frame.label == "raid" or frame.label == "party" then
+    C_Timer.After(.1, function() Flush(frame) end)
+  else
+    RunNextFrame(function() Flush(frame) end)
+  end
+end
+
+-- Size the incoming-heal overlay from libpredict's heals and the unit's
+-- health. Runs with the bars (RefreshUnit "base") and when libpredict reports
+-- the heals on the unit changed.
+function pfUI.uf:RefreshIncomingHeal(frame)
+  local unit = frame.label .. frame.id
+  local heal = libpredict:UnitGetIncomingHeals(unit)
+  local health, maxHealth = UnitHealth(unit), UnitHealthMax(unit)
+
+  if heal - health - maxHealth == frame.predictstate then return end
+  frame.predictstate = heal - health - maxHealth
+
+  local overhealperc = tonumber(frame.config.overhealperc)
+  if heal > 0 and (health < maxHealth or overhealperc > 0 ) then
+    local width = frame.config.width
+    local height = frame.config.height
+
+    if frame.config.verticalbar == "0" then
+      local healthWidth = width * (health / maxHealth)
+      local incWidth = width * heal / maxHealth
+      if healthWidth + incWidth > width * (1+(overhealperc/100)) then
+        incWidth = width * (1+overhealperc/100) - healthWidth
+      end
+      frame.incHeal:SetWidth(incWidth)
+    else
+      local healthHeight = height * (health / maxHealth)
+      local incHeight = height * heal / maxHealth
+      if healthHeight + incHeight > height * (1+(overhealperc/100)) then
+        incHeight = height * (1+overhealperc/100) - healthHeight
+      end
+      frame.incHeal:SetHeight(incHeight)
+    end
+
+    frame.incHeal:Show()
+  else
+    frame.incHeal:Hide()
+  end
+end
+
+pfUI.events:RegisterCallback("libpredict:heals", function(_, target)
+  for frame in pairs(visibilityframes) do
+    if frame.namecache == target and frame:IsVisible() then
+      pfUI.uf:RefreshIncomingHeal(frame)
+    end
+  end
+end, "unitframes")
+
+-- A UnitXP range threshold has no event, so the frames fading by it poll.
+C_Timer.NewTicker(.5, function()
+  for frame in pairs(visibilityframes) do
+    if frame.rangepoll and frame:IsVisible() then pfUI.uf:RefreshUnitState(frame) end
+  end
+end)
 
 -- The unit events whose arg1 is the frame's OWN unit -- everything the OnEvent
 -- routes through its "UNIT_XXX Events" branch. These are not registered here:
@@ -1534,7 +1503,6 @@ function pfUI.uf:EnableScripts()
   f:SetScript("OnShow", pfUI.uf.OnShow)
   f:SetScript("OnHide", pfUI.uf.OnHide)
   f:SetScript("OnEvent", pfUI.uf.OnEvent)
-  f:SetScript("OnUpdate", pfUI.uf.OnUpdate)
 
   visibilityframes[f] = true
 end
@@ -1606,11 +1574,11 @@ function pfUI.uf:CreateUnitFrame(unit, id, config, tick)
   f.glow = CreateFrame("Frame", nil, f)
   -- Pulse between .8 and .4 for good. The group only advances while the glow
   -- is shown, so a hidden glow costs nothing.
-  f.glow:SetAlpha(.8)
   f.glow.pulse = f.glow:CreateAnimationGroup()
   f.glow.pulse:SetLooping("BOUNCE")
   local fade = f.glow.pulse:CreateAnimation("Alpha")
-  fade:SetChange(-.4)
+  fade:SetFromAlpha(.8)
+  fade:SetToAlpha(.4)
   fade:SetDuration(1.3)
   fade:SetSmoothing("IN_OUT")
   f.glow.pulse:Play()
@@ -1668,6 +1636,21 @@ function pfUI.uf:CreateUnitFrame(unit, id, config, tick)
   f.portrait.model = CreateFrame("PlayerModel", "pfPortraitModel" .. f.label .. f.id, f.portrait)
   f.portrait.model.next = CreateFrame("PlayerModel", nil, nil)
   f.feedbackText = f:CreateFontString("pfHitIndicator" .. f.label .. f.id, "OVERLAY", "NumberFontNormalHuge")
+
+  -- Fade the combat feedback text in, hold it, and fade it out -- the timing
+  -- of CombatFeedback_OnUpdate -- then hide it.
+  f.feedback = f.feedbackText:CreateAnimationGroup()
+  local fadein = f.feedback:CreateAnimation("Alpha")
+  fadein:SetOrder(1)
+  fadein:SetDuration(COMBATFEEDBACK_FADEINTIME)
+  fadein:SetToAlpha(1)
+  local fadeout = f.feedback:CreateAnimation("Alpha")
+  fadeout:SetOrder(2)
+  fadeout:SetStartDelay(COMBATFEEDBACK_HOLDTIME)
+  fadeout:SetDuration(COMBATFEEDBACK_FADEOUTTIME)
+  fadeout:SetFromAlpha(1)
+  fadeout:SetToAlpha(0)
+  f.feedback:SetScript("OnFinished", function() f.feedbackText:Hide() end)
 
   if f.label == "raid" and mod(f.id, 5) == 1 then
     local group = math.ceil(f.id/5)
@@ -2042,7 +2025,7 @@ function pfUI.uf:RefreshUnit(unit, component)
       local size
 
       if disptype == "4" or disptype == "3" then
-        size = unit.hp.bar:GetHeight() * tonumber(unit.config.debuff_ind_size)
+        size = unit.hp.bar:GetUnscaledHeight() * tonumber(unit.config.debuff_ind_size)
         if size ~= indicator.size or disptype ~= indicator.disp or indipos ~= indicator.ipos then
           indicator:ClearAllPoints()
           indicator:SetPoint(indipos, 0, 0)
@@ -2257,6 +2240,7 @@ function pfUI.uf:RefreshUnit(unit, component)
           unit.portrait.model.update = unitstr
         end
       end
+      if unit.portrait.model.update then pfUI.uf:QueueUpdate(unit) end
     end
   end
 
@@ -2397,6 +2381,7 @@ function pfUI.uf:RefreshUnit(unit, component)
 
     if unit.druidmana then pfUI.uf:UpdateDruidMana(unit) end
 
+    pfUI.uf:RefreshIncomingHeal(unit)
     pfUI.uf:RefreshUnitState(unit)
   end
 end
@@ -2447,7 +2432,7 @@ function pfUI.uf:AddIcon(frame, pos, icon, timeleft, stacks, start, duration)
 
   if not frame.hp then return end
   local frame = frame.hp.bar
-  if pos > 6 or pos > ceil(frame:GetWidth() / iconsize) then return end
+  if pos > 6 or pos > ceil(frame:GetUnscaledWidth() / iconsize) then return end
 
   frame.icon = frame.icon or CreateFrame("Frame", nil, frame)
 

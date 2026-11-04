@@ -78,7 +78,7 @@ pfUI:RegisterModule("gui", function ()
 
       -- basic frame
       local frame = CreateFrame("Frame", nil, this)
-      frame:SetWidth(this.parent:GetRight()-this.parent:GetLeft()-20)
+      frame:SetWidth(this.parent:GetUnscaledWidth()-20)
       frame:SetHeight(22)
       frame:SetPoint("TOPLEFT", this, "TOPLEFT", 5, (this.objectCount*-23)-5)
 
@@ -130,7 +130,7 @@ pfUI:RegisterModule("gui", function ()
         category = {}
         category[config] = tostring(GetCVar(config))
         ufunc = function()
-          SetCVar(this:GetParent().config, this:GetParent().category[config])
+          SetCVar(config, category[config])
         end
       end
 
@@ -881,14 +881,6 @@ pfUI:RegisterModule("gui", function ()
         "35:35",
         "40:40",
       },
-      ["scaling"] = {
-        "0:" .. T["Off"],
-        "4:" .. T["Huge (PixelPerfect)"],
-        "5:" .. T["Large"],
-        "6:" .. T["Medium"],
-        "7:" .. T["Small"],
-        "8:" .. T["Tiny (PixelPerfect)"],
-      },
       ["abbrevnum"] = {
         "0:" .. T["Full Numbers (4250)"],
         "1:" .. T["Abbreviate 2 Decimals (4.25k)"],
@@ -1508,7 +1500,24 @@ pfUI:RegisterModule("gui", function ()
 
       CreateConfig(nil, T["Settings"], nil, nil, "header")
       CreateConfig(nil, T["Language"], C.global, "language", "dropdown", pfUI.gui.dropdowns.languages)
-      CreateConfig(U["pixelperfect"], T["Enable UI-Scale"], C.global, "pixelperfect", "dropdown", pfUI.gui.dropdowns.scaling)
+      -- the game's own scale options, as in its Video Options; the list keeps
+      -- a value set there that is none of these steps
+      CreateConfig(nil, T["Use UI-Scale"], "CVAR", "useUiScale", "checkbox")
+      CreateConfig(nil, T["UI-Scale"], "CVAR", "uiScale", "dropdown", function()
+        local current = GetCVar("uiScale")
+        local values, found = {}, nil
+        for _, scale in ipairs({ .64, .65, .7, .75, .8, .85, .9, .95, 1, 1.1, 1.2, 1.3, 1.4, 1.5 }) do
+          if math.abs(scale - tonumber(current)) < .001 then
+            found = true
+            table.insert(values, current .. ":" .. scale)
+          else
+            table.insert(values, tostring(scale))
+          end
+        end
+        if not found then table.insert(values, 1, current .. ":" .. round(tonumber(current), 2)) end
+        return values
+      end)
+      CreateConfig(nil, string.format(T["Pixel Perfect UI-Scale: %s (Overrides UI-Scale)"], round(PixelUtil.GetPixelToUIUnitFactor(), 2)), C.global, "pixelperfect", "checkbox")
       CreateConfig(nil, T["Use Original Game Fonts"], C.global, "font_blizzard", "checkbox")
       CreateConfig(nil, T["Enable Region Compatible Font"], C.global, "force_region", "checkbox")
       CreateConfig(nil, T["Standard Text Font"], C.global, "font_default", "dropdown", pfUI.gui.dropdowns.fonts)
@@ -1585,8 +1594,6 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(nil, T["Frame Shadow Intensity"], C.appearance.border, "shadow_intensity", "dropdown", pfUI.gui.dropdowns.uf_debuff_indicator_size)
       CreateConfig(nil) -- spacer
       CreateConfig(nil, T["Force Blizzard Borders (|cffffaaaaExperimental|r)"], C.appearance.border, "force_blizz", "checkbox")
-      CreateConfig(nil, T["Enable Pixel Perfect Borders"], C.appearance.border, "pixelperfect", "checkbox")
-      CreateConfig(nil, T["Scale Border On HiDPI Displays"], C.appearance.border, "hidpi", "checkbox")
       CreateConfig(nil) -- spacer
       CreateConfig(nil, T["Global Border Size"], C.appearance.border, "default", "dropdown", pfUI.gui.dropdowns.border)
       CreateConfig(nil, T["Action Bar Border Size"], C.appearance.border, "actionbars", "dropdown", pfUI.gui.dropdowns.border)
@@ -1646,71 +1653,6 @@ pfUI:RegisterModule("gui", function ()
     end)
 
     -- Throttling Menu
-    CreateGUIEntry(T["Throttling"], T["Nameplates"], function()
-      local header = CreateConfig(nil, T["Nameplate Update Rate"], nil, nil, "header")
-      header:GetParent().objectCount = header:GetParent().objectCount - 1
-      header:SetHeight(20)
-
-      local castbarCustom
-
-      CreateConfig(function()
-        if castbarCustom and castbarCustom.input then
-          local isCustom = pfUI.throttle:IsCustom("nameplates_castbar")
-          if not isCustom then
-            castbarCustom.input:EnableMouse(false)
-            castbarCustom.input:EnableKeyboard(false)
-            castbarCustom.input:ClearFocus()
-            castbarCustom.input:SetTextColor(.5,.5,.5,1)
-            castbarCustom.input:SetText(tostring(pfUI.throttle:GetFps("nameplates_castbar")))
-          else
-            castbarCustom.input:EnableMouse(true)
-            castbarCustom.input:EnableKeyboard(true)
-            castbarCustom.input:SetTextColor(.2,1,.8,1)
-            if _G.pfUI_throttle.nameplates_castbar_custom then
-              castbarCustom.input:SetText(_G.pfUI_throttle.nameplates_castbar_custom)
-            end
-          end
-        end
-      end, T["Castbar Plates"], _G.pfUI_throttle, "nameplates_castbar", "dropdown", {
-        "very_slow:" .. T["Very Slow"] .. " (2 FPS)",
-        "slow:" .. T["Slow"] .. " (5 FPS)",
-        "normal:" .. T["Normal"] .. " (10 FPS)",
-        "fast:" .. T["Fast"] .. " (20 FPS)",
-        "very_fast:" .. T["Very Fast"] .. " (30 FPS)",
-        "fastest:" .. T["Fastest"] .. " (50 FPS)",
-        "custom:" .. T["Custom"],
-      })
-
-      castbarCustom = CreateConfig(nil, T["Custom FPS"], _G.pfUI_throttle, "nameplates_castbar_custom")
-
-      local isCustom = pfUI.throttle:IsCustom("nameplates_castbar")
-      if not isCustom then
-        castbarCustom.input:EnableMouse(false)
-        castbarCustom.input:EnableKeyboard(false)
-        castbarCustom.input:SetTextColor(.5,.5,.5,1)
-        castbarCustom.input:SetText(tostring(pfUI.throttle:GetFps("nameplates_castbar")))
-      else
-        castbarCustom.input:EnableMouse(true)
-        castbarCustom.input:EnableKeyboard(true)
-        castbarCustom.input:SetTextColor(.2,1,.8,1)
-        if _G.pfUI_throttle.nameplates_castbar_custom then
-          castbarCustom.input:SetText(_G.pfUI_throttle.nameplates_castbar_custom)
-        end
-      end
-
-      -- Spacer before reset button
-      local spacer = CreateConfig(nil, " ", nil, nil, "header")
-      spacer:GetParent().objectCount = spacer:GetParent().objectCount - 1
-      spacer:SetHeight(10)
-
-      -- Reset to defaults button
-      CreateConfig(nil, T["Reset to Defaults"], nil, nil, "button", function()
-        pfUI.throttle:ResetToDefault("nameplates_castbar")
-        _G.pfUI_throttle.nameplates_castbar_custom = "100"
-        Reload()
-      end, true)
-    end)
-
     CreateGUIEntry(T["Throttling"], T["Tooltips"], function()
       local header = CreateConfig(nil, T["Tooltip Update Rate"], nil, nil, "header")
       header:GetParent().objectCount = header:GetParent().objectCount - 1
@@ -1842,67 +1784,6 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(nil, T["Reset to Defaults"], nil, nil, "button", function()
         pfUI.throttle:ResetToDefault("chat_tab")
         _G.pfUI_throttle.chat_tab_custom = "10"
-        Reload()
-      end, true)
-    end)
-
-    CreateGUIEntry(T["Throttling"], T["Swing Timer"], function()
-      local swingCustom
-
-      CreateConfig(function()
-        if swingCustom and swingCustom.input then
-          local isCustom = pfUI.throttle:IsCustom("swingtimer")
-          if not isCustom then
-            swingCustom.input:EnableMouse(false)
-            swingCustom.input:EnableKeyboard(false)
-            swingCustom.input:ClearFocus()
-            swingCustom.input:SetTextColor(.5,.5,.5,1)
-            swingCustom.input:SetText(tostring(pfUI.throttle:GetFps("swingtimer")))
-          else
-            swingCustom.input:EnableMouse(true)
-            swingCustom.input:EnableKeyboard(true)
-            swingCustom.input:SetTextColor(.2,1,.8,1)
-            if _G.pfUI_throttle.swingtimer_custom then
-              swingCustom.input:SetText(_G.pfUI_throttle.swingtimer_custom)
-            end
-          end
-        end
-      end, T["Swing Timer Update Rate"], _G.pfUI_throttle, "swingtimer", "dropdown", {
-        "very_slow:" .. T["Very Slow"] .. " (2 FPS)",
-        "slow:" .. T["Slow"] .. " (5 FPS)",
-        "normal:" .. T["Normal"] .. " (10 FPS)",
-        "fast:" .. T["Fast"] .. " (20 FPS)",
-        "very_fast:" .. T["Very Fast"] .. " (30 FPS)",
-        "fastest:" .. T["Fastest"] .. " (50 FPS)",
-        "custom:" .. T["Custom"],
-      })
-
-      swingCustom = CreateConfig(nil, T["Custom FPS"], _G.pfUI_throttle, "swingtimer_custom")
-
-      local isCustom = pfUI.throttle:IsCustom("swingtimer")
-      if not isCustom then
-        swingCustom.input:EnableMouse(false)
-        swingCustom.input:EnableKeyboard(false)
-        swingCustom.input:SetTextColor(.5,.5,.5,1)
-        swingCustom.input:SetText(tostring(pfUI.throttle:GetFps("swingtimer")))
-      else
-        swingCustom.input:EnableMouse(true)
-        swingCustom.input:EnableKeyboard(true)
-        swingCustom.input:SetTextColor(.2,1,.8,1)
-        if _G.pfUI_throttle.swingtimer_custom then
-          swingCustom.input:SetText(_G.pfUI_throttle.swingtimer_custom)
-        end
-      end
-
-      -- Spacer before reset button
-      local spacer = CreateConfig(nil, " ", nil, nil, "header")
-      spacer:GetParent().objectCount = spacer:GetParent().objectCount - 1
-      spacer:SetHeight(10)
-
-      -- Reset to defaults button
-      CreateConfig(nil, T["Reset to Defaults"], nil, nil, "button", function()
-        pfUI.throttle:ResetToDefault("swingtimer")
-        _G.pfUI_throttle.swingtimer_custom = "50"
         Reload()
       end, true)
     end)
@@ -2445,6 +2326,7 @@ pfUI:RegisterModule("gui", function ()
       CreateConfig(U["bars"], T["Out Of Mana Color"], C.bars, "oomcolor", "color")
       CreateConfig(U["bars"], T["Highlight Not Usable Spells"], C.bars, "showna", "checkbox")
       CreateConfig(U["bars"], T["Not Usable Color"], C.bars, "nacolor", "color")
+      CreateConfig(U["bars"], T["Highlight Proc And Reactive Spells"], C.bars, "procglow", "checkbox")
       CreateConfig(U["bars"], T["Lock Actionbars"], "UVAR", "LOCK_ACTIONBAR", "checkbox")
       CreateConfig(U["bars"], T["Always Allow Drag Via Shift Key"], C.bars, "shiftdrag", "checkbox")
 

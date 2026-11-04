@@ -9,7 +9,7 @@ pfUI:RegisterModule("actionbar", function ()
   local rawborder, border = GetBorderSize("actionbars")
   local bpad = rawborder > 1 and border - GetPerfectPixel() or GetPerfectPixel()
 
-  local eventcache = { } -- contains a list of events that shall be processed later -> [event] = true
+  local passcache = { } -- contains the passes over the visible buttons that shall run later -> [pass] = true
   local updatecache = { } -- contains a list of buttons slots that shall be refreshed later -> [slot] = true
   local buttoncache = { } -- contains a list of all buttons ever created -> [slot] = frame
 
@@ -54,18 +54,21 @@ pfUI:RegisterModule("actionbar", function ()
     if f.Hide then f:Hide() end
   end
 
-  -- also abbreviate mouse buttons
-  local OrigGetBindingText = GetBindingText
-  local function GetBindingText(msg, mod, abbrev)
-    local txt = OrigGetBindingText(msg, mod, abbrev)
-    if abbrev then
-      txt = string.gsub(txt, _G[string.format("%s%s", mod, "BUTTON3")], "MB3")
-      txt = string.gsub(txt, _G[string.format("%s%s", mod, "BUTTON4")], "MB4")
-      txt = string.gsub(txt, _G[string.format("%s%s", mod, "BUTTON5")], "MB5")
-      txt = string.gsub(txt, _G[string.format("%s%s", mod, "MOUSEWHEELDOWN")], "MWD")
-      txt = string.gsub(txt, _G[string.format("%s%s", mod, "MOUSEWHEELUP")], "MWU")
+  -- the abbreviated text of the key bound to a command, mouse buttons included
+  local mouse_abbrevs = {
+    [_G.KEY_BUTTON3] = "MB3",
+    [_G.KEY_BUTTON4] = "MB4",
+    [_G.KEY_BUTTON5] = "MB5",
+    [_G.KEY_MOUSEWHEELDOWN] = "MWD",
+    [_G.KEY_MOUSEWHEELUP] = "MWU",
+  }
+
+  local function GetKeybindText(command)
+    local text = GetBindingText(GetBindingKey(command), "KEY_", 1)
+    for name, abbrev in pairs(mouse_abbrevs) do
+      text = text:gsub(name, abbrev)
     end
-    return txt
+    return text
   end
 
   kill(MainMenuBar)
@@ -83,33 +86,34 @@ pfUI:RegisterModule("actionbar", function ()
   _G.SHOW_MULTI_ACTIONBAR_3 = nil
   _G.SHOW_MULTI_ACTIONBAR_4 = nil
 
-  -- events that provide special updater functions
-  local special_events = {
-    ["ACTIONBAR_UPDATE_COOLDOWN"] = true,
-    ["ACTIONBAR_UPDATE_USABLE"] = true,
-    ["ACTIONBAR_UPDATE_STATE"] = true,
+  -- events that refresh one part of every visible button -> [event] = pass.
+  -- Page changes only touch the main bar, whose pager handles them.
+  local pass_events = {
+    ["ACTIONBAR_UPDATE_COOLDOWN"] = "cooldown",
+    -- action slots take ACTION_USABLE_CHANGED; the stance buttons still
+    -- need a pass on this one
+    ["ACTIONBAR_UPDATE_USABLE"] = "stance",
+    ["ACTIONBAR_UPDATE_STATE"] = "state",
+    -- the active border of attack, auto repeat and tradeskill actions
+    ["PLAYER_ENTER_COMBAT"] = "state",
+    ["PLAYER_LEAVE_COMBAT"] = "state",
+    ["START_AUTOREPEAT_SPELL"] = "state",
+    ["STOP_AUTOREPEAT_SPELL"] = "state",
+    ["CRAFT_SHOW"] = "state",
+    ["CRAFT_CLOSE"] = "state",
+    ["TRADE_SKILL_SHOW"] = "state",
+    ["TRADE_SKILL_CLOSE"] = "state",
     -- fires on every ammo shot / consumable use, but only counts, equipped
     -- state, cooldowns and usability can change from it
-    ["UNIT_INVENTORY_CHANGED"] = true,
+    ["UNIT_INVENTORY_CHANGED"] = "inventory",
+    -- the keybind text of every button, shown or not
+    ["UPDATE_BINDINGS"] = "bindings",
   }
 
-  -- events that are shared across all buttons
+  -- events that refresh every button
   local global_events = {
-    -- slot/button updates
     ["PLAYER_ENTERING_WORLD"] = true,
     ["ACTIONBAR_SLOT_CHANGED"] = true,
-    ["UPDATE_BINDINGS"] = true,
-    ["ACTIONBAR_PAGE_CHANGED"] = true,
-    ["UPDATE_BONUS_ACTIONBAR"] = true,
-    ["CRAFT_SHOW"] = true,
-    ["CRAFT_CLOSE"] = true,
-    ["TRADE_SKILL_SHOW"] = true,
-    ["TRADE_SKILL_CLOSE"] = true,
-    ["PLAYER_ENTER_COMBAT"] = true,
-    ["PLAYER_LEAVE_COMBAT"] = true,
-    -- auto repeat action
-    ["START_AUTOREPEAT_SPELL"] = true,
-    ["STOP_AUTOREPEAT_SPELL"] = true,
   }
 
   -- events that are used for the aura/shapeshift bar
@@ -394,37 +398,85 @@ pfUI:RegisterModule("actionbar", function ()
     self.equipped:SetShown(IsEquippedAction(sid) and C.bars.showequipped == "1")
   end
 
-  local start, duration, enable, castable, autocast, token
-  local grid, sid, id, bar, active, texture, _
+  -- the keybind text, which an empty hidden button hides as well. The binding
+  -- itself is only read on UPDATE_BINDINGS (the "bindings" pass).
+  local function ButtonKeybindUpdate(self)
+    self.keybind:SetText(not self.hide and self.binding or "")
+  end
+
+  -- the active border of current, attack and auto repeat actions, which the
+  -- "statechange" animation follows. A full update applies it unconditionally.
+  local function ButtonActiveUpdate(self, active, force)
+    if active then
+      if not self.isactive and C.bars.animmode == "statechange" then
+        PlayButtonAnimation(self)
+      end
+
+      if force or not self.isactive then
+        self.backdrop:SetBackdropBorderColor(cr,cg,cb,1)
+        self.active:Show()
+        self.isactive = true
+      end
+    elseif force or self.isactive then
+      self.backdrop:SetBackdropBorderColor(er,eg,eb,ea)
+      self.active:Hide()
+      self.isactive = nil
+    end
+  end
+
+  -- the pulsing border of a spell whose proc glow is lit
+  local function ButtonProcShow(self, glow)
+    if glow then
+      if not self.proc:IsShown() then
+        self.proc:Show()
+        self.proc.pulse:Play()
+      end
+    elseif self.proc:IsShown() then
+      self.proc.pulse:Stop()
+      self.proc:Hide()
+    end
+  end
+
+  -- the spell an action slot casts, directly or through a macro, and its
+  -- proc glow. The glow events name that spell.
+  local function ButtonProcUpdate(self)
+    local kind, id, spellid, _
+    if C.bars.procglow == "1" then
+      kind, id = GetActionInfo(self.id)
+      if kind == "spell" then
+        spellid = id
+      elseif kind == "macro" then
+        _, _, spellid = GetMacroSpell(id)
+      end
+    end
+
+    self.spellid = spellid
+    ButtonProcShow(self, spellid and IsSpellOverlayed(spellid))
+  end
+
+  local castable, autocast, token
+  local grid, sid, active, texture, _
   local function ButtonSlotUpdate(self)
-    if not self then return end
-    self = self or this
     sid = self.id -- 1 to 120
 
     -- reset shared variables
     castable, autocast, token = nil, nil, nil
 
     -- set the own ID for compatibility to some vanilla addons
-    self:SetID(self.id)
+    self:SetID(sid)
 
     grid = self.bar == 12 and showgrid_pet or showgrid
 
     if self.bar == 11 then
       -- stance button
-      bar = self.bar
-      id = sid
-      texture, _, active = GetShapeshiftFormInfo(id)
+      texture, _, active = GetShapeshiftFormInfo(sid)
     elseif self.bar == 12 then
       -- pet button
-      bar = self.bar
-      id = sid
-      _, _, texture, token, active, castable, autocast = GetPetActionInfo(id)
+      _, _, texture, token, active, castable, autocast = GetPetActionInfo(sid)
       texture = token and _G[texture] or texture
     else
       active = IsCurrentAction(sid) or IsAutoRepeatAction(sid)
       texture = GetActionTexture(sid)
-      bar = GetActiveBar()
-      id = self.bar == 1 and self.slot or sid-((self.bar)-1)*12
     end
 
     if not self.showempty and self.backdrop and not texture and grid == 0 then
@@ -433,19 +485,6 @@ pfUI:RegisterModule("actionbar", function ()
     else
       self.backdrop:Show()
       self.hide = nil
-    end
-
-    -- active border
-    if active then
-      if C.bars.animmode == "statechange" and not self.active:IsShown() then
-        PlayButtonAnimation(self)
-      end
-
-      self.backdrop:SetBackdropBorderColor(cr,cg,cb,1)
-      self.active:Show()
-    else
-      self.backdrop:SetBackdropBorderColor(er,eg,eb,ea)
-      self.active:Hide()
     end
 
     ButtonInventoryUpdate(self)
@@ -457,6 +496,8 @@ pfUI:RegisterModule("actionbar", function ()
       else
         self.macro:SetText("")
       end
+
+      ButtonProcUpdate(self)
     end
 
     -- icon
@@ -481,14 +522,8 @@ pfUI:RegisterModule("actionbar", function ()
       self.autocastable:SetShown(castable and C.bars.showcastable == "1")
     end
 
-    -- keybinds
-    if not self.hide and self.bar == 1 and self.bar ~= 11 and self.bar ~= 12 then
-      self.keybind:SetText(GetBindingText(GetBindingKey("ACTIONBUTTON"..id), "KEY_", 1))
-    elseif not self.hide and buttontypes[self.bar] then
-      self.keybind:SetText(GetBindingText(GetBindingKey(buttontypes[self.bar]..id), "KEY_", 1))
-    else
-      self.keybind:SetText("")
-    end
+    ButtonActiveUpdate(self, active, true)
+    ButtonKeybindUpdate(self)
   end
 
   local sid, usable, oom, _
@@ -498,8 +533,9 @@ pfUI:RegisterModule("actionbar", function ()
 
     if self.bar == 11 then
       _, _, _, usable = GetShapeshiftFormInfo(sid)
+      oom = nil
     elseif self.bar == 12 then
-      usable = true
+      usable, oom = true, nil
     else
       usable, oom = IsUsableAction(sid)
     end
@@ -528,25 +564,22 @@ pfUI:RegisterModule("actionbar", function ()
     end
   end
 
-  local function ButtonRangeUpdate(self)
-    self = self or this
+  -- Keeps the range check of the slot a shown action button displays
+  -- enabled, so ACTION_RANGE_CHECK_UPDATE reports it. Each button holds its
+  -- own enable, as the client counts them per slot. An enable fires the
+  -- event with the current state, so a new slot starts in range until then.
+  local function ButtonRangeWatch(button)
+    local slot = C.bars.glowrange == "1" and button.bar <= 10 and button:IsVisible() and button.id or nil
+    if slot == button.rangeslot then return end
 
-    -- update range display
-    if C.bars.glowrange == "1" and self.bar ~= 11 and self.bar ~= 12 and HasAction(self.id) and ActionHasRange(self.id) and IsActionInRange(self.id) == 0 then
-      if not self.outofrange then
-        self.outofrange = true
-        ButtonUsableUpdate(self)
-      end
-    elseif self.outofrange then
-      self.outofrange = nil
-      ButtonUsableUpdate(self)
-    end
+    if button.rangeslot then C_ActionBar.EnableActionRangeCheck(button.rangeslot, false) end
+    if slot then C_ActionBar.EnableActionRangeCheck(slot, true) end
+    button.rangeslot = slot
+    button.outofrange = nil
   end
 
   local start, duration, enable
   local function ButtonCooldownUpdate(button)
-    if not button then return end
-
     if button.bar == 11 then
       start, duration, enable = GetShapeshiftFormCooldown(button.id)
     elseif button.bar == 12 then
@@ -556,182 +589,204 @@ pfUI:RegisterModule("actionbar", function ()
     end
 
     -- Nil-protect: GetActionCooldown can return nil during macro parsing/indexing
-    if start and duration then
-      CooldownFrame_SetTimer(button.cd, start, duration, enable or 1)
-    end
+    if not start or not duration then return end
+    enable = enable or 1
+
+    -- most buttons keep their cooldown through a cooldown event
+    if start == button.cdstart and duration == button.cdduration and enable == button.cdenable then return end
+    button.cdstart, button.cdduration, button.cdenable = start, duration, enable
+
+    CooldownFrame_SetTimer(button.cd, start, duration, enable)
   end
 
   local _, active
   local function ButtonIsActiveUpdate(button)
-    if not button then return end
-
     if button.bar == 11 then
-      _, _, active, _ = GetShapeshiftFormInfo(button.id)
+      _, _, active = GetShapeshiftFormInfo(button.id)
     elseif button.bar == 12 then
-      _, _, _, _, active, _, _ = GetPetActionInfo(button.id)
+      _, _, _, _, active = GetPetActionInfo(button.id)
     else
       active = IsCurrentAction(button.id) or IsAutoRepeatAction(button.id)
     end
 
-    -- active border
-    if active then
-      if not button.border_active then
-        button.backdrop:SetBackdropBorderColor(cr,cg,cb,1)
-        button.border_active = true
-      end
-
-      button.active:Show()
-    else
-      if button.border_active then
-        button.backdrop:SetBackdropBorderColor(er,eg,eb,ea)
-        button.border_active = nil
-      end
-
-      button.active:Hide()
-    end
+    ButtonActiveUpdate(button, active)
   end
 
-
+  -- everything of a button; the slot update covers its active state
   local function ButtonFullUpdate(button)
     if not button then return end
 
     ButtonSlotUpdate(button)
-    ButtonRangeUpdate(button)
     ButtonUsableUpdate(button)
     ButtonCooldownUpdate(button)
-    ButtonIsActiveUpdate(button)
   end
 
-  local function BarsEvent(self)
-    self = self or this
+  -- the pfActionBar frame handles the events of every button; its array part
+  -- holds the bar frames, bars[1] to bars[12]
+  local bars = CreateFrame("Frame", "pfActionBar", UIParent)
+
+  -- Updates wait for the next frame, so the events of one frame share one
+  -- pass. Passes and full updates skip hidden bars, which catch up as they
+  -- show (BarShowHide). The shown buttons of a bar are its first `count` ones.
+  local scheduled
+
+  -- calls func on the buttons that show a slot: its own button and the main
+  -- bar button paged to it
+  local function ForSlotButtons(slot, func, a1)
+    local button = buttoncache[slot]
+    if button then func(button, a1) end
+
+    local page = bars[1][1].id - 1
+    local paged = slot > page and slot <= page + 12 and bars[1][slot - page]
+    if paged and paged ~= button then func(paged, a1) end
+  end
+
+  -- the range watch follows hidden buttons too, so a hidden bar lets go of
+  -- its slots
+  local function SlotButtonUpdate(button)
+    ButtonRangeWatch(button)
+    if button:IsVisible() then pfUI.bars.ButtonFullUpdate(button) end
+  end
+
+  local function Flush()
+    scheduled = nil
+
+    local inventory, cooldown, state = passcache.inventory, passcache.cooldown, passcache.state
+    local stance, bindings = passcache.stance, passcache.bindings
+    table.wipe(passcache)
+
+    if inventory or cooldown or state then
+      for i = 1, 12 do
+        local bar = bars[i]
+        if bar:IsVisible() then
+          for j = 1, bar.count do
+            local button = bar[j]
+            if inventory then ButtonInventoryUpdate(button) end
+            if inventory or cooldown then ButtonCooldownUpdate(button) end
+            if inventory then ButtonUsableUpdate(button) end
+            if state then ButtonIsActiveUpdate(button) end
+          end
+        end
+      end
+    end
+
+    if stance and not inventory and bars[11]:IsVisible() then
+      for j = 1, bars[11].count do
+        ButtonUsableUpdate(bars[11][j])
+      end
+    end
+
+    -- the keybinds of hidden buttons as well, as they don't catch up on them
+    if bindings then
+      for _, button in pairs(buttoncache) do
+        button.binding = GetKeybindText(button.bindcommand)
+        ButtonKeybindUpdate(button)
+      end
+    end
+
+    for slot in pairs(updatecache) do
+      updatecache[slot] = nil
+      ForSlotButtons(slot, SlotButtonUpdate)
+    end
+  end
+
+  local function Schedule()
+    if scheduled then return end
+    scheduled = true
+    RunNextFrame(Flush)
+  end
+
+  -- queues a full update of the button in a slot
+  local function QueueSlot(slot)
+    updatecache[slot] = true
+    Schedule()
+  end
+
+  -- queues a pass over the visible buttons
+  local function QueuePass(pass)
+    passcache[pass] = true
+    Schedule()
+  end
+
+  -- passes skip hidden bars, so a bar refreshes its buttons as it shows;
+  -- as it hides, its buttons let go of their range checks
+  local function BarShowHide()
+    local offset = (this:GetID() - 1) * 12
+    for j = 1, this.count do
+      QueueSlot(offset + j)
+    end
+  end
+
+  local function ButtonRangeEvent(button, outofrange)
+    if button.rangeslot ~= arg1 or button.outofrange == outofrange then return end
+    button.outofrange = outofrange
+    ButtonUsableUpdate(button)
+  end
+
+  local function ButtonUsableEvent(button)
+    if button:IsVisible() then ButtonUsableUpdate(button) end
+  end
+
+  local function BarsEvent()
+    -- slot, isInRange, checksRange of a slot a button watches
+    if event == "ACTION_RANGE_CHECK_UPDATE" then
+      ForSlotButtons(arg1, ButtonRangeEvent, arg3 and not arg2 or nil)
+      return
+    end
+
+    -- the slots whose usable state changed
+    if event == "ACTION_USABLE_CHANGED" then
+      for _, change in ipairs(arg1) do
+        ForSlotButtons(change.slot, ButtonUsableEvent)
+      end
+      return
+    end
+
+    -- the spell whose glow started or ended; each rank has its own event
+    if event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW" or event == "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE" then
+      local glow = IsSpellOverlayed(arg1)
+      for _, button in pairs(buttoncache) do
+        if button.spellid == arg1 then ButtonProcShow(button, glow) end
+      end
+      return
+    end
 
     -- refresh only specific slots
     if event == "ACTIONBAR_SLOT_CHANGED" and arg1 and arg1 ~= 0 then
-      updatecache[arg1] = true
+      QueueSlot(arg1)
       return
     end
 
-    -- run special refresh functions on next update
-    if special_events[event] then
-      eventcache[event] = true
+    -- refresh one part of every visible button
+    if pass_events[event] then
+      QueuePass(pass_events[event])
       return
     end
 
-    -- handle aura events
+    -- auras and forms change the stance buttons
     if aura_events[event] then
-      for j=1,12 do
-        if self[11] and self[11][j] then
-          updatecache[self[11][j].slot] = true
-        end
+      for j = 1, bars[11].count do
+        QueueSlot(bars[11][j].slot)
       end
       return
     end
 
     -- handle pet events
     if pet_events[event] then
-      for j=1,12 do
-        if self[12] and self[12][j] then
-          updatecache[self[12][j].slot] = true
-        end
+      for j = 1, bars[12].count do
+        QueueSlot(bars[12][j].slot)
       end
       return
     end
 
-    -- handle global events
-    for id in pairs(buttoncache) do
-      updatecache[id] = true
-    end
-  end
-
-  local self, button, unlock
-  -- Main update loop with throttle for performance optimization
-  local function BarsUpdate(self)
-    self = self or this
-
-    -- Throttle for performance
-    if (this.tick_main or 0) > GetTime() then return end
-    this.tick_main = GetTime() + 0.025
-
-    if pfUI.unlock then
-      -- update all bars when entering unlock
-      if pfUI.unlock:IsShown() ~= unlock then
-        pfUI.bars:UpdateConfig()
-        unlock = pfUI.unlock:IsShown()
-      end
-    end
-
-    -- The cached passes below only touch visible buttons. Hidden ones (other
-    -- pages, hidden bars) are flagged stale and get a full update once the
-    -- range pass sees them visible again.
-
-    -- run cached inventory changes (ammo, reagents, consumables)
-    if eventcache["UNIT_INVENTORY_CHANGED"] then
-      eventcache["UNIT_INVENTORY_CHANGED"] = nil
-      for id, button in pairs(buttoncache) do
-        if button:IsVisible() then
-          ButtonInventoryUpdate(button)
-          ButtonCooldownUpdate(button)
-          ButtonUsableUpdate(button)
-        else
-          button.stale = true
-        end
-      end
-    end
-
-    -- run cached usable usable actions
-    if eventcache["ACTIONBAR_UPDATE_USABLE"] then
-      eventcache["ACTIONBAR_UPDATE_USABLE"] = nil
-      for id, button in pairs(buttoncache) do
-        if button:IsVisible() then ButtonUsableUpdate(button) else button.stale = true end
-      end
-    end
-
-    -- run cached cooldown events
-    if eventcache["ACTIONBAR_UPDATE_COOLDOWN"] then
-      eventcache["ACTIONBAR_UPDATE_COOLDOWN"] = nil
-      for id, button in pairs(buttoncache) do
-        if button:IsVisible() then ButtonCooldownUpdate(button) else button.stale = true end
-      end
-    end
-
-    -- run cached action state events
-    if eventcache["ACTIONBAR_UPDATE_STATE"] then
-      eventcache["ACTIONBAR_UPDATE_STATE"] = nil
-      for id, button in pairs(buttoncache) do
-        if button:IsVisible() then ButtonIsActiveUpdate(button) else button.stale = true end
-      end
-    end
-
-    for id in pairs(updatecache) do
-      -- run updates based on slot
-      pfUI.bars.ButtonFullUpdate(buttoncache[id])
-
-      -- run updates on paging actionbar if required
-      for i=1,12 do
-        if pfUI.bars[1][i].id == id then
-          pfUI.bars.ButtonFullUpdate(pfUI.bars[1][i])
-        end
-      end
-
-      -- clear update cache
-      updatecache[id] = nil
-    end
-
-    if ( this.tick or .2) > GetTime() then return else this.tick = GetTime() + .2 end
-
-    for id, button in pairs(buttoncache) do
-      if button.stale and button:IsVisible() then
-        -- catch up on updates skipped while hidden
-        button.stale = nil
-        ButtonFullUpdate(button)
-      elseif button:IsShown() then
-        ButtonRangeUpdate(button)
+    -- refresh every button and its keybind
+    if global_events[event] then
+      QueuePass("bindings")
+      for slot in pairs(buttoncache) do
+        QueueSlot(slot)
       end
     end
   end
-
-  -- create the main event and update handler for pfUI actionbars
-  local bars = CreateFrame("Frame", "pfActionBar", UIParent)
 
   -- The only unit events in the tables above; both concern the player alone.
   -- A registration keeps its kind, so these have to go in unit-filtered from
@@ -750,16 +805,17 @@ pfUI:RegisterModule("actionbar", function ()
     end
   end
 
-  for event in pairs(special_events) do RegisterBarEvent(event) end
+  for event in pairs(pass_events) do RegisterBarEvent(event) end
   for event in pairs(global_events) do RegisterBarEvent(event) end
   for event in pairs(aura_events) do RegisterBarEvent(event) end
   for event in pairs(pet_events) do RegisterBarEvent(event) end
+  bars:RegisterEvent("ACTION_RANGE_CHECK_UPDATE")
+  bars:RegisterEvent("ACTION_USABLE_CHANGED")
+  bars:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
+  bars:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
 
   -- refresh actionbar buttons on event
   bars:SetScript("OnEvent", BarsEvent)
-
-  -- update actionbar buttons
-  bars:SetScript("OnUpdate", BarsUpdate)
 
   -- enable bar paging via secure functions
   local function EnablePaging(bar)
@@ -776,9 +832,8 @@ pfUI:RegisterModule("actionbar", function ()
 
         local active = GetActiveBar()
         for i=1,12 do
-          local id = i + (active-1)*12
-          bar[i].id = id
-          updatecache[i] = true
+          bar[i].id = i + (active-1)*12
+          QueueSlot(i)
         end
       end)
     end
@@ -1006,6 +1061,9 @@ pfUI:RegisterModule("actionbar", function ()
       -- set a static slot
       f.slot = id
 
+      -- the binding command of the button, fixed on the paged main bar too
+      f.bindcommand = (bar == 1 and "ACTIONBUTTON" or buttontypes[bar]) .. button
+
       -- cooldown
       f.cd = CreateCooldown(f, "spell", C.bars, "timers", f:GetName() .. "Cooldown")
 
@@ -1064,6 +1122,23 @@ pfUI:RegisterModule("actionbar", function ()
       f.active:SetBackdropBorderColor(1,1,.5,1)
       f.active:SetAllPoints()
       f.active:Hide()
+
+      -- proc glow
+      if bar ~= 11 and bar ~= 12 then
+        f.proc = CreateFrame("Frame", nil, f)
+        f.proc:SetBackdrop(backdrop_highlight)
+        f.proc:SetBackdropBorderColor(1,.8,.2,1)
+        f.proc:SetAllPoints()
+        f.proc:Hide()
+
+        f.proc.pulse = f.proc:CreateAnimationGroup()
+        f.proc.pulse:SetLooping("BOUNCE")
+        local fade = f.proc.pulse:CreateAnimation("Alpha")
+        fade:SetFromAlpha(1)
+        fade:SetToAlpha(.3)
+        fade:SetDuration(.5)
+        fade:SetSmoothing("IN_OUT")
+      end
 
       -- add to buttoncache
       buttoncache[id] = f
@@ -1168,6 +1243,7 @@ pfUI:RegisterModule("actionbar", function ()
 
     -- don't process empty bars
     if buttons == 0 then
+      bars[i].count = 0
       bars[i]:Hide()
       return
     end
@@ -1186,6 +1262,11 @@ pfUI:RegisterModule("actionbar", function ()
     local init = not bars[i]
     bars[i] = bars[i] or CreateFrame("Frame", "pfActionBar" .. barnames[i], UIParent)
     bars[i]:SetID(i)
+    bars[i].count = buttons
+    if init then
+      bars[i]:SetScript("OnShow", BarShowHide)
+      if i <= 10 then bars[i]:SetScript("OnHide", BarShowHide) end
+    end
 
     -- autohide
     if autohide == "1" then
@@ -1201,18 +1282,12 @@ pfUI:RegisterModule("actionbar", function ()
         -- only show when pet actions exists
         bars[i]:SetShown(PetHasActionBar() or pfUI.unlock and pfUI.unlock:IsShown())
 
-        -- show/hide petbar on petbar updates
+        -- show/hide petbar on petbar updates; the pet events of the
+        -- pfActionBar frame refresh its buttons
         if init then
           bars[i]:RegisterEvent("PET_BAR_UPDATE")
           bars[i]:SetScript("OnEvent", function()
-            -- hide obsolete buttons
-            for i=1, NUM_PET_ACTION_SLOTS do
-             if not PetHasActionBar() and bars[12][i] then
-               bars[12][i]:Hide()
-             end
-            end
-            -- refresh layout
-            CreateActionBar(12)
+            this:SetShown(PetHasActionBar() or pfUI.unlock and pfUI.unlock:IsShown())
           end)
         end
 
@@ -1270,7 +1345,7 @@ pfUI:RegisterModule("actionbar", function ()
       end
 
       -- refresh button
-      updatecache[bars[i][j].slot] = true
+      QueueSlot(bars[i][j].slot)
     end
 
     for j=buttons+1,12 do
@@ -1303,25 +1378,27 @@ pfUI:RegisterModule("actionbar", function ()
     elseif i == 12 then -- pet
       bars[i]:SetPoint("BOTTOM", bars[6], "TOP", 0, 3*border)
 
-      -- make stance bar dodge by default
-      bars[i]:SetScript("OnShow", function()
-        if pfUI.unlock and pfUI.unlock:IsShown() then return end
-        if bars[11] and bars[11]:IsShown() then
-          bars[11]:ClearAllPoints()
-          bars[11]:SetPoint("BOTTOM", bars[12], "TOP", 0, 3*border)
-          UpdateMovable(bars[11], true)
-        end
-      end)
+      if init then
+        -- make stance bar dodge by default
+        bars[i]:HookScript("OnShow", function()
+          if pfUI.unlock and pfUI.unlock:IsShown() then return end
+          if bars[11] and bars[11]:IsShown() then
+            bars[11]:ClearAllPoints()
+            bars[11]:SetPoint("BOTTOM", bars[12], "TOP", 0, 3*border)
+            UpdateMovable(bars[11], true)
+          end
+        end)
 
-      -- restore old stance bar position
-      bars[i]:SetScript("OnHide", function()
-        if pfUI.unlock and pfUI.unlock:IsShown() then return end
-        if bars[11] and bars[11]:IsShown() then
-          bars[11]:ClearAllPoints()
-          bars[11]:SetPoint("BOTTOM", bars[6], "TOP", 0, 3*border)
-          UpdateMovable(bars[11], true)
-        end
-      end)
+        -- restore old stance bar position
+        bars[i]:SetScript("OnHide", function()
+          if pfUI.unlock and pfUI.unlock:IsShown() then return end
+          if bars[11] and bars[11]:IsShown() then
+            bars[11]:ClearAllPoints()
+            bars[11]:SetPoint("BOTTOM", bars[6], "TOP", 0, 3*border)
+            UpdateMovable(bars[11], true)
+          end
+        end)
+      end
     else -- others
       bars[i]:SetPoint("TOP", 0, -i*50)
     end
@@ -1382,7 +1459,7 @@ pfUI:RegisterModule("actionbar", function ()
 
   -- create actionbars
   pfUI.bars = bars
-  pfUI.bars.update = updatecache
+  pfUI.bars.QueueSlot = QueueSlot
   pfUI.bars.buttons = buttoncache
   pfUI.bars.ButtonFullUpdate = ButtonFullUpdate
   pfUI.bars.ButtonEnter = ButtonEnter
@@ -1392,13 +1469,13 @@ pfUI:RegisterModule("actionbar", function ()
     if not typ then
       showgrid = state
 
-      for id in pairs(buttoncache) do
-        updatecache[id] = true
+      for slot in pairs(buttoncache) do
+        QueueSlot(slot)
       end
     elseif typ == "PET" then
       showgrid_pet = state
       for slot=133,142 do
-        updatecache[slot] = true
+        QueueSlot(slot)
       end
     end
   end
@@ -1410,6 +1487,12 @@ pfUI:RegisterModule("actionbar", function ()
   end
 
   pfUI.bars:UpdateConfig()
+
+  -- update all bars when entering or leaving unlock mode
+  if pfUI.unlock then
+    pfUI.unlock:HookScript("OnShow", function() pfUI.bars:UpdateConfig() end)
+    pfUI.unlock:HookScript("OnHide", function() pfUI.bars:UpdateConfig() end)
+  end
 
   -- Localize custom keybinds for additional actionbars (see Bindings.xml)
   local names = {
@@ -1492,7 +1575,7 @@ pfUI:RegisterModule("actionbar", function ()
         if newID then
           reagent_counts[newID] = reagent_counts[newID] or C_Item.GetItemCount(newID)
         end
-        updatecache[slot] = true
+        QueueSlot(slot)
       end
     end
 
@@ -1502,7 +1585,7 @@ pfUI:RegisterModule("actionbar", function ()
         reagent_counts[itemID] = C_Item.GetItemCount(itemID)
       end
       for slot in pairs(reagent_slots) do
-        updatecache[slot] = true
+        QueueSlot(slot)
       end
     end
 

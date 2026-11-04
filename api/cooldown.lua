@@ -85,7 +85,7 @@ local function SetupCooldown(cooldown)
   cooldown:SetReverse(kind == "aura")
   cooldown:SetMinimumCountdownDuration(kind == "spell" and tonumber(C.cooldown.threshold) * 1000 or 0)
   cooldown:SetCountdownFormatter(GetFormatter())
-  UpdateFont(cooldown, cooldown:GetParent():GetHeight())
+  UpdateFont(cooldown, cooldown:GetParent():GetUnscaledHeight())
 end
 
 -- applies the "foreign" timers to another addon's cooldown. They only take
@@ -107,7 +107,7 @@ local function SetupForeign(cooldown)
 
   cooldown:SetMinimumCountdownDuration(tonumber(C.cooldown.threshold) * 1000)
   cooldown:SetCountdownFormatter(GetFormatter())
-  UpdateFont(cooldown, (cooldown:GetParent() or cooldown):GetHeight())
+  UpdateFont(cooldown, (cooldown:GetParent() or cooldown):GetUnscaledHeight())
 end
 
 -- runs as a pfUI cooldown's timer starts: a timer with a total brings back
@@ -196,9 +196,10 @@ function pfUI.api.GetAuraTimer(duration, expirationTime)
   return start, dur
 end
 
--- [ GetColoredTimeString ] --
--- 'remaining'   [number]   the time in seconds that should be converted
--- return        [string]   the time as cooldown numbers show it
-function pfUI.api.GetColoredTimeString(remaining)
-  return GetFormatter():FormatNumber(remaining)
+-- [ GetTimeFormatter ] --
+-- The formatter cooldown numbers use, for other timers to show time the same
+-- way. Hold it rather than a copy: a settings change updates it in place.
+-- return        [formatter]   a NumericRuleFormatter
+function pfUI.api.GetTimeFormatter()
+  return GetFormatter()
 end

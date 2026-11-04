@@ -992,28 +992,53 @@ function pfUI.api.GetBorderSize(pref)
   end
 end
 
+-- The scale UIParent ends up with: one UI unit per screen pixel when pixel
+-- perfect, else the game's own. The game applies its scale only after the
+-- add-ons and their saved variables are loaded (CGGameUI::Initialize ends in
+-- OnDisplaySizeChanged), so at load time it is worked out from the same
+-- options and rules: uiScale while useUiScale is on and it is at least 0.64,
+-- else 768 over the window height kept within 0.9 and 1. Windows narrower
+-- than 4:3 cap either at 3/4 of their aspect.
+local function GetUIScale()
+  if pfUI_config.global.pixelperfect == "1" then return PixelUtil.GetPixelToUIUnitFactor() end
+
+  local width, height = GetPhysicalScreenSize()
+  local aspect = GetCVar("widescreen") == "1" and width / height or 4/3
+  local function fit(scale)
+    return aspect < 4/3 and math.min(scale, aspect * .75) or scale
+  end
+
+  if GetCVar("useUiScale") == "1" then
+    local scale = fit(tonumber(GetCVar("uiScale")))
+    if scale >= .64 then return scale end
+  end
+
+  return math.max(fit(height > 768 and 768 / height or 1), .9)
+end
+
+-- [ UpdateUIScale ]
+-- Gives UIParent the pixel perfect scale when enabled, else leaves the game's
+-- own. The engine puts its own scale back on every window resize and scale
+-- option change, so this runs again on each UI_SCALE_CHANGED. Borders keep
+-- the pixel size they were built with, so a change of it offers a reload once.
+function pfUI.api.UpdateUIScale()
+  if pfUI_config.global.pixelperfect == "1" then
+    UIParent:SetScale(PixelUtil.GetPixelToUIUnitFactor())
+  end
+
+  if not pfUI.pixel or pfUI.scaleprompt then return end
+  if math.abs(PixelUtil.GetPixelToUIUnitFactor() / UIParent:GetScale() - pfUI.pixel) < .0001 then return end
+
+  pfUI.scaleprompt = true
+  CreateQuestionDialog(T["The UI-Scale has changed. Reload the UI to redraw the borders?"], ReloadUI)
+end
+
 -- [ GetPerfectPixel ]
--- Returns a number that equals a real pixel on regular scaled frames.
--- Respects the current UI-scale and calculates a real pixel based on
--- the screen resolution and the 768px sized drawlayer.
+-- Returns the size of one physical pixel in UIParent units.
 function pfUI.api.GetPerfectPixel()
   if pfUI.pixel then return pfUI.pixel end
 
-  if pfUI_config.appearance.border.pixelperfect == "1" then
-    local scale = GetCVar("useUiScale") == "1" and GetCVar("uiScale") or "1"
-    local resolution = GetCVar("gxResolution")
-    local _, _, screenwidth, screenheight = strfind(resolution, "(.+)x(.+)")
-
-    pfUI.pixel = 768 / screenheight / scale
-    pfUI.pixel = pfUI.pixel > 1 and 1 or pfUI.pixel
-
-    -- autodetect and zoom for HiDPI displays
-    if pfUI_config.appearance.border.hidpi == "1" then
-      pfUI.pixel = pfUI.pixel < .5 and pfUI.pixel * 2 or pfUI.pixel
-    end
-  else
-    pfUI.pixel = .7
-  end
+  pfUI.pixel = PixelUtil.GetPixelToUIUnitFactor() / GetUIScale()
 
   pfUI.backdrop = {
     bgFile = "Interface\\BUTTONS\\WHITE8X8", tile = false, tileSize = 0,
@@ -1158,8 +1183,11 @@ end
 -- [ Set Castbar Shield ]
 -- Colors a castbar for a cast that none of the player's own interrupts or
 -- silences can stop. The bar and the icon's border both take the shield color,
--- so the state still reads on a bar configured without an icon. Not shielded
--- restores the normal cast/channel color and the configured border.
+-- so the state still reads on a bar configured without an icon. The fill also
+-- gets diagonal stripes, tiled at the image's own size so they keep their
+-- spacing as the fill grows or shrinks. They sit on OVERLAY, under the bar's
+-- text on the same layer. Not shielded restores the normal cast/channel color
+-- and the configured border.
 -- 'bar'        [frame]     the castbar statusbar
 -- 'icon'       [frame]     the icon frame, or nil for a bar without one
 -- 'shielded'   [bool]      whether the cast is uninterruptible
@@ -1169,6 +1197,18 @@ function pfUI.api.SetCastbarShield(bar, icon, shielded, isChannel)
     bar:SetStatusBarColor(pfUI.api.GetStringColor(C.appearance.castbar.shieldcolor))
   else
     bar:SetStatusBarColor(pfUI.api.GetStringColor(C.appearance.castbar[isChannel and "channelcolor" or "castbarcolor"]))
+  end
+
+  if shielded and not bar.shieldstripes then
+    bar.shieldstripes = bar:CreateTexture(nil, "OVERLAY")
+    bar.shieldstripes:SetTexture(pfUI.media["img:stripes"])
+    bar.shieldstripes:SetHorizTile(true)
+    bar.shieldstripes:SetVertTile(true)
+    bar.shieldstripes:SetVertexColor(1, 1, 1, .3)
+    bar.shieldstripes:SetAllPoints(bar:GetStatusBarTexture())
+  end
+  if bar.shieldstripes then
+    bar.shieldstripes:SetShown(shielded)
   end
 
   local iconborder = icon and icon.backdrop
@@ -1364,10 +1404,10 @@ function pfUI.api.EnableAutohide(frame, timeout, combat)
 
   if not frame.hover.fade then
     frame.hover.fade = frame:CreateAnimationGroup()
+    frame.hover.fade:SetToFinalAlpha(true)
     local fade = frame.hover.fade:CreateAnimation("Alpha")
     fade:SetChange(-1)
     fade:SetDuration(1)
-    frame.hover.fade:SetScript("OnFinished", function() frame:SetAlpha(0) end)
   end
 
   if combat then
@@ -1469,13 +1509,10 @@ end
 -- return object
 function pfUI.api.GetNoNameObject(frame, objtype, layer, arg1, arg2)
   -- A nil/non-frame parent otherwise dies on frame:GetRegions()/:GetChildren()
-  -- below, and the traceback stops here — useless, since all callers share this
-  -- line. pfUI shadows Lua's `error` (dropping the level arg and not throwing),
-  -- so fold the caller frame in via debugstack to name the offending skin, then
-  -- bail so we don't fall through and crash on frame:GetRegions() anyway.
+  -- below, where the message would name this line, shared by every caller;
+  -- level 2 names the offending skin instead.
   if type(frame) ~= "table" or not frame.GetRegions then
-    error("GetNoNameObject: invalid parent frame\n" .. debugstack(2, 3, 0))
-    return
+    error("GetNoNameObject: invalid parent frame", 2)
   end
 
   local arg1 = arg1 and gsub(arg1, "([%+%-%*%(%)%?%[%]%^])", "%%%1")

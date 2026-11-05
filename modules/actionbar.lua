@@ -589,14 +589,9 @@ pfUI:RegisterModule("actionbar", function ()
     end
 
     -- Nil-protect: GetActionCooldown can return nil during macro parsing/indexing
-    if not start or not duration then return end
-    enable = enable or 1
-
-    -- most buttons keep their cooldown through a cooldown event
-    if start == button.cdstart and duration == button.cdduration and enable == button.cdenable then return end
-    button.cdstart, button.cdduration, button.cdenable = start, duration, enable
-
-    CooldownFrame_SetTimer(button.cd, start, duration, enable)
+    if start and duration then
+      CooldownFrame_SetTimer(button.cd, start, duration, enable or 1)
+    end
   end
 
   local _, active

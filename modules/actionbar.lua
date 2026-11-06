@@ -585,21 +585,14 @@ pfUI:RegisterModule("actionbar", function ()
     elseif button.bar == 12 then
       start, duration, enable = GetPetActionCooldown(button.id)
     else
-      local spellID = C_ActionBar.GetSpell(button.id)
-      local info = spellID ~= 0 and C_Spell.GetSpellCooldown(spellID)
-      if info then
-        start, duration, enable = info.startTime, info.duration, info.isEnabled and 1 or 0
-      else
-        start, duration, enable = GetActionCooldown(button.id)
-      end
+      start, duration, enable = GetActionCooldown(button.id)
     end
 
     -- Nil-protect: GetActionCooldown can return nil during macro parsing/indexing
     if not start or not duration then return end
     enable = enable or 1
 
-    -- only touch the frame when the cooldown changed, so the periodic
-    -- catch-up below doesn't re-run SetCooldown and reset the sweep
+    -- most buttons keep their cooldown through a cooldown event
     if start == button.cdstart and duration == button.cdduration and enable == button.cdenable then return end
     button.cdstart, button.cdduration, button.cdenable = start, duration, enable
 
@@ -823,19 +816,6 @@ pfUI:RegisterModule("actionbar", function ()
 
   -- refresh actionbar buttons on event
   bars:SetScript("OnEvent", BarsEvent)
-
-  -- The server can confirm a cooldown late (private servers), with no event
-  -- on arrival. Re-check visible buttons so a late cooldown still appears.
-  C_Timer.NewTicker(0.2, function()
-    for i = 1, 12 do
-      local bar = bars[i]
-      if bar:IsVisible() then
-        for j = 1, bar.count do
-          ButtonCooldownUpdate(bar[j])
-        end
-      end
-    end
-  end)
 
   -- enable bar paging via secure functions
   local function EnablePaging(bar)

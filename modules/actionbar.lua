@@ -585,7 +585,13 @@ pfUI:RegisterModule("actionbar", function ()
     elseif button.bar == 12 then
       start, duration, enable = GetPetActionCooldown(button.id)
     else
-      start, duration, enable = GetActionCooldown(button.id)
+      local spellID = C_ActionBar.GetSpell(button.id)
+      local info = spellID ~= 0 and C_Spell.GetSpellCooldown(spellID)
+      if info then
+        start, duration, enable = info.startTime, info.duration, info.isEnabled and 1 or 0
+      else
+        start, duration, enable = GetActionCooldown(button.id)
+      end
     end
 
     -- Nil-protect: GetActionCooldown can return nil during macro parsing/indexing

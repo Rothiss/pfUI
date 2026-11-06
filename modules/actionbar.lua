@@ -589,9 +589,15 @@ pfUI:RegisterModule("actionbar", function ()
     end
 
     -- Nil-protect: GetActionCooldown can return nil during macro parsing/indexing
-    if start and duration then
-      CooldownFrame_SetTimer(button.cd, start, duration, enable or 1)
-    end
+    if not start or not duration then return end
+    enable = enable or 1
+
+    -- only touch the frame when the cooldown changed, so the periodic
+    -- catch-up below doesn't re-run SetCooldown and reset the sweep
+    if start == button.cdstart and duration == button.cdduration and enable == button.cdenable then return end
+    button.cdstart, button.cdduration, button.cdenable = start, duration, enable
+
+    CooldownFrame_SetTimer(button.cd, start, duration, enable)
   end
 
   local _, active
@@ -811,6 +817,19 @@ pfUI:RegisterModule("actionbar", function ()
 
   -- refresh actionbar buttons on event
   bars:SetScript("OnEvent", BarsEvent)
+
+  -- The server can confirm a cooldown late (private servers), with no event
+  -- on arrival. Re-check visible buttons so a late cooldown still appears.
+  C_Timer.NewTicker(0.2, function()
+    for i = 1, 12 do
+      local bar = bars[i]
+      if bar:IsVisible() then
+        for j = 1, bar.count do
+          ButtonCooldownUpdate(bar[j])
+        end
+      end
+    end
+  end)
 
   -- enable bar paging via secure functions
   local function EnablePaging(bar)

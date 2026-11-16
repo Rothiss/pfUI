@@ -8,14 +8,6 @@ pfUI:RegisterModule("totems", function ()
     [AIR_TOTEM_SLOT]   = CreateColor(.4, .1, .7),
   }
 
-  -- the config key that remembers the chosen totem of each element
-  local slotKeys = {
-    [FIRE_TOTEM_SLOT]  = "fire",
-    [EARTH_TOTEM_SLOT] = "earth",
-    [WATER_TOTEM_SLOT] = "water",
-    [AIR_TOTEM_SLOT]   = "air",
-  }
-
   -- flyout direction -> the flyout's point on the element button, the
   -- button's point it attaches to, and the step direction of its entries
   local flyoutAnchors = {
@@ -28,11 +20,24 @@ pfUI:RegisterModule("totems", function ()
   -- the key bindings of Bindings.xml
   _G.BINDING_HEADER_PFTOTEMS = T["Totem Bar"]
   _G.BINDING_NAME_PFTOTEMDROP = T["Drop Totem Set"]
-  _G.BINDING_NAME_PFTOTEM1 = T["Fire Totem"]
-  _G.BINDING_NAME_PFTOTEM2 = T["Earth Totem"]
-  _G.BINDING_NAME_PFTOTEM3 = T["Water Totem"]
-  _G.BINDING_NAME_PFTOTEM4 = T["Air Totem"]
   _G.BINDING_NAME_PFTOTEMRECALL = T["Totemic Recall"]
+  _G.BINDING_NAME_PFTOTEMSETNEXT = T["Next Totem Set"]
+  _G.BINDING_NAME_PFTOTEMSETPREV = T["Previous Totem Set"]
+
+  -- the elements take the localized names of their totem tools
+  local totemTools = {
+    [FIRE_TOTEM_SLOT]  = 5176, -- Fire Totem
+    [EARTH_TOTEM_SLOT] = 5175, -- Earth Totem
+    [WATER_TOTEM_SLOT] = 5177, -- Water Totem
+    [AIR_TOTEM_SLOT]   = 5178, -- Air Totem
+  }
+
+  for slot, itemID in pairs(totemTools) do
+    local item = Item:CreateFromItemID(itemID)
+    item:ContinueOnItemLoad(function()
+      _G["BINDING_NAME_PFTOTEM" .. slot] = item:GetItemName()
+    end)
+  end
 
   local SPELL_EFFECT_SUMMON_TOTEM_SLOT1 = 87
   local SPELL_EFFECT_SUMMON_TOTEM_SLOT4 = 90
@@ -63,6 +68,7 @@ pfUI:RegisterModule("totems", function ()
   -- in rising order, so the last one seen is the highest.
   totems.ScanSpellbook = function(self)
     local known = { {}, {}, {}, {} }
+    local kinds = {}
     local byName = {}
     local recall
 
@@ -71,6 +77,7 @@ pfUI:RegisterModule("totems", function ()
     while info do
       local kind = not info.isPassive and GetTotemEffect(info.spellID)
       if kind then
+        kinds[info.spellID] = kind
         local entry = byName[info.name]
         if entry then
           entry.spellID = info.spellID
@@ -90,12 +97,25 @@ pfUI:RegisterModule("totems", function ()
     end
 
     self.known = known
+    self.kinds = kinds
     self.recall = recall
+  end
+
+  -- [ totem sets ]
+  -- Per character: named sets that each choose one totem per element slot,
+  -- by name so a new rank takes its place, and the index of the active set.
+  _G.pfUI_totems = _G.pfUI_totems or {}
+  local db = _G.pfUI_totems
+  db.sets = db.sets or { { name = T["Default"], totems = {} } }
+  db.active = db.active or 1
+
+  totems.GetSet = function(self)
+    return db.sets[db.active]
   end
 
   -- the chosen totem of an element, or its first one when none is chosen
   totems.GetChoice = function(self, slot)
-    local choice = C.totems[slotKeys[slot]]
+    local choice = db.sets[db.active].totems[slot]
     for _, entry in ipairs(self.known[slot]) do
       if entry.name == choice then return entry end
     end
@@ -103,8 +123,59 @@ pfUI:RegisterModule("totems", function ()
   end
 
   totems.SetChoice = function(self, slot, entry)
-    C.totems[slotKeys[slot]] = entry.name
+    db.sets[db.active].totems[slot] = entry.name
     self:Refresh()
+  end
+
+  totems.SelectSet = function(self, index)
+    db.active = index
+    self:Refresh()
+  end
+
+  totems.CycleSet = function(self, delta)
+    local count = table.getn(db.sets)
+    self:SelectSet((db.active - 1 + delta) % count + 1)
+  end
+
+  -- a new set with the choices of the active one, which it becomes
+  totems.NewSet = function(self, name)
+    local choices = {}
+    for slot = 1, MAX_TOTEMS do
+      local choice = self:GetChoice(slot)
+      choices[slot] = choice and choice.name
+    end
+    table.insert(db.sets, { name = name, totems = choices })
+    self:SelectSet(table.getn(db.sets))
+  end
+
+  totems.RenameSet = function(self, name)
+    db.sets[db.active].name = name
+    self:Refresh()
+  end
+
+  -- the last set is kept
+  totems.DeleteSet = function(self)
+    if table.getn(db.sets) < 2 then return end
+    table.remove(db.sets, db.active)
+    self:SelectSet(math.min(db.active, table.getn(db.sets)))
+  end
+
+  local function FindSet(name)
+    name = name:lower()
+    for index, set in ipairs(db.sets) do
+      if set.name:lower() == name then return index end
+    end
+  end
+
+  -- /totemset <name> switches to a set, so a macro can bind each one
+  _G.SLASH_PFTOTEMSET1 = "/totemset"
+  SlashCmdList.PFTOTEMSET = function(msg)
+    local index = FindSet(strtrim(msg))
+    if index then
+      totems:SelectSet(index)
+    else
+      DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccpf|cffffffffUI|r: " .. T["No totem set named"] .. " " .. msg)
+    end
   end
 
   -- [ casting ]
@@ -117,29 +188,105 @@ pfUI:RegisterModule("totems", function ()
     if self.recall then CastSpellByID(self.recall.spellID) end
   end
 
+  local function IsChoiceDown(slot, choice)
+    local _, _, start, _, _, _, spellID = GetTotemInfo(slot)
+    return start > 0 and C_Spell.GetSpellName(spellID) == choice.name
+  end
+
   -- An element needs its chosen totem when its slot is empty or holds another
   -- totem, the totem tool is there to drop it, and it is off cooldown.
   local function NeedsChoice(slot, choice)
-    local haveTool, _, start, _, _, _, spellID = GetTotemInfo(slot)
-    if start > 0 then
-      if C_Spell.GetSpellName(spellID) == choice.name then return end
-    elseif not haveTool then
-      return
-    end
+    local haveTool, _, start = GetTotemInfo(slot)
+    if IsChoiceDown(slot, choice) or (start == 0 and not haveTool) then return end
 
     local cooldown = C_Spell.GetSpellCooldown(choice.spellID)
     return cooldown.duration == 0 or cooldown.isOnGCD
   end
 
-  -- Drops the first chosen totem, in bar order, that is not down yet. Each
-  -- press drops one, so pressing it over and over drops the whole set.
+  -- Drops the chosen totems, in bar order, that are not down yet. Most totems
+  -- share a cooldown with their element only, not the global cooldown, so
+  -- nampower queues them all at once and casts them one after another.
+  -- Without it each press drops one, as the client takes one cast at a time.
   totems.DropSet = function(self)
     for _, slot in ipairs(SHAMAN_TOTEM_PRIORITIES) do
       local choice = self:GetChoice(slot)
       if choice and NeedsChoice(slot, choice) then
-        CastSpellByID(choice.spellID)
-        return
+        if not HasNampower() then
+          CastSpellByID(choice.spellID)
+          return
+        end
+        QueueSpellByName(choice.name)
       end
+    end
+  end
+
+  -- [ group coverage ]
+  -- The buff of a totem has the totem's icon, so a unit with a buff of that
+  -- icon has it. Its caster cannot tell the totems apart, as a totem buff
+  -- names the unit that has it as its caster.
+  local groupUnits = { "player", "party1", "party2", "party3", "party4" }
+  local unitBuffs = {} -- unit -> [icon] = true
+  for _, unit in ipairs(groupUnits) do unitBuffs[unit] = {} end
+
+  local function ScanUnit(unit)
+    local icons = unitBuffs[unit]
+    for icon in pairs(icons) do icons[icon] = nil end
+
+    local index = 1
+    local aura = C_UnitAuras.GetAuraDataByIndex(unit, index, "HELPFUL")
+    while aura do
+      icons[aura.icon] = true
+      index = index + 1
+      aura = C_UnitAuras.GetAuraDataByIndex(unit, index, "HELPFUL")
+    end
+  end
+
+  -- Shows how far the buff of each totem reaches: the element greys out
+  -- while you lack it, and in a group a badge counts who has it. Only once
+  -- a totem's buff was seen, as many totems have none.
+  totems.UpdateCoverage = function(self)
+    for _, button in pairs(self.buttons) do
+      local icon = button.totemIcon
+      local covered, members, inRange = 0, 0
+
+      if icon then
+        for _, unit in ipairs(groupUnits) do
+          if UnitExists(unit) then
+            members = members + 1
+            if unitBuffs[unit][icon] then covered = covered + 1 end
+          end
+        end
+        inRange = unitBuffs.player[icon]
+        if covered > 0 then button.buffSeen = true end
+      end
+
+      local tracked = icon and button.buffSeen
+      button.icon:SetDesaturated(tracked and not inRange)
+
+      if tracked and members > 1 then
+        local color = covered == members and GREEN_FONT_COLOR
+          or covered == 0 and RED_FONT_COLOR or YELLOW_FONT_COLOR
+        button.coverage:SetText(covered .. "/" .. members)
+        button.coverage:SetTextColor(color:GetRGB())
+      else
+        button.coverage:SetText("")
+      end
+    end
+  end
+
+  -- the group members without the buff of an element's totem
+  local function AddMissing(button)
+    if not button.totemIcon or not button.buffSeen then return end
+
+    local missing
+    for _, unit in ipairs(groupUnits) do
+      if UnitExists(unit) and not unitBuffs[unit][button.totemIcon] then
+        missing = (missing and missing .. ", " or "") .. UnitName(unit)
+      end
+    end
+
+    if missing then
+      GameTooltip:AddLine(T["Missing"] .. ": " .. missing, RED_FONT_COLOR:GetRGB())
     end
   end
 
@@ -154,6 +301,77 @@ pfUI:RegisterModule("totems", function ()
     end
   end
 
+  -- [ alerts ]
+  -- The alert border of an element pulses in a color, or stops with nil.
+  local function SetAlert(button, r, g, b)
+    if r then
+      button.alert:SetBackdropBorderColor(r, g, b, 1)
+      if not button.alert:IsShown() then
+        button.alert:Show()
+        button.alert.pulse:Play()
+      end
+    elseif button.alert:IsShown() then
+      button.alert.pulse:Stop()
+      button.alert:Hide()
+    end
+  end
+
+  -- Warns in white once the totem of an element, which ends at 'expires',
+  -- has the configured seconds left. nil stops the warning, unless the
+  -- element is showing that its totem was killed.
+  local function WatchExpiry(button, expires)
+    if button.expires == expires then return end
+    button.expires = expires
+
+    if button.expiring then
+      button.expiring:Cancel()
+      button.expiring = nil
+    end
+
+    if not expires then
+      if not button.killed then SetAlert(button) end
+      return
+    end
+
+    if button.killed then
+      button.killed:Cancel()
+      button.killed = nil
+    end
+    SetAlert(button)
+
+    local warn = totems.expirywarn
+    if warn <= 0 then return end
+
+    local delay = expires - warn - GetTime()
+    if delay <= 0 then
+      SetAlert(button, 1, 1, 1)
+    else
+      button.expiring = C_Timer.NewTimer(delay, function()
+        button.expiring = nil
+        SetAlert(button, 1, 1, 1)
+      end)
+    end
+  end
+
+  -- An element whose totem was killed pulses red for a few seconds.
+  totems.Killed = function(self, slot, name, killer)
+    local button = self.buttons[slot]
+    WatchExpiry(button, nil)
+    SetAlert(button, 1, .2, .2)
+
+    if button.killed then button.killed:Cancel() end
+    button.killed = C_Timer.NewTimer(3, function()
+      button.killed = nil
+      SetAlert(button)
+    end)
+
+    if C.totems.killalert == "1" then
+      local text = killer and string.format(T["%s was killed by %s"], name, killer)
+        or string.format(T["%s was killed"], name)
+      UIErrorsFrame:AddMessage(text, 1, .3, .3)
+    end
+  end
+
   -- [ element buttons ]
   local function ElementEnter(self)
     local slot = self:GetID()
@@ -162,9 +380,10 @@ pfUI:RegisterModule("totems", function ()
     local active = spellID and spellID > 0
 
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-    GameTooltip:SetSpellByID(active and spellID or choice.spellID)
+    GameTooltip:SetSpellByID(active and spellID or choice.spellID, false, true)
     AddHint(T["Left Click"], choice.name)
     if active then AddHint(T["Right Click"], T["Target Totem"]) end
+    AddMissing(self)
     GameTooltip:Show()
 
     if table.getn(totems.known[slot]) > 1 then
@@ -197,11 +416,100 @@ pfUI:RegisterModule("totems", function ()
     totems:Recall()
   end
 
+  -- [ set button ]
+  local function NameSet(mode, name)
+    name = strtrim(name)
+    if name == "" then return end
+    if mode == "rename" then totems:RenameSet(name) else totems:NewSet(name) end
+  end
+
+  StaticPopupDialogs["PFUI_TOTEM_SET_NAME"] = {
+    text = T["Totem Set Name"],
+    button1 = ACCEPT,
+    button2 = CANCEL,
+    hasEditBox = 1,
+    maxLetters = 32,
+    OnAccept = function(mode)
+      NameSet(mode, _G[this:GetParent():GetName() .. "EditBox"]:GetText())
+    end,
+    EditBoxOnEnterPressed = function(mode)
+      NameSet(mode, this:GetText())
+      this:GetParent():Hide()
+    end,
+    EditBoxOnEscapePressed = function() this:GetParent():Hide() end,
+    timeout = 0, whileDead = 1, hideOnEscape = 1,
+  }
+
+  -- 'mode' is "new" or "rename"
+  local function OpenNamePopup(mode)
+    local dialog = StaticPopup_Show("PFUI_TOTEM_SET_NAME", nil, nil, mode)
+    if not dialog then return end
+    local editbox = _G[dialog:GetName() .. "EditBox"]
+    editbox:SetText(mode == "rename" and totems:GetSet().name or "")
+    editbox:HighlightText()
+    editbox:SetFocus()
+  end
+
+  local function IsActiveSet(index)
+    return db.active == index
+  end
+
+  local function SelectSet(index)
+    totems:SelectSet(index)
+  end
+
+  local function DeleteSet()
+    totems:DeleteSet()
+  end
+
+  local function GenerateSetMenu(owner, rootDescription)
+    rootDescription:CreateTitle(T["Totem Sets"])
+    for index, set in ipairs(db.sets) do
+      rootDescription:CreateRadio(set.name, IsActiveSet, SelectSet, index)
+    end
+    CreateMenuDivider(rootDescription)
+    rootDescription:CreateButton(T["New Set"], OpenNamePopup, "new")
+    rootDescription:CreateButton(T["Rename Set"], OpenNamePopup, "rename")
+    rootDescription:CreateButton(T["Delete Set"], DeleteSet):SetEnabled(table.getn(db.sets) > 1)
+  end
+
+  -- the set's name and its totems, bright when down
+  local function SetEnter(self)
+    GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+    GameTooltip:SetText(totems:GetSet().name)
+    for _, slot in ipairs(SHAMAN_TOTEM_PRIORITIES) do
+      local choice = totems:GetChoice(slot)
+      if choice then
+        local icon = CreateTextureMarkup(choice.icon, 64, 64, 14, 14, .08, .92, .08, .92)
+        local color = IsChoiceDown(slot, choice) and HIGHLIGHT_FONT_COLOR or GRAY_FONT_COLOR
+        GameTooltip:AddLine(icon .. " " .. choice.name, color:GetRGB())
+      end
+    end
+    AddHint(T["Left Click"], T["Drop Totem Set"])
+    AddHint(T["Right Click"], T["Totem Sets"])
+    AddHint(T["Mouse Wheel"], T["Switch Totem Set"])
+    GameTooltip:Show()
+  end
+
+  local function SetClick(self, button)
+    if button == "LeftButton" then
+      totems:DropSet()
+    elseif button == "RightButton" then
+      GameTooltip:Hide()
+      MenuUtil.CreateContextMenu(self, GenerateSetMenu)
+    end
+  end
+
+  local function SetWheel(self, delta)
+    totems:CycleSet(-delta)
+    SetEnter(self)
+  end
+
   -- [ flyout entries ]
   local function EntryEnter(self)
     self.highlight:Show()
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-    GameTooltip:SetSpellByID(self.totem.spellID)
+    GameTooltip:SetSpellByID(self.totem.spellID, false, true)
     AddHint(T["Left Click"], T["Cast and choose"])
     AddHint(T["Right Click"], T["Choose"])
     GameTooltip:Show()
@@ -291,6 +599,22 @@ pfUI:RegisterModule("totems", function ()
     button.cd = CreateCooldown(button.cdbg, "aura", C.totems, "timers", "pfTotemsBar" .. slot .. "Cooldown")
     button.spellcd = CreateCooldown(button.cdbg, "spell", C.bars, "timers", "pfTotemsBar" .. slot .. "SpellCooldown")
 
+    button.coverage = button.overlay:CreateFontString(nil, "OVERLAY")
+    button.coverage:SetJustifyH("RIGHT")
+    button.coverage:SetJustifyV("BOTTOM")
+
+    button.alert = CreateFrame("Frame", nil, button)
+    button.alert:SetBackdrop(backdrop_highlight)
+    button.alert:SetAllPoints()
+    button.alert:Hide()
+    button.alert.pulse = button.alert:CreateAnimationGroup()
+    button.alert.pulse:SetLooping("BOUNCE")
+    local fade = button.alert.pulse:CreateAnimation("Alpha")
+    fade:SetFromAlpha(1)
+    fade:SetToAlpha(.3)
+    fade:SetDuration(.5)
+    fade:SetSmoothing("IN_OUT")
+
     -- mouse-enabled so the gaps between entries keep it open
     button.flyout = CreateFrame("Frame", nil, button)
     button.flyout:EnableMouse(true)
@@ -303,6 +627,25 @@ pfUI:RegisterModule("totems", function ()
     button:SetScript("OnEnter", ElementEnter)
     button:SetScript("OnLeave", ElementLeave)
     button:SetScript("OnClick", ElementClick)
+    return button
+  end
+
+  -- the set button shows the set's four totems in a square
+  local function CreateSetButton()
+    local button = CreateIconButton("pfTotemsSet", totems, "PFTOTEMDROP")
+    button.menuMixin = pfUIMenuStyleMixin
+    button.icon:Hide()
+    button.totems = {}
+    for _, slot in ipairs(SHAMAN_TOTEM_PRIORITIES) do
+      button.totems[slot] = button:CreateTexture(nil, "ARTWORK")
+      button.totems[slot]:SetTexCoord(.08, .92, .08, .92)
+    end
+
+    button:EnableMouseWheel(true)
+    button:SetScript("OnEnter", SetEnter)
+    button:SetScript("OnLeave", GameTooltip_Hide)
+    button:SetScript("OnClick", SetClick)
+    button:SetScript("OnMouseWheel", SetWheel)
     return button
   end
 
@@ -359,6 +702,7 @@ pfUI:RegisterModule("totems", function ()
       end
     end
     self.recallbutton.keybind:SetText(GetKeybindText(self.recallbutton.bindcommand))
+    self.setbutton.keybind:SetText(GetKeybindText(self.setbutton.bindcommand))
   end
 
   local function SetSpellCooldown(cd, spellID)
@@ -387,10 +731,12 @@ pfUI:RegisterModule("totems", function ()
 
   -- Shows each element in its state: the active totem with its timer, or
   -- the chosen one dimmed. Red when the totem tool of the element is missing.
-  -- Totemic Recall follows, dimmed while no totem is down.
+  -- The set button leads, Totemic Recall follows, dimmed while no totem is
+  -- down.
   totems.Refresh = function(self)
-    local shown = {}
-    local anyActive
+    local set = self.setbutton
+    local shown = { set }
+    local anyActive, anyKnown
 
     for _, slot in ipairs(SHAMAN_TOTEM_PRIORITIES) do
       local button = self.buttons[slot]
@@ -398,13 +744,31 @@ pfUI:RegisterModule("totems", function ()
       local haveTool, _, start, duration, icon = GetTotemInfo(slot)
       local active = start > 0 and icon and icon ~= ""
       anyActive = anyActive or active
+      anyKnown = anyKnown or choice
+
+      if choice then
+        local bright = IsChoiceDown(slot, choice) and 1 or .35
+        set.totems[slot]:SetTexture(choice.icon)
+        set.totems[slot]:SetVertexColor(bright, bright, bright)
+        set.totems[slot]:Show()
+      else
+        set.totems[slot]:Hide()
+      end
 
       if choice and (active or not self.onlyactive) then
         if active then
           button.icon:SetTexture(icon)
           button.icon:SetVertexColor(1, 1, 1)
           CooldownFrame_SetTimer(button.cd, start, duration, 1)
+          WatchExpiry(button, start + duration)
+          if button.totemStart ~= start then
+            button.totemStart = start
+            button.buffSeen = nil
+          end
+          button.totemIcon = icon
         else
+          WatchExpiry(button, nil)
+          button.totemIcon = nil
           button.icon:SetTexture(choice.icon)
           if haveTool then
             button.icon:SetVertexColor(.5, .5, .5)
@@ -434,12 +798,14 @@ pfUI:RegisterModule("totems", function ()
     end
 
     self:UpdateCooldowns()
+    self:UpdateCoverage()
 
-    local count = table.getn(shown)
-    if count == 0 then
+    if not anyKnown then
       self:Hide()
       return
     end
+
+    local count = table.getn(shown)
 
     local thickness = self.iconsize + self.spacing * 2
     for i, button in ipairs(shown) do
@@ -477,16 +843,32 @@ pfUI:RegisterModule("totems", function ()
     self.flyoutdir = C.totems.flyout
     self.onlyactive = C.totems.onlyactive == "1"
     self.spacing = tonumber(C.totems.spacing) * GetPerfectPixel()
+    self.expirywarn = tonumber(C.totems.expirywarn) or 0
 
     for slot = 1, MAX_TOTEMS do
       local button = self.buttons[slot] or CreateElement(slot)
       self.buttons[slot] = button
       button:SetSize(self.iconsize, self.iconsize)
       button.cdbg:SetSize(self.iconsize - 3, self.iconsize - 3)
+      button.expires = 0 -- arms the expiry warning again with the new setting
+      local offset = tonumber(C.bars.font_offset)
+      SetAllPointsOffset(button.coverage, button, offset, -offset)
+      button.coverage:SetFont(pfUI.media[C.bars.font], tonumber(C.bars.bind_size), "OUTLINE")
       UpdateKeybindFont(button)
       for _, entry in ipairs(button.flyout.entries) do
         UpdateKeybindFont(entry)
       end
+    end
+
+    self.setbutton = self.setbutton or CreateSetButton()
+    self.setbutton:SetSize(self.iconsize, self.iconsize)
+    UpdateKeybindFont(self.setbutton)
+    local half = (self.iconsize - 4) / 2
+    for i, slot in ipairs(SHAMAN_TOTEM_PRIORITIES) do
+      local column, row = (i - 1) % 2, math.floor((i - 1) / 2)
+      local texture = self.setbutton.totems[slot]
+      texture:SetSize(half, half)
+      texture:SetPoint("TOPLEFT", self.setbutton, "TOPLEFT", 2 + column * half, -2 - row * half)
     end
 
     self.recallbutton = self.recallbutton or CreateRecall()
@@ -506,6 +888,60 @@ pfUI:RegisterModule("totems", function ()
     end
   end
 
+  -- [ killed totems ]
+  -- The combat log names the GUID of each totem you summon. Every totem that
+  -- goes away is logged as destroyed, so a kill is one with time left that
+  -- no totem cast of yours replaced.
+  local playerGUID     -- known once in the world
+  local guidSlots = {} -- totem GUID -> element slot
+  local attackers = {} -- element slot -> the last unit that damaged its totem
+  local castAt = {}    -- element slot -> time of your last cast that replaces its totem
+
+  local function OnCombatLog(_, _, subevent, _, sourceGUID, sourceName, _, _, destGUID, destName, _, _, spellId)
+    if sourceGUID == playerGUID then
+      local kind = totems.kinds[spellId]
+      if subevent == "SPELL_CAST_SUCCESS" and kind == "recall" then
+        for slot = 1, MAX_TOTEMS do castAt[slot] = GetTime() end
+      elseif subevent == "SPELL_CAST_SUCCESS" and kind then
+        castAt[kind] = GetTime()
+      elseif subevent == "SPELL_SUMMON" and kind and kind ~= "recall" then
+        for guid, slot in pairs(guidSlots) do
+          if slot == kind then guidSlots[guid] = nil end
+        end
+        guidSlots[destGUID] = kind
+        attackers[kind] = nil
+      end
+    end
+
+    local slot = guidSlots[destGUID]
+    if not slot then return end
+
+    if subevent == "UNIT_DESTROYED" then
+      guidSlots[destGUID] = nil
+      if GetTime() - (castAt[slot] or 0) > 1 and GetTotemTimeLeft(slot) > 1 and not UnitIsDeadOrGhost("player") then
+        totems:Killed(slot, destName, attackers[slot])
+      end
+    elseif subevent:find("_DAMAGE$") then
+      attackers[slot] = sourceName
+    end
+  end
+
+  pfUI.events:RegisterFrameEventAndCallback("COMBAT_LOG_EVENT_UNFILTERED", OnCombatLog)
+
+  local function ScanGroup()
+    playerGUID = UnitGUID("player")
+    for _, unit in ipairs(groupUnits) do ScanUnit(unit) end
+    totems:UpdateCoverage()
+  end
+
+  pfUI.events:RegisterFrameEventAndCallback("UNIT_AURA", function(_, unit)
+    if unitBuffs[unit] then
+      ScanUnit(unit)
+      totems:UpdateCoverage()
+    end
+  end)
+  pfUI.events:RegisterFrameEventAndCallback("PARTY_MEMBERS_CHANGED", ScanGroup)
+  pfUI.events:RegisterFrameEventAndCallback("PLAYER_ENTERING_WORLD", ScanGroup)
   pfUI.events:RegisterFrameEventAndCallback("SPELLS_CHANGED", function() totems:UpdateList() end)
   pfUI.events:RegisterFrameEventAndCallback("SPELL_UPDATE_COOLDOWN", function() totems:UpdateCooldowns() end)
   pfUI.events:RegisterFrameEventAndCallback("UPDATE_BINDINGS", function() totems:UpdateBindings() end)

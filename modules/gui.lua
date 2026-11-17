@@ -15,12 +15,20 @@ pfUI:RegisterModule("gui", function ()
     buttons  = "pfUIConfigButtonsRowTemplate",
     header   = "pfUIConfigHeaderRowTemplate",
     warning  = "pfUIConfigWarningRowTemplate",
+    -- the head of a variant page
+    picker   = "pfUIConfigPickerRowTemplate",
+    -- the search results: the page of the settings under it, and a row on a
+    -- frame page, which only links to its page
+    breadcrumb = "pfUIConfigLinkRowTemplate",
+    link     = "pfUIConfigLinkRowTemplate",
   }
 
   -- the height of the rows on a list page that are not 22 high
   local extents = {
     header  = 45,
     warning = 50,
+    picker  = 40,
+    breadcrumb = 30,
   }
 
   -- Stores that read and write game state the way a config table holds a
@@ -45,6 +53,11 @@ pfUI:RegisterModule("gui", function ()
       __newindex = function(_, name, value) _G[name] = value end,
     }),
   }
+
+  -- a cvar row resets to the game's default
+  pfUI:SetConfigDefaults(stores.CVAR, setmetatable({}, {
+    __index = function(_, cvar) return GetCVarDefault(cvar) end,
+  }))
 
   -- the function that applies the settings of a unit frame or a module, by
   -- the frame's label or the module's name
@@ -108,9 +121,17 @@ pfUI:RegisterModule("gui", function ()
   local Builder = {}
   Builder.__index = Builder
 
+  -- `opts` takes `min`, `max` and `step` (a number becomes a slider),
+  -- `requires` (the key of a switch in the same table, "!key" for one that
+  -- must be off) and `preview` ("font" or "texture", on a dropdown).
+  local function AddSetting(self, setting, opts)
+    for field, value in pairs(opts or {}) do setting[field] = value end
+    table.insert(self.settings, setting)
+  end
+
   local function Value(kind)
-    return function(self, label, tbl, key, update)
-      table.insert(self.settings, { type = kind, label = label, table = tbl, key = key, update = update })
+    return function(self, label, tbl, key, update, opts)
+      AddSetting(self, { type = kind, label = label, table = tbl, key = key, update = update }, opts)
     end
   end
 
@@ -120,8 +141,8 @@ pfUI:RegisterModule("gui", function ()
   Builder.Color = Value("color")
   Builder.List = Value("list")
 
-  function Builder:Dropdown(label, tbl, key, values, update)
-    table.insert(self.settings, { type = "dropdown", label = label, table = tbl, key = key, values = values, update = update })
+  function Builder:Dropdown(label, tbl, key, values, update, opts)
+    AddSetting(self, { type = "dropdown", label = label, table = tbl, key = key, values = values, update = update }, opts)
   end
 
   function Builder:Header(label)
@@ -137,14 +158,25 @@ pfUI:RegisterModule("gui", function ()
     table.insert(self.settings, { type = "buttons", buttons = { ... } })
   end
 
-  -- the settings of a list page, built the first time they are needed
-  local function GetSettings(page)
-    if not page.settings then
+  -- The settings of a list page, built the first time they are needed. A
+  -- variant page has a set for each variant: `variant` names one, else the
+  -- one the page shows.
+  local function GetSettings(page, variant)
+    variant = variant or page.variant or ""
+    page.settings = page.settings or {}
+    if not page.settings[variant] then
       local p = setmetatable({ settings = {} }, Builder)
-      page.build(p)
-      page.settings = p.settings
+      page.build(p, page.variant and variant, page.variantLabels and page.variantLabels[variant])
+      page.settings[variant] = p.settings
+
+      -- the settings of a page with a module dim while it is disabled
+      if page.module then
+        for _, setting in ipairs(p.settings) do
+          if setting.key then setting.module = page.module end
+        end
+      end
     end
-    return page.settings
+    return page.settings[variant]
   end
 
   local function AddToNavigation(page, category, title)
@@ -182,8 +214,8 @@ pfUI:RegisterModule("gui", function ()
   pfUI.gui:Hide()
 
   pfUI.gui:SetScript("OnShow", function(self)
-    -- the reload question counts the changes since the window opened
-    self.settingChanged = nil
+    -- a plugin may have set settingChanged since
+    self:UpdateReloadBanner()
 
     -- exit unlock mode
     if pfUI.unlock and pfUI.unlock:IsShown() then
@@ -204,10 +236,6 @@ pfUI:RegisterModule("gui", function ()
     if ColorPickerFrame and ColorPickerFrame:IsShown() then
       ColorPickerFrame:Hide()
     end
-
-    if self.settingChanged then
-      self:Reload()
-    end
   end)
 
   pfUI.gui:SetScript("OnDragStart", function(self)
@@ -221,6 +249,18 @@ pfUI:RegisterModule("gui", function ()
   CreateBackdrop(pfUI.gui, nil, true, .85)
   CreateBackdropShadow(pfUI.gui)
   table.insert(UISpecialFrames, "pfConfigGUI")
+
+  -- The grip in the bottom right corner resizes the window, from its first
+  -- size up to the screen's. The client's layout cache keeps the size, as it
+  -- keeps the place the window was dragged to.
+  -- The engine holds the bounds while sizing, so the corner stays under the
+  -- cursor; the template's own check only puts a size back after the fact.
+  pfUI.gui:SetResizable(true)
+  pfUI.gui:SetClampedToScreen(true)
+  pfUI.gui:SetResizeBounds(720, 480, GetScreenWidth(), GetScreenHeight())
+  pfUI.gui.resize = CreateFrame("Button", nil, pfUI.gui, "PanelResizeButtonTemplate")
+  pfUI.gui.resize:SetPoint("BOTTOMRIGHT", -3, 3)
+  pfUI.gui.resize:Init(pfUI.gui, 720, 480, GetScreenWidth(), GetScreenHeight())
 
   -- decorations
   pfUI.gui.title = pfUI.gui:CreateFontString(nil, "ARTWORK", "GameFontWhite")
@@ -258,6 +298,55 @@ pfUI:RegisterModule("gui", function ()
     self:GetParent():Hide()
   end)
 
+  -- [ Reload banner ]
+  -- The settings without an updater that changed since the UI loaded, with
+  -- the value each had then. A setting that goes back to it drops out.
+  local reloads, reloadCount = {}, 0
+  local NOVALUE = {}
+
+  local banner = CreateFrame("Frame", nil, pfUI.gui)
+  banner:SetPoint("RIGHT", pfUI.gui.close, "LEFT", -10, 0)
+  banner:SetHeight(16)
+  banner:Hide()
+
+  banner.button = CreateFrame("Button", nil, banner, "UIPanelButtonTemplate")
+  banner.button:SetPoint("RIGHT", 0, 0)
+  banner.button:SetSize(90, 16)
+  banner.button:SetText(RELOADUI)
+  banner.button:SetScript("OnClick", function() ReloadUI() end)
+  SkinButton(banner.button)
+
+  banner.text = banner:CreateFontString(nil, "ARTWORK", "GameFontWhite")
+  banner.text:SetFont(pfUI.font_default, C.global.font_size)
+  banner.text:SetPoint("RIGHT", banner.button, "LEFT", -8, 0)
+  banner.text:SetTextColor(1,.67,.67,1)
+  banner:SetWidth(400)
+
+  function pfUI.gui:UpdateReloadBanner()
+    -- a plugin that sets settingChanged counts as one more
+    local count = reloadCount + (self.settingChanged and 1 or 0)
+    banner.text:SetFormattedText(T["Changes that need a reload: %d"], count)
+    banner:SetShown(count > 0)
+  end
+
+  -- Counts a change to tbl[key] that applies after a reload; `old` is the
+  -- value before it.
+  function pfUI.gui:NoteReload(tbl, key, old)
+    reloads[tbl] = reloads[tbl] or {}
+    local loaded = reloads[tbl][key]
+    local value = tbl[key]
+
+    if loaded == nil then
+      reloads[tbl][key] = old == nil and NOVALUE or old
+      reloadCount = reloadCount + 1
+    elseif loaded == value or (loaded == NOVALUE and value == nil) then
+      reloads[tbl][key] = nil
+      reloadCount = reloadCount - 1
+    end
+
+    self:UpdateReloadBanner()
+  end
+
   -- the navigation on the left and the open page right of it
   local body = CreateFrame("Frame", nil, pfUI.gui)
   body:SetPoint("TOPLEFT", 7, -25)
@@ -272,16 +361,21 @@ pfUI:RegisterModule("gui", function ()
   nav:SetPoint("BOTTOMLEFT", 0, 0)
   nav:SetWidth(NAV_WIDTH)
 
-  -- the open page and its category show in pfUI's color
+  -- The open page and its category show in pfUI's color, a page whose
+  -- module is disabled in grey.
   local function UpdateNavButton(button)
     local entry = button.node:GetData()
     local open = not searching and current
+    local page = entry.pages and entry.page or entry
+    local disabled = page and page.module and C.disabled[page.module] == "1"
+    local alpha = disabled and .4 or 1
+
     if open and (entry == open or entry == open.category) then
-      button.text:SetTextColor(.2,1,.8,1)
+      button.text:SetTextColor(.2,1,.8,alpha)
       button.bg:SetColorTexture(1,1,1,1)
       button.bg:SetGradientAlpha("HORIZONTAL", 0,0,0,0, 1,1,1,.05)
     else
-      button.text:SetTextColor(1,1,1,1)
+      button.text:SetTextColor(1,1,1,alpha)
       button.bg:SetColorTexture(0,0,0,0)
     end
   end
@@ -338,29 +432,97 @@ pfUI:RegisterModule("gui", function ()
   SetAllPointsOffset(list, content, 2)
   list:Hide()
 
-  -- the setting that the last search result pointed at
-  local highlighted
+  -- [ Preview ]
+  -- A page with a preview shows it in a box above its list. The page's
+  -- preview table has its `GetHeight(variant)`, `Show(box, variant)`, which draws it in
+  -- the box, `Hide()`, which takes it out again when the page goes,
+  -- `Refresh()`, which draws it again after a change, and `parts`, which
+  -- lead to their settings (see Preview parts).
+  local previewBox = CreateFrame("Frame", nil, content)
+  previewBox:SetPoint("TOPLEFT", 2, -2)
+  previewBox:SetPoint("TOPRIGHT", -2, -2)
+  previewBox:Hide()
+
+  previewBox.bg = previewBox:CreateTexture(nil, "BACKGROUND")
+  previewBox.bg:SetAllPoints()
+  previewBox.bg:SetColorTexture(0, 0, 0, .35)
+
+  previewBox.line = previewBox:CreateTexture(nil, "BORDER")
+  previewBox.line:SetPoint("BOTTOMLEFT")
+  previewBox.line:SetPoint("BOTTOMRIGHT")
+  previewBox.line:SetHeight(1)
+  previewBox.line:SetColorTexture(.2, 1, .8, .5)
+
+  -- the list fills the content, or the room under the preview
+  local function PlaceList(preview, variant)
+    list:ClearAllPoints()
+    if preview then
+      previewBox:SetHeight(preview.GetHeight(variant))
+      previewBox:Show()
+      list:SetPoint("TOPLEFT", previewBox, "BOTTOMLEFT", 0, -2)
+      list:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -2, 2)
+    else
+      previewBox:Hide()
+      SetAllPointsOffset(list, content, 2)
+    end
+  end
+
+  -- the settings that the last search result pointed at, as keys, and the
+  -- rows on a frame page that it pointed at
+  local highlighted, highlightedFrames = {}, {}
+
+  local function StopFlash(group)
+    group.flashes = group.flashes - 1
+    if group.flashes <= 0 then group:Stop() end
+  end
 
   local function SetHighlight(row, shown)
     if shown and not row.highlight then
       row.highlight = row:CreateTexture(nil, "OVERLAY")
       row.highlight:SetAllPoints()
       row.highlight:SetColorTexture(.2,1,.8,.2)
+
+      -- a few blinks when a search result jumps to the row
+      row.flash = row.highlight:CreateAnimationGroup()
+      row.flash:SetLooping("BOUNCE")
+      row.flash:SetScript("OnLoop", StopFlash)
+      local fade = row.flash:CreateAnimation("Alpha")
+      fade:SetFromAlpha(1)
+      fade:SetToAlpha(0)
+      fade:SetDuration(.25)
     end
 
     if row.highlight then
       row.highlight:SetShown(shown)
+      if not shown then row.flash:Stop() end
     end
+  end
+
+  local function Flash(row)
+    SetHighlight(row, true)
+    row.flash.flashes = 6
+    row.flash:Stop()
+    row.flash:Play()
+  end
+
+  local function ClearHighlights()
+    table.wipe(highlighted)
+    for _, frame in ipairs(highlightedFrames) do
+      SetHighlight(frame, false)
+    end
+    table.wipe(highlightedFrames)
   end
 
   local function InitRow(row, setting)
     row:Init(setting)
-    SetHighlight(row, setting == highlighted)
+    SetHighlight(row, highlighted[setting] or false)
   end
 
   local listView = CreateScrollBoxListLinearView(0, 5, 0, 3, 1)
   listView:SetElementFactory(function(factory, setting)
-    if templates[setting.type] then
+    if setting.type == "number" and setting.min then
+      factory("pfUIConfigSliderRowTemplate", InitRow)
+    elseif templates[setting.type] then
       factory(templates[setting.type], InitRow)
     else
       factory("Frame", nop) -- a spacer
@@ -374,19 +536,42 @@ pfUI:RegisterModule("gui", function ()
   -- a row that scrolls out of view lets go of the cursor and the keyboard
   listView:SetElementResetter(function(row)
     if row.tex then row.tex:Hide() end
+    if row.flash then row.flash:Stop() end
     if row.input and row.input.ClearFocus then row.input:ClearFocus() end
   end)
 
   ScrollUtil.InitScrollBoxListWithScrollBar(list.ScrollBox, list.ScrollBar, listView)
 
-  -- an open dropdown would set the setting that its row shows next
+  -- An open dropdown would set the setting that its row shows next, so the
+  -- menus close when the rows move. OnScroll also fires on every layout pass
+  -- of the list, one of which can come while a dropdown opens its menu, and
+  -- closing it then pulls the menu from under the dropdown (issue #86).
+  local scrollOffset
   list.ScrollBox:RegisterCallback(BaseScrollBoxEvents.OnScroll, function()
+    local offset = list.ScrollBox:GetDerivedScrollOffset()
+    if offset == scrollOffset then return end
+    scrollOffset = offset
     Menu.GetManager():CloseMenus()
   end, list)
 
   -- A change can show on other rows: in the entries a dropdown offers, or
   -- in a value that the change's updater set as well.
   pfUI.events:RegisterCallback("config:changed", function(_, tbl, key)
+    -- the rows on the frame pages keep their default marks right as well
+    for _, entry in ipairs(searchRows) do
+      if entry.frame.UpdateState then entry.frame:UpdateState() end
+    end
+
+    -- a module switched on or off greys its pages in the navigation
+    if tbl == C.disabled then
+      nav.ScrollBox:ForEachFrame(UpdateNavButton)
+    end
+
+    -- the preview draws every change, its page's own and the general ones
+    if previewBox:IsVisible() and current and current.preview then
+      current.preview.Refresh()
+    end
+
     if not list:IsVisible() then return end
 
     list.ScrollBox:ForEachFrame(function(row)
@@ -395,104 +580,66 @@ pfUI:RegisterModule("gui", function ()
       if setting and row.Refresh and (setting.table ~= tbl or setting.key ~= key) then
         row:Refresh()
       end
+      if row.UpdateState then row:UpdateState() end
     end)
   end)
-
-  -- [ Search results ]
-  local results = CreateFrame("Frame", nil, content, "pfUIScrollBoxListTemplate")
-  SetAllPointsOffset(results, content, 2)
-  results:Hide()
-
-  -- the frame-page row that the last search result pointed at
-  local highlightedFrame
-
-  -- opens the page of a search result and marks the result's row
-  local function PointAt(result)
-    pfUI.gui:OpenPage(result.page.id)
-
-    if highlightedFrame then
-      SetHighlight(highlightedFrame, false)
-      highlightedFrame = nil
-    end
-
-    if result.setting then
-      highlighted = result.setting
-      list.ScrollBox:ScrollToElementData(highlighted, ScrollBoxConstants.AlignCenter)
-      list.ScrollBox:ForEachFrame(function(row)
-        SetHighlight(row, row.setting == highlighted)
-      end)
-    else
-      highlightedFrame = result.frame
-      SetHighlight(highlightedFrame, true)
-    end
-  end
-
-  local function SearchResultOnClick(button)
-    pfUI.gui.search:ClearFocus()
-    PointAt(button.result)
-  end
-
-  local function SearchResultOnEnter(button)
-    button.tex:Show()
-  end
-
-  local function SearchResultOnLeave(button)
-    button.tex:Hide()
-  end
-
-  local function InitSearchResult(button, result)
-    -- one-time setup of a pooled row
-    if not button.text then
-      button:SetScript("OnClick", SearchResultOnClick)
-      button:SetScript("OnEnter", SearchResultOnEnter)
-      button:SetScript("OnLeave", SearchResultOnLeave)
-
-      button.text = button:CreateFontString(nil, "ARTWORK", "GameFontWhite")
-      button.text:SetFont(pfUI.font_default, C.global.font_size, "OUTLINE")
-      button.text:SetAllPoints()
-      button.text:SetJustifyH("LEFT")
-
-      button.tex = button:CreateTexture(nil, "BACKGROUND")
-      button.tex:SetColorTexture(1,1,1,.05)
-      button.tex:SetAllPoints()
-      button.tex:Hide()
-    end
-
-    button.result = result
-
-    -- the categories and the page, then the setting
-    local page = result.page
-    local path = "|cff33ffcc" .. page.category.title .. "|r » "
-    if page.title ~= page.category.title then
-      path = path .. "|cff33ffcc" .. page.title .. "|r » "
-    end
-    button.text:SetText(path .. "|cffffffff" .. result.label)
-  end
-
-  local resultsView = CreateScrollBoxListLinearView(0, 0, 0, 0, 5)
-  resultsView:SetElementExtent(20)
-  resultsView:SetElementInitializer("Button", InitSearchResult)
-  ScrollUtil.InitScrollBoxListWithScrollBar(results.ScrollBox, results.ScrollBar, resultsView)
 
   -- [ Opening pages ]
   -- hides the open page or the search results
   local function HideContent()
-    if current and current.build and list:IsShown() then
+    if current and current.build and list:IsShown() and not searching then
       current.scroll = list.ScrollBox:GetScrollPercentage()
     end
 
     list:Hide()
-    results:Hide()
+    previewBox:Hide()
+    if current and current.preview then current.preview.Hide() end
 
     if current and current.frame then
       current.frame:Hide()
     end
   end
 
+  -- The switch of a page's module, named after its category, or after the
+  -- page where the category's pages switch different modules.
+  local function GetModuleSwitch(page)
+    if not page.switch then
+      local name = page.category.title
+      for _, other in ipairs(page.category.pages) do
+        if other.module and other.module ~= page.module then name = page.title end
+      end
+
+      -- the disabled list holds "1" for a module that is off
+      pfUI:UpdateConfig("disabled", nil, page.module, "0")
+      page.switch = { type = "checkbox", label = T["Enable"] .. " " .. name, table = C.disabled, key = page.module, invert = true }
+    end
+    return page.switch
+  end
+
   local function ShowListPage(page)
+    PlaceList(page.preview, page.variant)
+    if page.preview then page.preview.Show(previewBox, page.variant) end
     list:Show()
-    page.provider = page.provider or CreateDataProvider(GetSettings(page))
-    list.ScrollBox:SetDataProvider(page.provider)
+
+    -- a variant page leads with its picker, a page with a module with its
+    -- switch
+    local variant = page.variant or ""
+    page.providers = page.providers or {}
+    if not page.providers[variant] then
+      local rows = {}
+      if page.variant then
+        table.insert(rows, page.picker)
+      end
+      if page.module then
+        table.insert(rows, GetModuleSwitch(page))
+      end
+      for _, setting in ipairs(GetSettings(page)) do
+        table.insert(rows, setting)
+      end
+      page.providers[variant] = CreateDataProvider(rows)
+    end
+
+    list.ScrollBox:SetDataProvider(page.providers[variant])
     list.ScrollBox:SetScrollPercentage(page.scroll or 0, ScrollBoxConstants.NoScrollInterpolation)
   end
 
@@ -528,14 +675,20 @@ pfUI:RegisterModule("gui", function ()
     page.frame:Show()
   end
 
-  -- Opens a page by its id, in the window, and shows the window.
-  function pfUI.gui:OpenPage(id)
+  -- Opens a page by its id, in the window, and shows the window. A variant
+  -- page shows `variant` if given, else the one it showed last.
+  function pfUI.gui:OpenPage(id, variant)
     local page = pages[id]
     if not page then return end
 
     HideContent()
     searching = nil
     current = page
+
+    if page.variant and variant and variant ~= page.variant then
+      page.variant = variant
+      page.scroll = 0
+    end
 
     if page.build then
       ShowListPage(page)
@@ -555,10 +708,84 @@ pfUI:RegisterModule("gui", function ()
   end
 
   -- Adds a list page. `build(p)` adds its settings with the methods of
-  -- Builder, the first time the page is needed.
-  function pfUI.gui:AddPage(id, category, title, build)
+  -- Builder, the first time the page is needed. `opts` may hold `module`,
+  -- a pfUI module the page leads with a switch for, and `preview` (see the
+  -- preview box).
+  function pfUI.gui:AddPage(id, category, title, build, opts)
     if pages[id] then return end
-    AddToNavigation({ id = id, build = build }, category, title)
+    opts = opts or {}
+    AddToNavigation({ id = id, build = build, module = opts.module, preview = opts.preview }, category, title)
+  end
+
+  -- Copies the settings that a variant page shows from one variant to
+  -- another: the keys of the variant's own table that both show. Each
+  -- updater they name runs once afterwards.
+  local function CopyVariant(page, from, to)
+    local source, target = page.tableOf(from), page.tableOf(to)
+
+    local shown = {}
+    for _, setting in ipairs(GetSettings(page, from)) do
+      if setting.table == source and setting.key then shown[setting.key] = true end
+    end
+
+    local updates = {}
+    for _, setting in ipairs(GetSettings(page, to)) do
+      local key = setting.key
+      if setting.table == target and shown[key] and target[key] ~= source[key] then
+        local old = target[key]
+        target[key] = source[key]
+        if setting.update then
+          updates[setting.update] = true
+        else
+          pfUI.gui:NoteReload(target, key, old)
+        end
+      end
+    end
+
+    for update in pairs(updates) do update() end
+    pfUI.events:TriggerEvent("config:changed", target)
+  end
+
+  -- Adds a list page that shows one of several variants of the same
+  -- settings, picked at its top. `variants` holds { key, label } pairs,
+  -- `tableOf(key)` returns the config table of a variant, and
+  -- `build(p, key, label)` adds the settings of one. `opts` as in AddPage.
+  function pfUI.gui:AddVariantPage(id, category, title, variants, tableOf, build, opts)
+    if pages[id] then return end
+
+    opts = opts or {}
+    local page = { id = id, build = build, module = opts.module, preview = opts.preview,
+      tableOf = tableOf, variant = variants[1][1], variantLabels = {} }
+    local values = {}
+    for _, entry in ipairs(variants) do
+      page.variantLabels[entry[1]] = entry[2]
+      table.insert(values, entry[1] .. ":" .. entry[2])
+    end
+    page.variants = variants
+
+    -- The picker writes page.variant; the list changes once its menu closed.
+    -- Its Copy From button offers the other variants.
+    page.picker = { type = "picker", label = title, table = page, key = "variant", values = values }
+
+    function page.picker.update()
+      page.scroll = 0
+      RunNextFrame(function()
+        if current == page and not searching then ShowListPage(page) end
+      end)
+    end
+
+    function page.picker.copy(button)
+      button.menuMixin = pfUIMenuStyleMixin
+      MenuUtil.CreateContextMenu(button, function(_, rootDescription)
+        for _, entry in ipairs(variants) do
+          if entry[1] ~= page.variant then
+            rootDescription:CreateButton(entry[2], function() CopyVariant(page, entry[1], page.variant) end)
+          end
+        end
+      end)
+    end
+
+    AddToNavigation(page, category, title)
   end
 
   -- Adds a frame page. `populate` makes its frames the first time it shows,
@@ -646,25 +873,181 @@ pfUI:RegisterModule("gui", function ()
   end
 
   -- [ Search ]
-  -- the settings whose label has the text in it: those of every list page,
-  -- then the rows on the frame pages that have been built
+  -- Results show in the page list: under a breadcrumb for each page, the
+  -- settings of a list page as live rows, and the rows of a frame page as
+  -- links. A breadcrumb or a link opens the page and marks its results.
+
+  -- opens the page of a breadcrumb or a link and flashes the rows it names
+  local function PointAt(result)
+    pfUI.gui.search:ClearFocus()
+    ClearHighlights()
+    pfUI.gui:OpenPage(result.page.id, result.variant)
+
+    if result.settings then
+      for _, setting in ipairs(result.settings) do
+        highlighted[setting] = true
+      end
+      list.ScrollBox:ScrollToElementData(result.settings[1], ScrollBoxConstants.AlignCenter)
+      list.ScrollBox:ForEachFrame(function(row)
+        if highlighted[row.setting] then Flash(row) end
+      end)
+    else
+      for _, frame in ipairs(result.frames) do
+        table.insert(highlightedFrames, frame)
+        Flash(frame)
+      end
+    end
+  end
+
+  -- [ Preview parts ]
+  -- Pointing at a part of a preview outlines it, and clicking it leads to its
+  -- settings on the open page. A preview lists its parts, topmost first, in
+  -- `parts`: { region, target }, where the target is either `section`, the
+  -- label of a header whose rows it means, or `keys`, a list of setting keys.
+  local function TargetSettings(target)
+    local found = {}
+    local inside
+    for _, setting in ipairs(GetSettings(current)) do
+      if setting.type == "header" then
+        inside = setting.label == target.section
+        if inside then table.insert(found, setting) end
+      elseif inside and setting.key then
+        table.insert(found, setting)
+      elseif target.keys and setting.key then
+        for _, key in ipairs(target.keys) do
+          if setting.key == key then table.insert(found, setting) end
+        end
+      end
+    end
+    return found
+  end
+
+  local function ShowTarget(target)
+    local found = TargetSettings(target)
+    if not found[1] then return end
+
+    ClearHighlights()
+    for _, setting in ipairs(found) do
+      highlighted[setting] = true
+    end
+    list.ScrollBox:ScrollToElementData(found[1], ScrollBoxConstants.AlignBegin)
+    list.ScrollBox:ForEachFrame(function(row)
+      if highlighted[row.setting] then Flash(row) end
+    end)
+  end
+
+  -- above the preview, under any controls a preview puts above it
+  local picker = CreateFrame("Frame", nil, previewBox)
+  picker:SetAllPoints()
+  picker:SetFrameLevel(previewBox:GetFrameLevel() + 40)
+  picker:EnableMouse(true)
+
+  picker.outline = CreateFrame("Frame", nil, picker)
+  picker.outline:SetFrameLevel(picker:GetFrameLevel() + 1)
+  picker.outline:SetBackdrop({ edgeFile = "Interface\\BUTTONS\\WHITE8X8", edgeSize = 1 })
+  picker.outline:SetBackdropBorderColor(.2, 1, .8, 1)
+  picker.outline:Hide()
+
+  local function PartUnderMouse()
+    local parts = current and current.preview and current.preview.parts
+    if not parts then return end
+    for _, part in ipairs(parts) do
+      local region = part[1]
+      if region:IsVisible() and region:IsMouseOver() then return part end
+    end
+  end
+
+  local function UpdatePicker()
+    local part = PartUnderMouse()
+    if part == this.part then return end
+    this.part = part
+    if part then
+      this.outline:ClearAllPoints()
+      this.outline:SetPoint("TOPLEFT", part[1], "TOPLEFT", -1, 1)
+      this.outline:SetPoint("BOTTOMRIGHT", part[1], "BOTTOMRIGHT", 1, -1)
+      this.outline:Show()
+    else
+      this.outline:Hide()
+    end
+  end
+
+  picker:SetScript("OnEnter", function()
+    this:SetScript("OnUpdate", UpdatePicker)
+  end)
+
+  picker:SetScript("OnLeave", function()
+    this:SetScript("OnUpdate", nil)
+    this.part = nil
+    this.outline:Hide()
+  end)
+
+  picker:SetScript("OnMouseUp", function()
+    if this.part then ShowTarget(this.part[2]) end
+  end)
+
+  -- "Category » Page", and » Variant on a variant page
+  local function Breadcrumb(page, variant)
+    local path = "|cff33ffcc" .. page.category.title
+    if page.title ~= page.category.title then
+      path = path .. "|r » |cff33ffcc" .. page.title
+    end
+    if variant then
+      path = path .. "|r » |cff33ffcc" .. page.variantLabels[variant]
+    end
+    return path .. "|r"
+  end
+
+  local function Matches(text, label, key)
+    return (label and label:lower():find(text, 1, true))
+      or (type(key) == "string" and key:lower():find(text, 1, true))
+  end
+
+  -- the results of the settings whose label or key has the text in it:
+  -- those of every list page, and the rows of the frame pages built so far
   local function Search(text)
     local found = {}
     text = text:lower()
 
-    for _, page in ipairs(order) do
-      if page.build then
-        for _, setting in ipairs(GetSettings(page)) do
-          if setting.label and setting.type ~= "header" and setting.label:lower():find(text, 1, true) then
-            table.insert(found, { page = page, label = setting.label, setting = setting })
-          end
+    -- the matching settings of a list page, or of one of its variants
+    local function SearchSettings(page, variant)
+      local crumb = { type = "breadcrumb", page = page, variant = variant, label = Breadcrumb(page, variant), onClick = PointAt }
+      crumb.settings = {}
+      for _, setting in ipairs(GetSettings(page, variant)) do
+        if setting.key and Matches(text, setting.label, setting.key) then
+          table.insert(crumb.settings, setting)
+        end
+      end
+      if crumb.settings[1] then
+        table.insert(found, crumb)
+        for _, setting in ipairs(crumb.settings) do
+          table.insert(found, setting)
         end
       end
     end
 
-    for _, row in ipairs(searchRows) do
-      if row.label:lower():find(text, 1, true) then
-        table.insert(found, row)
+    for _, page in ipairs(order) do
+      if page.variants then
+        for _, entry in ipairs(page.variants) do
+          SearchSettings(page, entry[1])
+        end
+      elseif page.build then
+        SearchSettings(page)
+      else
+        local crumb = { type = "breadcrumb", page = page, label = Breadcrumb(page), onClick = PointAt }
+        crumb.frames = {}
+        local links = {}
+        for _, row in ipairs(searchRows) do
+          if row.page == page and Matches(text, row.label, row.frame.config) then
+            table.insert(crumb.frames, row.frame)
+            table.insert(links, { type = "link", page = page, label = row.label, frames = { row.frame }, onClick = PointAt })
+          end
+        end
+        if links[1] then
+          table.insert(found, crumb)
+          for _, link in ipairs(links) do
+            table.insert(found, link)
+          end
+        end
       end
     end
 
@@ -674,8 +1057,9 @@ pfUI:RegisterModule("gui", function ()
   local function ShowResults(found)
     HideContent()
     searching = true
-    results:Show()
-    results.ScrollBox:SetDataProvider(CreateDataProvider(found))
+    PlaceList(nil)
+    list:Show()
+    list.ScrollBox:SetDataProvider(CreateDataProvider(found))
     nav.ScrollBox:ForEachFrame(UpdateNavButton)
   end
 
@@ -729,45 +1113,26 @@ pfUI:RegisterModule("gui", function ()
   end)
   SkinButton(pfUI.gui.share)
 
-  pfUI.gui.search = CreateFrame("EditBox", nil, pfUI.gui)
-  pfUI.gui.search:SetPoint("LEFT", pfUI.gui.share, "RIGHT", 5, 0)
-  pfUI.gui.search:SetPoint("TOPRIGHT", body.backdrop, "BOTTOMRIGHT", 0, -5)
+  -- the box shows SEARCH while empty and clears with its X; Escape and Enter
+  -- leave it
+  pfUI.gui.search = CreateFrame("EditBox", "pfConfigGUISearch", pfUI.gui, "ClassicAPISearchBoxTemplate")
+  pfUI.gui.search:SetPoint("LEFT", pfUI.gui.share, "RIGHT", 7, 0)
+  -- right of it is the resize grip
+  pfUI.gui.search:SetPoint("TOPRIGHT", body.backdrop, "BOTTOMRIGHT", -18, -5)
   pfUI.gui.search:SetHeight(25)
-  pfUI.gui.search:SetAutoFocus(false)
-  pfUI.gui.search:SetTextInsets(5, 5, 5, 5)
-  pfUI.gui.search:SetTextColor(.2,1,.8,1)
-  pfUI.gui.search:SetJustifyH("CENTER")
-  pfUI.gui.search:SetFontObject(GameFontNormal)
-  pfUI.gui.search:SetText(SEARCH .. "...")
+  StripTextures(pfUI.gui.search, nil, "BACKGROUND")
   CreateBackdrop(pfUI.gui.search, nil, true)
 
-  pfUI.gui.search:SetScript("OnEscapePressed", function(self)
-    self:ClearFocus()
-    if self:GetText() == "" then
-      self:SetText(SEARCH .. "...")
-    end
-  end)
-
-  pfUI.gui.search:SetScript("OnEditFocusGained", function(self)
+  pfUI.gui.search:HookScript("OnEditFocusGained", function(self)
     if not self.indexed then
       BuildFramePages()
       self.indexed = true
     end
-
-    if self:GetText() == SEARCH .. "..." then
-      self:SetText("")
-    end
   end)
 
-  pfUI.gui.search:SetScript("OnTextChanged", function(self)
+  pfUI.gui.search:HookScript("OnTextChanged", function(self)
     local text = self:GetText()
-    if text == SEARCH .. "..." then return end
-
-    highlighted = nil
-    if highlightedFrame then
-      SetHighlight(highlightedFrame, false)
-      highlightedFrame = nil
-    end
+    ClearHighlights()
 
     if text ~= "" then
       ShowResults(Search(text))

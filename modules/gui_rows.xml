@@ -4,13 +4,26 @@
   and row:Init(setting) shows a setting on it.
   -->
 
-  <!-- A caption on a row that lights up under the cursor. -->
-  <Frame name="pfUIConfigRowTemplate" mixin="pfUIConfigRowMixin" enableMouseMotion="true" virtual="true">
+  <!--
+  A caption on a row that lights up under the cursor, with a mark at its left
+  edge while its setting is not at its default. A right-click offers the reset.
+  -->
+  <Frame name="pfUIConfigRowTemplate" mixin="pfUIConfigRowMixin" enableMouse="true" virtual="true">
     <Size y="22"/>
     <Layers>
       <Layer level="BACKGROUND">
         <Texture parentKey="tex" setAllPoints="true" hidden="true">
           <Color r="1" g="1" b="1" a=".05"/>
+        </Texture>
+      </Layer>
+      <Layer level="BORDER">
+        <Texture parentKey="changed" hidden="true">
+          <Size x="2"/>
+          <Anchors>
+            <Anchor point="TOPLEFT" y="-4"/>
+            <Anchor point="BOTTOMLEFT" y="4"/>
+          </Anchors>
+          <Color r=".2" g="1" b=".8" a=".8"/>
         </Texture>
       </Layer>
       <Layer level="ARTWORK">
@@ -25,6 +38,7 @@
       <OnLoad method="OnLoad"/>
       <OnEnter method="OnEnter"/>
       <OnLeave method="OnLeave"/>
+      <OnMouseUp method="OnMouseUp"/>
     </Scripts>
   </Frame>
 
@@ -36,6 +50,21 @@
           <Anchor point="RIGHT" x="-3"/>
         </Anchors>
       </EditBox>
+    </Frames>
+  </Frame>
+
+  <!-- A number with a range: a slider, and the edit box right of it. -->
+  <Frame name="pfUIConfigSliderRowTemplate" inherits="pfUIConfigTextRowTemplate" mixin="pfUIConfigSliderRowMixin" virtual="true">
+    <Frames>
+      <Slider parentKey="slider" orientation="HORIZONTAL" enableMouse="true" propagateMouseInput="Motion">
+        <Size x="140" y="10"/>
+        <Anchors>
+          <Anchor point="RIGHT" relativeKey="$parent.input" relativePoint="LEFT" x="-10"/>
+        </Anchors>
+        <ThumbTexture parentKey="thumb">
+          <Size x="17" y="10"/>
+        </ThumbTexture>
+      </Slider>
     </Frames>
   </Frame>
 
@@ -121,4 +150,39 @@
 
   <!-- A caption in a box with a red border. -->
   <Frame name="pfUIConfigWarningRowTemplate" inherits="pfUIConfigRowTemplate" mixin="pfUIConfigWarningRowMixin" virtual="true"/>
+
+  <!--
+  The head of a variant page: the page's title large, the dropdown that picks
+  the variant beside it, Copy From at the right end, and a line under all.
+  -->
+  <Frame name="pfUIConfigPickerRowTemplate" inherits="pfUIConfigDropdownRowTemplate" mixin="pfUIConfigPickerRowMixin" virtual="true">
+    <Size y="40"/>
+    <Layers>
+      <Layer level="BORDER">
+        <Texture parentKey="line">
+          <Size y="1"/>
+          <Anchors>
+            <Anchor point="BOTTOMLEFT"/>
+            <Anchor point="BOTTOMRIGHT"/>
+          </Anchors>
+          <Color r=".2" g="1" b=".8" a=".5"/>
+        </Texture>
+      </Layer>
+    </Layers>
+    <Frames>
+      <Button parentKey="copy" inherits="UIPanelButtonTemplate" propagateMouseInput="Motion">
+        <Size x="100" y="20"/>
+        <Anchors>
+          <Anchor point="RIGHT" x="-5"/>
+        </Anchors>
+      </Button>
+    </Frames>
+  </Frame>
+
+  <!-- A caption that runs the setting's onClick, such as a search result. -->
+  <Button name="pfUIConfigLinkRowTemplate" inherits="pfUIConfigRowTemplate" mixin="pfUIConfigLinkRowMixin" virtual="true">
+    <Scripts>
+      <OnClick method="OnClick"/>
+    </Scripts>
+  </Button>
 </Ui>

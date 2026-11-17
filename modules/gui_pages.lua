@@ -10,6 +10,21 @@ setfenv(1, pfUI:GetEnvironment())
 --   CVars  reads and writes cvars the way a config table holds values
 --   UVars  the same for globals that hold "1" or "0"
 function pfUI.AddConfigPages(gui, U, CVars, UVars)
+  -- the ranges of the number settings that show as sliders
+  local FONTSIZE = { min = 6, max = 32 }
+  local ICONSIZE = { min = 4, max = 64 }
+  local OFFSET   = { min = -100, max = 100 }
+  local SPACING  = { min = 0, max = 20 }
+  local COUNT    = { min = 1, max = 40 }
+
+  -- one opts table from several
+  local function Opts(...)
+    local opts = {}
+    for _, part in ipairs(arg) do
+      for field, value in pairs(part) do opts[field] = value end
+    end
+    return opts
+  end
   -- [[ Static Dropdowns ]] --
   local D = {
     ["languages"] = {
@@ -77,6 +92,16 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
       "0:" .. T["Full Numbers (4250)"],
       "1:" .. T["Abbreviate 2 Decimals (4.25k)"],
       "2:" .. T["Abbreviate 1 Decimal (4.2k)"],
+    },
+    ["luaerrors"] = {
+      "default:" .. T["Error Window Or BugSack"],
+      "chat:" .. T["Print To Chat"],
+      "hide:" .. T["Hide Errors"],
+    },
+    ["uierrors"] = {
+      "full:" .. T["All Lines"],
+      "single:" .. T["Single Line"],
+      "hide:" .. T["Hidden"],
     },
     ["castbardecimals"] = {
       "1:" .. T["1 Decimal (2.1)"],
@@ -473,6 +498,11 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
   gui.dropdowns = D
 
   gui:AddFramePage("about", T["About"], nil, function()
+    -- the page's contents keep their size and stay centred in a wider window
+    local about = CreateFrame("Frame", nil, this)
+    about:SetSize(546, 360)
+    about:SetPoint("TOP")
+
     -- read data
     local lang = UNKNOWN
     for _, entry in pairs(D.languages) do
@@ -491,91 +521,90 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     end
 
     local x, y, p = 235, 55, 10  -- startx, starty, pencilsize
-    draw(this, x,     -y-2*p, x+p,      -y-7*p, .2, 1, .8, 1)
-    draw(this, x+p,   -y-2*p, x+2*p,    -y-3*p, .2, 1, .8, 1)
-    draw(this, x+p,   -y-4*p, x+2*p,    -y-5*p, .2, 1, .8, 1)
-    draw(this, x+2*p, -y,     x+3*p,    -y-5*p, .2, 1, .8, 1)
-    draw(this, x+3*p, -y,     x+4*p,    -y-1*p, .2, 1, .8, 1)
-    draw(this, x+p,   -y-2*p, x+4*p,    -y-3*p, .2, 1, .8, 1)
-    draw(this, x+4*p, -y,     x+5*p,    -y-5*p, 1,  1, 1,  1)
-    draw(this, x+5*p, -y-4*p, x+5*p+p,  -y-5*p, 1,  1, 1,  1)
-    draw(this, x+6*p, -y,     x+7*p,    -y-p,   1,  1, 1,  1)
-    draw(this, x+6*p, -y-2*p, x+7*p,    -y-5*p, 1,  1, 1,  1)
+    draw(about, x,     -y-2*p, x+p,      -y-7*p, .2, 1, .8, 1)
+    draw(about, x+p,   -y-2*p, x+2*p,    -y-3*p, .2, 1, .8, 1)
+    draw(about, x+p,   -y-4*p, x+2*p,    -y-5*p, .2, 1, .8, 1)
+    draw(about, x+2*p, -y,     x+3*p,    -y-5*p, .2, 1, .8, 1)
+    draw(about, x+3*p, -y,     x+4*p,    -y-1*p, .2, 1, .8, 1)
+    draw(about, x+p,   -y-2*p, x+4*p,    -y-3*p, .2, 1, .8, 1)
+    draw(about, x+4*p, -y,     x+5*p,    -y-5*p, 1,  1, 1,  1)
+    draw(about, x+5*p, -y-4*p, x+5*p+p,  -y-5*p, 1,  1, 1,  1)
+    draw(about, x+6*p, -y,     x+7*p,    -y-p,   1,  1, 1,  1)
+    draw(about, x+6*p, -y-2*p, x+7*p,    -y-5*p, 1,  1, 1,  1)
 
     -- version
-    this.versionc = this:CreateFontString("Status", "LOW", "GameFontWhite")
-    this.versionc:SetFont(pfUI.font_default, C.global.font_size)
-    this.versionc:SetPoint("TOPLEFT", 185, -170)
-    this.versionc:SetWidth(200)
-    this.versionc:SetJustifyH("LEFT")
-    this.versionc:SetText(GAME_VERSION_LABEL .. ":")
+    about.versionc = about:CreateFontString("Status", "LOW", "GameFontWhite")
+    about.versionc:SetFont(pfUI.font_default, C.global.font_size)
+    about.versionc:SetPoint("TOPLEFT", 185, -170)
+    about.versionc:SetWidth(200)
+    about.versionc:SetJustifyH("LEFT")
+    about.versionc:SetText(GAME_VERSION_LABEL .. ":")
 
-    this.version = this:CreateFontString("Status", "LOW", "GameFontWhite")
-    this.version:SetFont(pfUI.font_default, C.global.font_size)
-    this.version:SetPoint("TOPRIGHT", this, "TOPLEFT", 360, -170)
-    this.version:SetWidth(200)
-    this.version:SetJustifyH("RIGHT")
+    about.version = about:CreateFontString("Status", "LOW", "GameFontWhite")
+    about.version:SetFont(pfUI.font_default, C.global.font_size)
+    about.version:SetPoint("TOPRIGHT", about, "TOPLEFT", 360, -170)
+    about.version:SetWidth(200)
+    about.version:SetJustifyH("RIGHT")
 
-    this.update = this:CreateFontString("Status", "LOW", "GameFontWhite")
-    this.update:SetFont(pfUI.font_default, C.global.font_size)
-    this.update:SetPoint("TOPLEFT", 185, -140)
-    this.update:SetPoint("TOPRIGHT", this, "TOPLEFT", 360, -140)
-    this.update:SetJustifyH("CENTER")
-    this.update:SetTextColor(.2,1,.8)
+    about.update = about:CreateFontString("Status", "LOW", "GameFontWhite")
+    about.update:SetFont(pfUI.font_default, C.global.font_size)
+    about.update:SetPoint("TOPLEFT", 185, -140)
+    about.update:SetPoint("TOPRIGHT", about, "TOPLEFT", 360, -140)
+    about.update:SetJustifyH("CENTER")
+    about.update:SetTextColor(.2,1,.8)
 
-    this.screenc = this:CreateFontString("Status", "LOW", "GameFontWhite")
-    this.screenc:SetFont(pfUI.font_default, C.global.font_size)
-    this.screenc:SetPoint("TOPLEFT", 185, -200)
-    this.screenc:SetWidth(200)
-    this.screenc:SetJustifyH("LEFT")
-    this.screenc:SetText(RESOLUTION .. ":")
+    about.screenc = about:CreateFontString("Status", "LOW", "GameFontWhite")
+    about.screenc:SetFont(pfUI.font_default, C.global.font_size)
+    about.screenc:SetPoint("TOPLEFT", 185, -200)
+    about.screenc:SetWidth(200)
+    about.screenc:SetJustifyH("LEFT")
+    about.screenc:SetText(RESOLUTION .. ":")
 
-    this.screen = this:CreateFontString("Status", "LOW", "GameFontWhite")
-    this.screen:SetFont(pfUI.font_default, C.global.font_size)
-    this.screen:SetPoint("TOPRIGHT", this, "TOPLEFT", 360, -200)
-    this.screen:SetWidth(200)
-    this.screen:SetJustifyH("RIGHT")
+    about.screen = about:CreateFontString("Status", "LOW", "GameFontWhite")
+    about.screen:SetFont(pfUI.font_default, C.global.font_size)
+    about.screen:SetPoint("TOPRIGHT", about, "TOPLEFT", 360, -200)
+    about.screen:SetWidth(200)
+    about.screen:SetJustifyH("RIGHT")
 
-    this.scalec = this:CreateFontString("Status", "LOW", "GameFontWhite")
-    this.scalec:SetFont(pfUI.font_default, C.global.font_size)
-    this.scalec:SetPoint("TOPLEFT", 185, -220)
-    this.scalec:SetWidth(200)
-    this.scalec:SetJustifyH("LEFT")
-    this.scalec:SetText(T["Scaling"] .. ":")
+    about.scalec = about:CreateFontString("Status", "LOW", "GameFontWhite")
+    about.scalec:SetFont(pfUI.font_default, C.global.font_size)
+    about.scalec:SetPoint("TOPLEFT", 185, -220)
+    about.scalec:SetWidth(200)
+    about.scalec:SetJustifyH("LEFT")
+    about.scalec:SetText(T["Scaling"] .. ":")
 
-    this.scale = this:CreateFontString("Status", "LOW", "GameFontWhite")
-    this.scale:SetFont(pfUI.font_default, C.global.font_size)
-    this.scale:SetPoint("TOPRIGHT", this, "TOPLEFT", 360, -220)
-    this.scale:SetWidth(200)
-    this.scale:SetJustifyH("RIGHT")
+    about.scale = about:CreateFontString("Status", "LOW", "GameFontWhite")
+    about.scale:SetFont(pfUI.font_default, C.global.font_size)
+    about.scale:SetPoint("TOPRIGHT", about, "TOPLEFT", 360, -220)
+    about.scale:SetWidth(200)
+    about.scale:SetJustifyH("RIGHT")
 
-    this.clientc = this:CreateFontString("Status", "LOW", "GameFontWhite")
-    this.clientc:SetFont(pfUI.font_default, C.global.font_size)
-    this.clientc:SetPoint("TOPLEFT", 185, -250)
-    this.clientc:SetWidth(200)
-    this.clientc:SetJustifyH("LEFT")
-    this.clientc:SetText(T["Gameclient"] .. ":")
+    about.clientc = about:CreateFontString("Status", "LOW", "GameFontWhite")
+    about.clientc:SetFont(pfUI.font_default, C.global.font_size)
+    about.clientc:SetPoint("TOPLEFT", 185, -250)
+    about.clientc:SetWidth(200)
+    about.clientc:SetJustifyH("LEFT")
+    about.clientc:SetText(T["Gameclient"] .. ":")
 
-    this.client = this:CreateFontString("Status", "LOW", "GameFontWhite")
-    this.client:SetFont(pfUI.font_default, C.global.font_size)
-    this.client:SetPoint("TOPRIGHT", this, "TOPLEFT", 360, -250)
-    this.client:SetWidth(200)
-    this.client:SetJustifyH("RIGHT")
+    about.client = about:CreateFontString("Status", "LOW", "GameFontWhite")
+    about.client:SetFont(pfUI.font_default, C.global.font_size)
+    about.client:SetPoint("TOPRIGHT", about, "TOPLEFT", 360, -250)
+    about.client:SetWidth(200)
+    about.client:SetJustifyH("RIGHT")
 
-    this.langc = this:CreateFontString("Status", "LOW", "GameFontWhite")
-    this.langc:SetFont(pfUI.font_default, C.global.font_size)
-    this.langc:SetPoint("TOPLEFT", 185, -270)
-    this.langc:SetWidth(200)
-    this.langc:SetJustifyH("LEFT")
-    this.langc:SetText(LANGUAGE .. ":")
-    this.lang = this:CreateFontString("Status", "LOW", "GameFontWhite")
-    this.lang:SetFont(pfUI.font_default, C.global.font_size)
-    this.lang:SetPoint("TOPRIGHT", this, "TOPLEFT", 360, -270)
-    this.lang:SetWidth(200)
-    this.lang:SetJustifyH("RIGHT")
+    about.langc = about:CreateFontString("Status", "LOW", "GameFontWhite")
+    about.langc:SetFont(pfUI.font_default, C.global.font_size)
+    about.langc:SetPoint("TOPLEFT", 185, -270)
+    about.langc:SetWidth(200)
+    about.langc:SetJustifyH("LEFT")
+    about.langc:SetText(LANGUAGE .. ":")
+    about.lang = about:CreateFontString("Status", "LOW", "GameFontWhite")
+    about.lang:SetFont(pfUI.font_default, C.global.font_size)
+    about.lang:SetPoint("TOPRIGHT", about, "TOPLEFT", 360, -270)
+    about.lang:SetWidth(200)
+    about.lang:SetJustifyH("RIGHT")
 
     -- the values, read again each time the page shows
-    local about = this
     local function Refresh()
       local localversion  = tonumber(pfUI.version.major*10000 + pfUI.version.minor*100 + pfUI.version.fix)
       local remoteversion = tonumber(pfUI_init.updateavailable) or 0
@@ -590,11 +619,11 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
       about.lang:SetText(lang)
     end
 
-    local f = CreateFrame("Frame", nil, this)
+    local f = CreateFrame("Frame", nil, about)
     f:SetScript("OnShow", Refresh)
     Refresh()
 
-    local donate = CreateFrame("Button", nil, this)
+    local donate = CreateFrame("Button", nil, about)
     donate:SetPoint("TOPLEFT", 115, -335)
     donate:SetWidth(100)
     donate:SetHeight(20)
@@ -604,7 +633,7 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     end)
     SkinButton(donate)
 
-    local github = CreateFrame("Button", nil, this)
+    local github = CreateFrame("Button", nil, about)
     github:SetPoint("TOPLEFT", 225, -335)
     github:SetWidth(100)
     github:SetHeight(20)
@@ -614,7 +643,7 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     end)
     SkinButton(github)
 
-    local website = CreateFrame("Button", nil, this)
+    local website = CreateFrame("Button", nil, about)
     website:SetPoint("TOPLEFT", 335, -335)
     website:SetWidth(100)
     website:SetHeight(20)
@@ -720,15 +749,14 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Checkbox(string.format(T["Pixel Perfect UI-Scale: %s (Overrides UI-Scale)"], round(PixelUtil.GetPixelToUIUnitFactor(), 2)), C.global, "pixelperfect")
     p:Checkbox(T["Use Original Game Fonts"], C.global, "font_blizzard")
     p:Checkbox(T["Enable Region Compatible Font"], C.global, "force_region")
-    p:Dropdown(T["Standard Text Font"], C.global, "font_default", D.fonts)
-    p:Number(T["Standard Text Font Size"], C.global, "font_size")
-    p:Dropdown(T["3D World Unit Font"], C.global, "font_unit_name", D.fonts)
+    p:Dropdown(T["Standard Text Font"], C.global, "font_default", D.fonts, nil, { preview = "font" })
+    p:Number(T["Standard Text Font Size"], C.global, "font_size", nil, FONTSIZE)
+    p:Dropdown(T["3D World Unit Font"], C.global, "font_unit_name", D.fonts, nil, { preview = "font" })
     p:Dropdown(T["Scrolling Combat Text Font"], C.global, "font_combat", combatfonts)
     p:Checkbox(T["Enable Offscreen Frame Positions"], C.global, "offscreen")
-    p:Checkbox(T["Display Addon Errors In Chat"], C.global, "errors")
-    p:Checkbox(T["Use Single Line UIErrors Frame"], C.global, "errors_limit")
-    p:Checkbox(T["Disable Errors in UIErrors Frame"], C.global, "errors_hide")
-    p:Checkbox(T["Enable OS Notifications"], C.global, "notify")
+    p:Dropdown(T["Lua Errors"], C.global, "luaerrors", D.luaerrors, pfUI.UpdateLuaErrors)
+    p:Dropdown(T["Error Messages"], C.global, "uierrors", D.uierrors, pfUI.UpdateErrorMessages)
+    p:Checkbox(T["Enable OS Notifications"], C.global, "notify", nop)
     p:Checkbox(T["Highlight Settings That Require Reload"], C.gui, "reloadmarker")
     p:Dropdown(T["Abbreviate Numbers"], C.unitframes, "abbrevnum", D.abbrevnum)
     p:Dropdown(T["Castbar Timer Decimals"], C.unitframes, "castbardecimals", D.castbardecimals)
@@ -814,8 +842,8 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
 
   gui:AddPage("settings.cooldown", T["Settings"], T["Cooldown"], function(p)
     p:Checkbox(COUNTDOWN_FOR_COOLDOWNS_TEXT, CVars, "countdownForCooldowns", nop)
-    p:Dropdown(T["Font"], C.cooldown, "font", D.fonts, UpdateCooldowns)
-    p:Number(FONT_SIZE, C.cooldown, "font_size")
+    p:Dropdown(T["Font"], C.cooldown, "font", D.fonts, UpdateCooldowns, { preview = "font" })
+    p:Number(FONT_SIZE, C.cooldown, "font_size", nil, FONTSIZE)
     p:Checkbox(T["Scale Font Size With Icon"], C.cooldown, "dynamicsize")
     p:Number(T["Hide Numbers On Spell Cooldowns Up To (Seconds)"], C.cooldown, "threshold", UpdateCooldowns)
     p:Checkbox(T["Show Tenths Below 5 Seconds"], C.cooldown, "milliseconds", UpdateCooldowns)
@@ -845,15 +873,15 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Dropdown(T["Item Looted"], C.screenshot, "loot", D.screenshot_loot)
     p:Header(T["Options"])
     p:Checkbox(T["Show Description"], C.screenshot, "caption")
-    p:Dropdown(T["Description Font"], C.screenshot, "caption_font", D.fonts)
-    p:Number(T["Description Font Size"], C.screenshot, "caption_size")
+    p:Dropdown(T["Description Font"], C.screenshot, "caption_font", D.fonts, nil, { preview = "font" })
+    p:Number(T["Description Font Size"], C.screenshot, "caption_size", nil, FONTSIZE)
     p:Checkbox(T["Hide All UI Elements"], C.screenshot, "hideui")
-  end)
+  end, { module = "screenshot" })
 
   gui:AddPage("settings.gmmode", T["Settings"], T["GM-Mode"], function(p)
     p:Checkbox(T["Disable GM-Mode"], C.gm, "disable")
     p:Dropdown(T["Selected Core"], C.gm, "server", D.gmserver_text)
-  end)
+  end, { module = "gm" })
 
   gui:AddPage("unitframes.general", T["Unit Frames"], T["General"], function(p)
     p:Checkbox(T["Disable pfUI Unit Frames"], C.unitframes, "disable")
@@ -870,8 +898,8 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Header(T["Swing Timer"])
     p:Number(T["Swing Timer Width"], C.unitframes, "swingtimerwidth")
     p:Number(T["Swing Timer Height"], C.unitframes, "swingtimerheight")
-    p:Dropdown(T["Swing Timer Texture"], C.unitframes, "swingtimertexture", D.uf_bartexture)
-    p:Number(T["Swing Timer Font Size"], C.unitframes, "swingtimerfontsize")
+    p:Dropdown(T["Swing Timer Texture"], C.unitframes, "swingtimertexture", D.uf_bartexture, nil, { preview = "texture" })
+    p:Number(T["Swing Timer Font Size"], C.unitframes, "swingtimerfontsize", nil, FONTSIZE)
     p:Checkbox(T["Show Timer Text"], C.unitframes, "swingtimertext")
     p:Checkbox(T["Show MH/OH Labels"], C.unitframes, "swingtimerlabel")
     p:Checkbox(T["Show Offhand Bar"], C.unitframes, "swingtimeroffhand")
@@ -888,8 +916,8 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Number(T["Raid Marker Width"], C.unitframes, "raidmarkerwidth")
     p:Number(T["Raid Marker Height"], C.unitframes, "raidmarkerheight")
     p:Dropdown(T["Raid Marker Grow"], C.unitframes, "raidmarkergrow", D.raidmarker_grow)
-    p:Dropdown(T["Raid Marker Texture"], C.unitframes, "raidmarkertexture", D.uf_bartexture)
-    p:Number(T["Raid Marker Font Size"], C.unitframes, "raidmarkerfontsize")
+    p:Dropdown(T["Raid Marker Texture"], C.unitframes, "raidmarkertexture", D.uf_bartexture, nil, { preview = "texture" })
+    p:Number(T["Raid Marker Font Size"], C.unitframes, "raidmarkerfontsize", nil, FONTSIZE)
     p:Checkbox(T["Show Name"], C.unitframes, "raidmarkershowname")
     p:Checkbox(T["Show Percent HP"], C.unitframes, "raidmarkershowpct")
     p:Checkbox(T["Show Portrait"], C.unitframes, "raidmarkershowportrait")
@@ -903,8 +931,8 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Color(T["Skull Color"], C.unitframes, "raidmarkercolor_skull")
 
     p:Header(T["Font Options"])
-    p:Dropdown(T["Unit Frame Text Font"], C.global, "font_unit", D.fonts)
-    p:Number(T["Unit Frame Text Size"], C.global, "font_unit_size")
+    p:Dropdown(T["Unit Frame Text Font"], C.global, "font_unit", D.fonts, nil, { preview = "font" })
+    p:Number(T["Unit Frame Text Size"], C.global, "font_unit_size", nil, FONTSIZE)
     p:Dropdown(T["Unit Frame Text Style"], C.global, "font_unit_style", D.fontstyle)
 
     p:Header(T["Group Options"])
@@ -937,14 +965,14 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Checkbox(T["Show Druid Mana Bar Text"], C.unitframes, "druidmanatext")
     p:Number(T["Druid Mana Bar Height"], C.unitframes, "druidmanaheight")
     p:Number(T["Druid Mana Bar Width (-1 = auto)"], C.unitframes, "druidmanawidth")
-    p:Number(T["Druid Mana Bar X-Offset"], C.unitframes, "druidmanaoffx")
-    p:Number(T["Druid Mana Bar Y-Offset"], C.unitframes, "druidmanaoffy")
+    p:Number(T["Druid Mana Bar X-Offset"], C.unitframes, "druidmanaoffx", nil, OFFSET)
+    p:Number(T["Druid Mana Bar Y-Offset"], C.unitframes, "druidmanaoffy", nil, OFFSET)
     p:Number(T["Druid Mana Bar Spacing"], C.unitframes, "druidmanaspace")
-    p:Dropdown(T["Druid Mana Bar Texture"], C.unitframes, "druidmanatexture", D.uf_bartexture)
+    p:Dropdown(T["Druid Mana Bar Texture"], C.unitframes, "druidmanatexture", D.uf_bartexture, nil, { preview = "texture" })
 
 
     p:Header(T["Target Indicators"])
-    p:Number(T["Target Indicator Font Size"], C.unitframes, "indicator_font_size")
+    p:Number(T["Target Indicator Font Size"], C.unitframes, "indicator_font_size", nil, FONTSIZE)
     p:Checkbox(T["Show Line of Sight Indicator"], C.unitframes, "los_indicator")
     p:Checkbox(T["Show Behind Indicator"], C.unitframes, "behind_indicator")
     p:Checkbox(T["Show Distance of Target"], C.unitframes, "distance_indicator")
@@ -956,11 +984,11 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
 
     p:Header(T["Nampower Settings"])
     p:Checkbox(T["Show Spell Queue Indicator"], C.unitframes, "spellqueue")
-    p:Number(T["Spell Queue Icon Size"], C.unitframes, "spellqueuesize")
+    p:Number(T["Spell Queue Icon Size"], C.unitframes, "spellqueuesize", nil, ICONSIZE)
 
     p:Header(T["Reactive Spells"])
     p:Checkbox(T["Show Reactive Spell Indicator"], C.unitframes, "reactive_indicator")
-    p:Number(T["Reactive Indicator Size"], C.unitframes, "reactive_size")
+    p:Number(T["Reactive Indicator Size"], C.unitframes, "reactive_size", nil, ICONSIZE)
   end)
 
   -- Shared Unit- and Groupframes
@@ -1017,11 +1045,280 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Text(T["Ctrl-Click Action"], C.unitframes, "clickcast5_ctrl")
   end)
 
-  for id, data in ipairs(unitframeSettings) do
-    local c = data[1]
-    local t = data[2]
+  -- The unit frames page draws the picked frame above its settings: real
+  -- pfUI unit frames that show the player with that frame's config, fitted
+  -- into the preview box. A raid or raid pet frame shows a full grid of
+  -- them, a party frame its target and pet frames beside it. Each frame has
+  -- its own set, made the first time it is picked, so no frame's layout
+  -- carries over into another's, as none does between the real frames.
+  --
+  -- A row of buttons in the box picks the state the frames show: the player
+  -- as they are, or a sample (api/unitframes.lua) of a state they are not in.
+  local unitPreview = {}
+  local previewSets, previewSet, previewBox, stateBar = {}, nil, nil, nil
 
-    gui:AddPage("unitframes." .. c, T["Unit Frames"], t, function(p)
+  local function SampleAura(spellId, count, dispelType, duration, timeleft, mine)
+    return { name = C_Spell.GetSpellName(spellId), icon = C_Spell.GetSpellTexture(spellId),
+      count = count, dispelType = dispelType, duration = duration,
+      expirationTime = GetTime() + timeleft, mine = mine }
+  end
+
+  -- the health of the combat sample's frames, so a grid isn't all alike
+  local COMBAT_HEALTH = { .45, .8, .25, 1, .6, .9, .35, .7 }
+
+  -- A state's sample(i) is what frame `i` of a set shows, nil for the
+  -- player as they are. Live keeps only the first frame live: the others
+  -- would repeat the player's marks and auras, so they stand in with the
+  -- player's health and power alone.
+  local unitStates = {
+    { label = T["Live"], sample = function(i)
+      if i == 1 then return nil end
+      return { health = UnitHealth("player") / UnitHealthMax("player"),
+        power = UnitPowerMax("player") > 0 and UnitPower("player") / UnitPowerMax("player") or 0,
+        buffs = {}, debuffs = {} }
+    end },
+    { label = T["Combat"], sample = function(i)
+      return { health = COMBAT_HEALTH[math.mod(i - 1, 8) + 1], power = .6, combat = true,
+        leader = i == 1, raidicon = i == 1 and 8 or i == 2 and 7 or nil,
+        buffs = {
+          SampleAura(139, 0, "Magic", 15, 11, true),     -- Renew
+          SampleAura(1243, 0, "Magic", 1800, 1500),      -- Power Word: Fortitude
+          SampleAura(1459, 0, "Magic", 1800, 900),       -- Arcane Intellect
+          SampleAura(1126, 0, "Magic", 1800, 1200),      -- Mark of the Wild
+        },
+        debuffs = {
+          SampleAura(589, 0, "Magic", 18, 9),            -- Shadow Word: Pain
+          SampleAura(980, 0, "Curse", 24, 20),           -- Curse of Agony
+          SampleAura(2818, 3, "Poison", 12, 7),          -- Deadly Poison
+          SampleAura(772, 0, nil, 9, 3),                 -- Rend
+        } }
+    end },
+    { label = DEAD, sample = function()
+      return { health = 0, power = 0, dead = true, buffs = {}, debuffs = {} }
+    end },
+    { label = PLAYER_OFFLINE, sample = function()
+      return { health = 1, power = 1, offline = true, buffs = {}, debuffs = {} }
+    end },
+  }
+  local unitState = unitStates[1]
+
+  local function UpdateStateBar()
+    for _, button in ipairs(stateBar.buttons) do
+      if button.state == unitState then
+        button:SetTextColor(.2, 1, .8, 1)
+      else
+        button:SetTextColor(.6, .6, .6, 1)
+      end
+    end
+  end
+
+  local function CreateStateBar(box)
+    stateBar = CreateFrame("Frame", nil, box)
+    -- over the config window's part picker
+    stateBar:SetFrameLevel(box:GetFrameLevel() + 50)
+    stateBar:SetPoint("TOPLEFT", 6, -6)
+    stateBar:SetSize(1, 18)
+    stateBar.buttons = {}
+
+    local last
+    for i, state in ipairs(unitStates) do
+      local button = CreateFrame("Button", nil, stateBar)
+      button:SetSize(64, 18)
+      if last then
+        button:SetPoint("LEFT", last, "RIGHT", 4, 0)
+      else
+        button:SetPoint("LEFT", stateBar, "LEFT", 0, 0)
+      end
+      button:SetText(state.label)
+      SkinButton(button)
+      button.state = state
+      button:SetScript("OnClick", function()
+        unitState = this.state
+        UpdateStateBar()
+        unitPreview.Refresh()
+      end)
+      stateBar.buttons[i] = button
+      last = button
+    end
+  end
+
+  function unitPreview.GetHeight(variant)
+    return C.unitframes[variant].raidlayout and 200 or 130
+  end
+
+  -- the set's frame `i`, made on first use
+  local function GetPreviewFrame(set, i, config)
+    if not set.frames[i] then
+      set.frames[i] = pfUI.uf:CreateUnitFrame("Player", nil, config, nil, set.holder)
+    end
+    return set.frames[i]
+  end
+
+  local function DrawPreviewFrame(f, i)
+    f.previewHidden = nil
+    f.sample = unitState.sample(i)
+    f:UpdateConfig()
+    f:UpdateFrameSize()
+    f:EnableEvents()
+    pfUI.uf:RefreshUnit(f, "all")
+  end
+
+  local function HidePreviewFrame(f)
+    f.previewHidden = true
+    f:UpdateVisibility()
+  end
+
+  -- Each layout draws the set's frames, places them in its holder and
+  -- returns the size they take.
+
+  -- the grid, as full as the raid size allows
+  local function LayoutRaid(set, config)
+    local count = math.min(tonumber(C.unitframes.maxraid), 40)
+    local first = GetPreviewFrame(set, 1, config)
+    DrawPreviewFrame(first, 1)
+    local grid = pfUI.uf:GetRaidGrid(config, first, count)
+    count = math.min(count, grid.x * grid.y)
+
+    local cols, rows = 0, 0
+    for i = 1, count do
+      local f = GetPreviewFrame(set, i, config)
+      if i > 1 then DrawPreviewFrame(f, i) end
+      local col, row = pfUI.uf:GetRaidGridCell(grid, i)
+      cols, rows = math.max(cols, col), math.max(rows, row)
+    end
+    for i = count + 1, table.getn(set.frames) do
+      HidePreviewFrame(set.frames[i])
+    end
+
+    -- placed once the holder has its scale, which the pixel snap reads
+    set.place = function()
+      for i = 1, count do
+        pfUI.uf:PlaceInRaidGrid(set.frames[i], grid, i, set.holder)
+      end
+    end
+    return cols * (grid.w + grid.pad) - grid.pad, rows * (grid.h + grid.pad) - grid.pad
+  end
+
+  -- the party frame, with the target and pet frames the group shows
+  local function LayoutGroup(set, config)
+    local frame = GetPreviewFrame(set, 1, config)
+    DrawPreviewFrame(frame, 1)
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", set.holder, "TOPLEFT", 0, 0)
+
+    local target, pet
+    if C.unitframes.grouptarget.visible == "1" then
+      target = GetPreviewFrame(set, 2, C.unitframes.grouptarget)
+      DrawPreviewFrame(target, 2)
+      target:ClearAllPoints()
+    elseif set.frames[2] then
+      HidePreviewFrame(set.frames[2])
+    end
+    if C.unitframes.grouppet.visible == "1" then
+      pet = GetPreviewFrame(set, 3, C.unitframes.grouppet)
+      DrawPreviewFrame(pet, 3)
+      pet:ClearAllPoints()
+    elseif set.frames[3] then
+      HidePreviewFrame(set.frames[3])
+    end
+    pfUI.uf:AttachGroupUnits(frame, target, pet)
+
+    -- the target hangs from the top, the pet from the bottom
+    local _, border = GetBorderSize("unitframes")
+    local width, height = frame:GetWidth(), frame:GetHeight()
+    local side = 0
+    if target then
+      side = target:GetWidth()
+      height = math.max(height, target:GetHeight())
+    end
+    if pet then
+      side = math.max(side, pet:GetWidth())
+      height = math.max(height, pet:GetHeight() + border)
+    end
+    if side > 0 then width = width + 3*border + side end
+    return width, height
+  end
+
+  local function LayoutSingle(set, config)
+    local frame = GetPreviewFrame(set, 1, config)
+    DrawPreviewFrame(frame, 1)
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", set.holder, "TOPLEFT", 0, 0)
+    return frame:GetWidth(), frame:GetHeight()
+  end
+
+  -- the parts of a frame that lead to their settings, topmost first
+  local function AddParts(parts, f)
+    for _, icons in ipairs({ { f.buffs, T["Buffs"] }, { f.debuffs, T["Debuffs"] } }) do
+      if icons[1] then
+        for _, icon in ipairs(icons[1]) do
+          table.insert(parts, { icon, { section = icons[2] } })
+        end
+      end
+    end
+    if f.castbar then table.insert(parts, { f.castbar, { section = T["Castbar"] } }) end
+    table.insert(parts, { f.portrait, { keys = { "portrait", "portraitwidth", "portraitheight" } } })
+    table.insert(parts, { f.power, { section = T["Powerbar"] } })
+    table.insert(parts, { f.hp, { section = T["Healthbar"] } })
+  end
+
+  function unitPreview.Refresh()
+    local set = previewSet
+    local config = C.unitframes[set.variant]
+    set.place = nil
+    local width, height
+    if config.raidlayout then
+      width, height = LayoutRaid(set, config)
+    elseif set.variant == "group" then
+      width, height = LayoutGroup(set, config)
+    else
+      width, height = LayoutSingle(set, config)
+    end
+
+    -- the frames at their own size, or smaller when they would not fit under
+    -- the state buttons
+    local holder = set.holder
+    holder:SetSize(width, height)
+    holder:SetScale(1)
+    local room = math.min((previewBox:GetWidth() - 40) / width, (previewBox:GetHeight() - 50) / height)
+    if room > 0 then holder:SetScale(math.min(1, room)) end
+    if set.place then set.place() end
+
+    -- a party set's target and pet frames have settings of their own
+    unitPreview.parts = {}
+    for i, f in ipairs(set.frames) do
+      if not f.previewHidden and (set.variant ~= "group" or i == 1) then
+        AddParts(unitPreview.parts, f)
+      end
+    end
+  end
+
+  function unitPreview.Hide()
+    if not previewSet then return end
+    previewSet.holder:Hide()
+    stateBar:Hide()
+  end
+
+  function unitPreview.Show(box, variant)
+    previewBox = box
+    if not stateBar then CreateStateBar(box) end
+    unitPreview.Hide()
+
+    if not previewSets[variant] then
+      local holder = CreateFrame("Frame", nil, box)
+      holder:SetPoint("CENTER", box, "CENTER", 0, -12)
+      previewSets[variant] = { variant = variant, holder = holder, frames = {} }
+    end
+    previewSet = previewSets[variant]
+    previewSet.holder:Show()
+    stateBar:Show()
+    UpdateStateBar()
+    unitPreview.Refresh()
+  end
+
+  gui:AddVariantPage("unitframes.frames", T["Unit Frames"], T["Frames"], unitframeSettings, function(c)
+    return C.unitframes[c]
+  end, function(p, c, t)
       -- link Update tables
       U.ttarget     = U["targettarget"]
       U.tttarget    = U["targettargettarget"]
@@ -1041,42 +1338,42 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
       p:Dropdown(T["Portrait Position"], C.unitframes[c], "portrait", D.uf_portrait_position, U[c])
       p:Number(T["Portrait Width"], C.unitframes[c], "portraitwidth", U[c])
       p:Number(T["Portrait Height"], C.unitframes[c], "portraitheight", U[c])
-      p:Dropdown(T["Health Bar Texture"], C.unitframes[c], "bartexture", D.uf_bartexture, U[c])
-      p:Dropdown(T["Power Bar Texture"], C.unitframes[c], "pbartexture", D.uf_bartexture, U[c])
+      p:Dropdown(T["Health Bar Texture"], C.unitframes[c], "bartexture", D.uf_bartexture, U[c], { preview = "texture" })
+      p:Dropdown(T["Power Bar Texture"], C.unitframes[c], "pbartexture", D.uf_bartexture, U[c], { preview = "texture" })
       p:Number(T["UnitFrame Spacing"], C.unitframes[c], "pspace", U[c])
       p:Checkbox(T["Show PvP-Flag"], C.unitframes[c], "showPVP", U[c])
-      p:Number(T["PVP Flag Size"], C.unitframes[c], "pvpiconsize", U[c])
-      p:Dropdown(T["PvP Flag Position"], C.unitframes[c], "pvpiconalign", D.positions, U[c])
-      p:Number(T["PvP Flag X-Offset"], C.unitframes[c], "pvpiconoffx", U[c])
-      p:Number(T["PvP Flag Y-Offset"], C.unitframes[c], "pvpiconoffy", U[c])
+      p:Number(T["PVP Flag Size"], C.unitframes[c], "pvpiconsize", U[c], Opts(ICONSIZE, { requires = "showPVP" }))
+      p:Dropdown(T["PvP Flag Position"], C.unitframes[c], "pvpiconalign", D.positions, U[c], { requires = "showPVP" })
+      p:Number(T["PvP Flag X-Offset"], C.unitframes[c], "pvpiconoffx", U[c], Opts(OFFSET, { requires = "showPVP" }))
+      p:Number(T["PvP Flag Y-Offset"], C.unitframes[c], "pvpiconoffy", U[c], Opts(OFFSET, { requires = "showPVP" }))
       p:Checkbox(T["Show Loot Icon"], C.unitframes[c], "looticon", U[c])
       p:Checkbox(T["Show Leader Icon"], C.unitframes[c], "leadericon", U[c])
       if c == "pet" then
         p:Dropdown(T["Show Happiness Icon"], C.unitframes[c], "happinessicon", D.uf_happiness, U[c])
-        p:Number(T["Happiness Icon Size"], C.unitframes[c], "happinesssize", U[c])
+        p:Number(T["Happiness Icon Size"], C.unitframes[c], "happinesssize", U[c], ICONSIZE)
       end
       p:Checkbox(T["Show Raid Mark"], C.unitframes[c], "raidicon", U[c])
-      p:Dropdown(T["Raid Mark Position"], C.unitframes[c], "raidiconalign", D.positions, U[c])
-      p:Number(T["Raid Mark X-Offset"], C.unitframes[c], "raidiconoffx", U[c])
-      p:Number(T["Raid Mark Y-Offset"], C.unitframes[c], "raidiconoffy", U[c])
-      p:Number(T["Raid Mark Size"], C.unitframes[c], "raidiconsize", U[c])
+      p:Dropdown(T["Raid Mark Position"], C.unitframes[c], "raidiconalign", D.positions, U[c], { requires = "raidicon" })
+      p:Number(T["Raid Mark X-Offset"], C.unitframes[c], "raidiconoffx", U[c], Opts(OFFSET, { requires = "raidicon" }))
+      p:Number(T["Raid Mark Y-Offset"], C.unitframes[c], "raidiconoffy", U[c], Opts(OFFSET, { requires = "raidicon" }))
+      p:Number(T["Raid Mark Size"], C.unitframes[c], "raidiconsize", U[c], Opts(ICONSIZE, { requires = "raidicon" }))
       p:Color(T["Heal Color"], C.unitframes[c], "healcolor", U[c])
       p:Dropdown(T["Display Overheal"], C.unitframes[c], "overhealperc", D.uf_overheal, U[c])
 
       if c == "raid" then
         p:Checkbox(T["Display Raid Group Label"], C.unitframes[c], "raidgrouplabel", U["raid"])
-        p:Number(T["Group Label X-Offset"], C.unitframes[c], "grouplabelxoff", U["raid"])
-        p:Number(T["Group Label Y-Offset"], C.unitframes[c], "grouplabelyoff", U["raid"])
+        p:Number(T["Group Label X-Offset"], C.unitframes[c], "grouplabelxoff", U["raid"], Opts(OFFSET, { requires = "raidgrouplabel" }))
+        p:Number(T["Group Label Y-Offset"], C.unitframes[c], "grouplabelyoff", U["raid"], Opts(OFFSET, { requires = "raidgrouplabel" }))
 
         p:Header(T["Layout"])
-        p:Number(T["Raid Padding"], C.unitframes[c], "raidpadding", U["raid"])
+        p:Number(T["Raid Padding"], C.unitframes[c], "raidpadding", U["raid"], SPACING)
         p:Dropdown(T["Raid Layout"], C.unitframes[c], "raidlayout", D.uf_raidlayout, U["raid"])
         p:Dropdown(T["Raid Fill Direction"], C.unitframes[c], "raidfill", D.orientation, U["raid"])
         p:Checkbox(T["Grow Right To Left"], C.unitframes[c], "raidgrowleft", U["raid"])
         p:Checkbox(T["Collapse Empty Slots"], C.unitframes[c], "collapse", U["raid"])
       elseif c == "raidpet" then
         p:Header(T["Layout"])
-        p:Number(T["Raid Padding"], C.unitframes[c], "raidpadding", U["raid"])
+        p:Number(T["Raid Padding"], C.unitframes[c], "raidpadding", U["raid"], SPACING)
         p:Dropdown(T["Raid Layout"], C.unitframes[c], "raidlayout", D.uf_raidlayout, U["raid"])
         p:Dropdown(T["Raid Fill Direction"], C.unitframes[c], "raidfill", D.orientation, U["raid"])
         p:Checkbox(T["Collapse Empty Slots"], C.unitframes[c], "collapse", U["raid"])
@@ -1086,46 +1383,53 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
       p:Number(T["Health Bar Width"], C.unitframes[c], "width", U[c])
       p:Number(T["Health Bar Height"], C.unitframes[c], "height", U[c])
       p:Dropdown(T["Left Text"], C.unitframes[c], "txthpleft", D.uf_texts, U[c])
-      p:Number(T["Left Text X Offset"], C.unitframes[c], "txthpleftoffx", U[c])
-      p:Number(T["Left Text Y Offset"], C.unitframes[c], "txthpleftoffy", U[c])
+      p:Number(T["Left Text X Offset"], C.unitframes[c], "txthpleftoffx", U[c], OFFSET)
+      p:Number(T["Left Text Y Offset"], C.unitframes[c], "txthpleftoffy", U[c], OFFSET)
       p:Dropdown(T["Center Text"], C.unitframes[c], "txthpcenter", D.uf_texts, U[c])
-      p:Number(T["Center Text X Offset"], C.unitframes[c], "txthpcenteroffx", U[c])
-      p:Number(T["Center Text Y Offset"], C.unitframes[c], "txthpcenteroffy", U[c])
+      p:Number(T["Center Text X Offset"], C.unitframes[c], "txthpcenteroffx", U[c], OFFSET)
+      p:Number(T["Center Text Y Offset"], C.unitframes[c], "txthpcenteroffy", U[c], OFFSET)
       p:Dropdown(T["Right Text"], C.unitframes[c], "txthpright", D.uf_texts, U[c])
-      p:Number(T["Right Text X Offset"], C.unitframes[c], "txthprightoffx", U[c])
-      p:Number(T["Right Text Y Offset"], C.unitframes[c], "txthprightoffy", U[c])
+      p:Number(T["Right Text X Offset"], C.unitframes[c], "txthprightoffx", U[c], OFFSET)
+      p:Number(T["Right Text Y Offset"], C.unitframes[c], "txthprightoffy", U[c], OFFSET)
       p:Checkbox(T["Invert Health Bar"], C.unitframes[c], "invert_healthbar", U[c])
       p:Checkbox(T["Enable Vertical Health Bar"], C.unitframes[c], "verticalbar", U[c])
 
       p:Header(T["Powerbar"])
       p:Number(T["Power Bar Height"], C.unitframes[c], "pheight", U[c])
       p:Number(T["Power Bar Width"], C.unitframes[c], "pwidth", U[c])
-      p:Number(T["Power Bar X-Offset"], C.unitframes[c], "poffx", U[c])
-      p:Number(T["Power Bar Y-Offset"], C.unitframes[c], "poffy", U[c])
+      p:Number(T["Power Bar X-Offset"], C.unitframes[c], "poffx", U[c], OFFSET)
+      p:Number(T["Power Bar Y-Offset"], C.unitframes[c], "poffy", U[c], OFFSET)
       p:Dropdown(T["Left Text"], C.unitframes[c], "txtpowerleft", D.uf_texts, U[c])
-      p:Number(T["Left Text X Offset"], C.unitframes[c], "txtpowerleftoffx", U[c])
-      p:Number(T["Left Text Y Offset"], C.unitframes[c], "txtpowerleftoffy", U[c])
+      p:Number(T["Left Text X Offset"], C.unitframes[c], "txtpowerleftoffx", U[c], OFFSET)
+      p:Number(T["Left Text Y Offset"], C.unitframes[c], "txtpowerleftoffy", U[c], OFFSET)
       p:Dropdown(T["Center Text"], C.unitframes[c], "txtpowercenter", D.uf_texts, U[c])
-      p:Number(T["Center Text X Offset"], C.unitframes[c], "txtpowercenteroffx", U[c])
-      p:Number(T["Center Text Y Offset"], C.unitframes[c], "txtpowercenteroffy", U[c])
+      p:Number(T["Center Text X Offset"], C.unitframes[c], "txtpowercenteroffx", U[c], OFFSET)
+      p:Number(T["Center Text Y Offset"], C.unitframes[c], "txtpowercenteroffy", U[c], OFFSET)
       p:Dropdown(T["Right Text"], C.unitframes[c], "txtpowerright", D.uf_texts, U[c])
-      p:Number(T["Right Text X Offset"], C.unitframes[c], "txtpowerrightoffx", U[c])
-      p:Number(T["Right Text Y Offset"], C.unitframes[c], "txtpowerrightoffy", U[c])
+      p:Number(T["Right Text X Offset"], C.unitframes[c], "txtpowerrightoffx", U[c], OFFSET)
+      p:Number(T["Right Text Y Offset"], C.unitframes[c], "txtpowerrightoffy", U[c], OFFSET)
       p:Dropdown(T["Power Bar Anchor"], C.unitframes[c], "panchor", D.uf_powerbar_position, U[c])
+
+      if c == "group" or c == "raid" then
+        p:Header(T["Castbar"])
+        p:Checkbox(T["Enable Castbars"], C.unitframes[c], "castbar", U[c])
+        p:Number(T["Castbar Height"], C.unitframes[c], "castbarheight", U[c], { requires = "castbar" })
+        p:Checkbox(T["Show Spell Name"], C.unitframes[c], "castbartext", U[c], { requires = "castbar" })
+      end
 
       if c == "player" then
         p:Header(T["Energy/Mana Ticks"])
         p:Checkbox(T["Enable Energy Ticks"], C.unitframes[c], "energy")
         p:Checkbox(T["Enable Mana Ticks"], C.unitframes[c], "manatick")
         p:Checkbox(T["Show Five Second Rule"], C.unitframes[c], "showfsr")
-        p:Dropdown(T["Five Second Rule Style"], C.unitframes[c], "fsrstyle", function() return {"0:" .. T["Separate Bar"], "1:" .. T["Overlay"]} end)
-        p:Number(T["Five Second Rule Height"], C.unitframes[c], "fsrheight")
+        p:Dropdown(T["Five Second Rule Style"], C.unitframes[c], "fsrstyle", function() return {"0:" .. T["Separate Bar"], "1:" .. T["Overlay"]} end, nil, { requires = "showfsr" })
+        p:Number(T["Five Second Rule Height"], C.unitframes[c], "fsrheight", nil, { requires = "showfsr" })
       end
 
       p:Header(T["Combat Text"])
       p:Checkbox(T["Show Combat Text"], C.unitframes[c], "hitindicator", U[c])
-      p:Dropdown(T["Combat Text Font"], C.unitframes[c], "hitindicatorfont", D.fonts, U[c])
-      p:Number(T["Combat Text Size"], C.unitframes[c], "hitindicatorsize", U[c])
+      p:Dropdown(T["Combat Text Font"], C.unitframes[c], "hitindicatorfont", D.fonts, U[c], Opts({ preview = "font" }, { requires = "hitindicator" }))
+      p:Number(T["Combat Text Size"], C.unitframes[c], "hitindicatorsize", U[c], Opts(FONTSIZE, { requires = "hitindicator" }))
 
       p:Header(T["Text Colors"])
       p:Checkbox(T["Automatic Health Text Color"], C.unitframes[c], "healthcolor", U[c])
@@ -1136,25 +1440,25 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
       p:Header(T["Buffs"])
       p:Dropdown(T["Buff And Debuff Timers"], C.unitframes[c], "aura_timers", D.cooldown_timers, UpdateCooldowns)
       p:Dropdown(T["Buff Position"], C.unitframes[c], "buffs", D.uf_buff_position, U[c])
-      p:Number(T["Buff Size"], C.unitframes[c], "buffsize", U[c])
-      p:Number(T["Buff Limit"], C.unitframes[c], "bufflimit", U[c])
-      p:Number(T["Buffs Per Row"], C.unitframes[c], "buffperrow", U[c])
-      p:Number(T["Own Buff Size"], C.unitframes[c], "ownbuffsize", U[c])
-      p:Number(T["Buff X-Offset"], C.unitframes[c], "buffoffx", U[c])
-      p:Number(T["Buff Y-Offset"], C.unitframes[c], "buffoffy", U[c])
-      p:Number(T["Buff X-Spacing"], C.unitframes[c], "buffspacingx", U[c])
-      p:Number(T["Buff Y-Spacing"], C.unitframes[c], "buffspacingy", U[c])
+      p:Number(T["Buff Size"], C.unitframes[c], "buffsize", U[c], ICONSIZE)
+      p:Number(T["Buff Limit"], C.unitframes[c], "bufflimit", U[c], COUNT)
+      p:Number(T["Buffs Per Row"], C.unitframes[c], "buffperrow", U[c], COUNT)
+      p:Number(T["Own Buff Size"], C.unitframes[c], "ownbuffsize", U[c], ICONSIZE)
+      p:Number(T["Buff X-Offset"], C.unitframes[c], "buffoffx", U[c], OFFSET)
+      p:Number(T["Buff Y-Offset"], C.unitframes[c], "buffoffy", U[c], OFFSET)
+      p:Number(T["Buff X-Spacing"], C.unitframes[c], "buffspacingx", U[c], SPACING)
+      p:Number(T["Buff Y-Spacing"], C.unitframes[c], "buffspacingy", U[c], SPACING)
 
       p:Header(T["Debuffs"])
       p:Dropdown(T["Debuff Position"], C.unitframes[c], "debuffs", D.uf_buff_position, U[c])
-      p:Number(T["Debuff Size"], C.unitframes[c], "debuffsize", U[c])
-      p:Number(T["Debuff Limit"], C.unitframes[c], "debufflimit", U[c])
-      p:Number(T["Debuffs Per Row"], C.unitframes[c], "debuffperrow", U[c])
-      p:Number(T["Own Debuff Size"], C.unitframes[c], "owndebuffsize", U[c])
-      p:Number(T["Debuff X-Offset"], C.unitframes[c], "debuffoffx", U[c])
-      p:Number(T["Debuff Y-Offset"], C.unitframes[c], "debuffoffy", U[c])
-      p:Number(T["Debuff X-Spacing"], C.unitframes[c], "debuffspacingx", U[c])
-      p:Number(T["Debuff Y-Spacing"], C.unitframes[c], "debuffspacingy", U[c])
+      p:Number(T["Debuff Size"], C.unitframes[c], "debuffsize", U[c], ICONSIZE)
+      p:Number(T["Debuff Limit"], C.unitframes[c], "debufflimit", U[c], COUNT)
+      p:Number(T["Debuffs Per Row"], C.unitframes[c], "debuffperrow", U[c], COUNT)
+      p:Number(T["Own Debuff Size"], C.unitframes[c], "owndebuffsize", U[c], ICONSIZE)
+      p:Number(T["Debuff X-Offset"], C.unitframes[c], "debuffoffx", U[c], OFFSET)
+      p:Number(T["Debuff Y-Offset"], C.unitframes[c], "debuffoffy", U[c], OFFSET)
+      p:Number(T["Debuff X-Spacing"], C.unitframes[c], "debuffspacingx", U[c], SPACING)
+      p:Number(T["Debuff Y-Spacing"], C.unitframes[c], "debuffspacingy", U[c], SPACING)
 
       if c ~= "player" then
       end
@@ -1163,22 +1467,22 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
       p:Checkbox(T["Display Aggro Indicator"], C.unitframes[c], "squareaggro", U[c])
       p:Checkbox(T["Display Combat Indicator"], C.unitframes[c], "squarecombat", U[c])
       p:Dropdown(T["Indicator Position"], C.unitframes[c], "squarepos", D.positions, U[c])
-      p:Number(T["Indicator Size"], C.unitframes[c], "squaresize", U[c])
+      p:Number(T["Indicator Size"], C.unitframes[c], "squaresize", U[c], ICONSIZE)
 
       p:Header(T["Buff/Debuff Indicators"])
       p:Checkbox(T["Enable Indicators"], C.unitframes[c], "buff_indicator", U[c])
-      p:Checkbox(T["Show Stacks"], C.unitframes[c], "indicator_stacks", U[c])
-      p:Dropdown(T["Indicator Timers"], C.unitframes[c], "indicator_timers", D.cooldown_timers, UpdateCooldowns)
-      p:Number(T["Indicator Size"], C.unitframes[c], "indicator_size", U[c])
-      p:Dropdown(T["Indicator Spacing"], C.unitframes[c], "indicator_spacing", D.spacing, U[c])
-      p:Dropdown(T["Indicator Position"], C.unitframes[c], "indicator_pos", D.positions, U[c])
-      p:List(T["Show Custom Indicators"], C.unitframes[c], "custom_indicator", U[c])
-      p:Checkbox(T["Show Buff Indicators"], C.unitframes[c], "show_buffs", U[c])
-      p:Checkbox(T["Show Hots Indicators"], C.unitframes[c], "show_hots", U[c])
-      p:Checkbox(T["Show Hots of all Classes"], C.unitframes[c], "all_hots", U[c])
-      p:Checkbox(T["Show Procs Indicators"], C.unitframes[c], "show_procs", U[c])
-      p:Checkbox(T["Show Procs of all Classes"], C.unitframes[c], "all_procs", U[c])
-      p:Checkbox(T["Show Totems Indicators"], C.unitframes[c], "show_totems", U[c])
+      p:Checkbox(T["Show Stacks"], C.unitframes[c], "indicator_stacks", U[c], { requires = "buff_indicator" })
+      p:Dropdown(T["Indicator Timers"], C.unitframes[c], "indicator_timers", D.cooldown_timers, UpdateCooldowns, { requires = "buff_indicator" })
+      p:Number(T["Indicator Size"], C.unitframes[c], "indicator_size", U[c], Opts(ICONSIZE, { requires = "buff_indicator" }))
+      p:Dropdown(T["Indicator Spacing"], C.unitframes[c], "indicator_spacing", D.spacing, U[c], { requires = "buff_indicator" })
+      p:Dropdown(T["Indicator Position"], C.unitframes[c], "indicator_pos", D.positions, U[c], { requires = "buff_indicator" })
+      p:List(T["Show Custom Indicators"], C.unitframes[c], "custom_indicator", U[c], { requires = "buff_indicator" })
+      p:Checkbox(T["Show Buff Indicators"], C.unitframes[c], "show_buffs", U[c], { requires = "buff_indicator" })
+      p:Checkbox(T["Show Hots Indicators"], C.unitframes[c], "show_hots", U[c], { requires = "buff_indicator" })
+      p:Checkbox(T["Show Hots of all Classes"], C.unitframes[c], "all_hots", U[c], { requires = "buff_indicator" })
+      p:Checkbox(T["Show Procs Indicators"], C.unitframes[c], "show_procs", U[c], { requires = "buff_indicator" })
+      p:Checkbox(T["Show Procs of all Classes"], C.unitframes[c], "all_procs", U[c], { requires = "buff_indicator" })
+      p:Checkbox(T["Show Totems Indicators"], C.unitframes[c], "show_totems", U[c], { requires = "buff_indicator" })
 
       p:Header(T["Dispel Indicators"])
       p:Dropdown(T["Show Dispel Indicators"], C.unitframes[c], "debuff_indicator", D.uf_debuff_indicator, U[c])
@@ -1188,35 +1492,34 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
 
       p:Header(T["Overwrite Fonts"])
       p:Checkbox(T["Use Custom Font Settings"], C.unitframes[c], "customfont", U[c])
-      p:Dropdown(T["Custom Font Name"], C.unitframes[c], "customfont_name", D.fonts, U[c])
-      p:Number(T["Custom Font Size"], C.unitframes[c], "customfont_size", U[c])
-      p:Dropdown(T["Custom Font Style"], C.unitframes[c], "customfont_style", D.fontstyle, U[c])
+      p:Dropdown(T["Custom Font Name"], C.unitframes[c], "customfont_name", D.fonts, U[c], Opts({ preview = "font" }, { requires = "customfont" }))
+      p:Number(T["Custom Font Size"], C.unitframes[c], "customfont_size", U[c], Opts(FONTSIZE, { requires = "customfont" }))
+      p:Dropdown(T["Custom Font Style"], C.unitframes[c], "customfont_style", D.fontstyle, U[c], { requires = "customfont" })
 
       p:Header(T["Overwrite Colors"])
       p:Checkbox(T["Inherit Default Colors"], C.unitframes[c], "defcolor", U[c])
-      p:Dropdown(T["Health Bar Color"], C.unitframes[c], "custom", D.uf_color, U[c])
-      p:Color(T["Custom Health Bar Color"], C.unitframes[c], "customcolor", U[c])
-      p:Checkbox(T["Fade To Custom Color"], C.unitframes[c], "customfade", U[c])
-      p:Checkbox(T["Use Custom Color On Full Health"], C.unitframes[c], "customfullhp", U[c])
-      p:Color(T["Custom Health Bar Background Color"], C.unitframes[c], "custombgcolor", U[c])
-      p:Checkbox(T["Use Custom Color Health Bar Background"], C.unitframes[c], "custombg", U[c])
-      p:Color(T["Custom Power Bar Background Color"], C.unitframes[c], "custompbgcolor", U[c])
-      p:Checkbox(T["Use Custom Color Power Bar Background"], C.unitframes[c], "custompbg", U[c])
-      p:Color(T["Mana Color"], C.unitframes[c], "manacolor", U[c])
-      p:Color(T["Rage Color"], C.unitframes[c], "ragecolor", U[c])
-      p:Color(T["Energy Color"], C.unitframes[c], "energycolor", U[c])
-      p:Color(T["Focus Color"], C.unitframes[c], "focuscolor", U[c])
+      p:Dropdown(T["Health Bar Color"], C.unitframes[c], "custom", D.uf_color, U[c], { requires = "!defcolor" })
+      p:Color(T["Custom Health Bar Color"], C.unitframes[c], "customcolor", U[c], { requires = "!defcolor" })
+      p:Checkbox(T["Fade To Custom Color"], C.unitframes[c], "customfade", U[c], { requires = "!defcolor" })
+      p:Checkbox(T["Use Custom Color On Full Health"], C.unitframes[c], "customfullhp", U[c], { requires = "!defcolor" })
+      p:Color(T["Custom Health Bar Background Color"], C.unitframes[c], "custombgcolor", U[c], { requires = "!defcolor" })
+      p:Checkbox(T["Use Custom Color Health Bar Background"], C.unitframes[c], "custombg", U[c], { requires = "!defcolor" })
+      p:Color(T["Custom Power Bar Background Color"], C.unitframes[c], "custompbgcolor", U[c], { requires = "!defcolor" })
+      p:Checkbox(T["Use Custom Color Power Bar Background"], C.unitframes[c], "custompbg", U[c], { requires = "!defcolor" })
+      p:Color(T["Mana Color"], C.unitframes[c], "manacolor", U[c], { requires = "!defcolor" })
+      p:Color(T["Rage Color"], C.unitframes[c], "ragecolor", U[c], { requires = "!defcolor" })
+      p:Color(T["Energy Color"], C.unitframes[c], "energycolor", U[c], { requires = "!defcolor" })
+      p:Color(T["Focus Color"], C.unitframes[c], "focuscolor", U[c], { requires = "!defcolor" })
 
       if c == "player" then
         p:Header(T["Player SP/Haste Display"])
         p:Checkbox(T["Haste Display"], C.unitframes[c], "display_haste")
-        p:Color(T["Haste Display Color"], C.unitframes[c], "display_haste_color")
+        p:Color(T["Haste Display Color"], C.unitframes[c], "display_haste_color", nil, { requires = "display_haste" })
         p:Checkbox(T["Display Spell Power"], C.unitframes[c], "display_spellpower")
-        p:Checkbox(T["Use Custom Spell Power Color (unchecked = biggest school color)"], C.unitframes[c], "display_sp_color_override")
-        p:Color(T["Spell Power Color"], C.unitframes[c], "display_sp_color")
+        p:Checkbox(T["Use Custom Spell Power Color (unchecked = biggest school color)"], C.unitframes[c], "display_sp_color_override", nil, { requires = "display_spellpower" })
+        p:Color(T["Spell Power Color"], C.unitframes[c], "display_sp_color", nil, { requires = "display_sp_color_override" })
       end
-    end)
-  end
+  end, { preview = unitPreview })
 
   gui:AddPage("character.inventory", CHARACTER, T["Inventory"], function(p)
     p:Checkbox(T["Show Durability"], C.character.inventory, "durability")
@@ -1236,7 +1539,7 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
       "4:" .. ITEM_QUALITY4_DESC,
     }, U["equipmentmanager"])
     p:Checkbox(T["Include Bank Items"], C.equipmentmanager, "unusedbank", U["equipmentmanager"])
-  end)
+  end, { module = "equipmentmanager" })
 
   gui:AddPage("character.reputation", CHARACTER, REPUTATION, function(p)
     p:Checkbox(T["Show Reputation Remaining"], C.character.reputation, "repRequired")
@@ -1252,14 +1555,14 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Checkbox(T["Enable Movable Bags"], C.appearance.bags, "movable")
     p:Checkbox(T["Anchor Bags Above Chat"], C.appearance.bags, "abovechat")
     p:Checkbox(T["Hide Chat When Bags Are Opened"], C.appearance.bags, "hidechat")
-    p:Number(T["Bagslots Per Row"], C.appearance.bags, "bagrowlength")
-    p:Number(T["Bankslots Per Row"], C.appearance.bags, "bankrowlength")
+    p:Number(T["Bagslots Per Row"], C.appearance.bags, "bagrowlength", nil, COUNT)
+    p:Number(T["Bankslots Per Row"], C.appearance.bags, "bankrowlength", nil, COUNT)
     p:Number(T["Item Slot Size"], C.appearance.bags, "icon_size")
     p:Dropdown(T["Cooldown Timers"], C.appearance.bags, "timers", D.cooldown_timers, UpdateCooldowns)
     p:Checkbox(T["Auto Sell Grey Items"], C.global, "autosell")
     p:Checkbox(T["Auto Repair Items"], C.global, "autorepair")
     p:Checkbox(T["Auto Sort When Opening Bags"], C.appearance.bags, "autoSortOnOpen")
-  end)
+  end, { module = "bags" })
 
   gui:AddPage("loot", LOOT, nil, function(p)
     p:Checkbox(T["Enable Auto-Resize Loot Frame"], C.loot, "autoresize")
@@ -1269,7 +1572,7 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Dropdown(T["Random Roll Announcement Rarity"], C.loot, "rollannouncequal", D.loot_rarity)
     p:Checkbox(T["Detailed Random Roll Announcement"], C.loot, "rollannounce")
     p:Checkbox(T["Use Item Rarity Color For Loot-Roll Timer"], C.loot, "raritytimer")
-  end)
+  end, { module = "loot" })
 
   gui:AddPage("minimap.minimap", MINIMAP_LABEL, MINIMAP_LABEL, function(p)
     p:Number(T["Minimap Size (|cffffaaaaExperimental|r)"], C.appearance.minimap, "size", U["minimap"])
@@ -1279,18 +1582,18 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Dropdown(T["Coordinates Location"], C.appearance.minimap, "coordsloc", D.minimap_cords_position)
     p:Checkbox(T["Show PvP Icon"], C.unitframes.player, "showPVPMinimap")
     p:Checkbox(T["Show Inactive Tracking"], C.appearance.minimap, "tracking_pulse")
-    p:Number(T["Tracking Icon Size"], C.appearance.minimap, "tracking_size")
+    p:Number(T["Tracking Icon Size"], C.appearance.minimap, "tracking_size", nil, ICONSIZE)
     p:Checkbox(T["Hide Addon Buttons On Combat"], C.appearance.minimap, "addon_buttons")
-  end)
+  end, { module = "minimap" })
 
   gui:AddPage("minimap.addonbuttons", MINIMAP_LABEL, T["Addon Buttons"], function(p)
     p:Checkbox(T["Enable Addon Button Frame"], C.abuttons, "enable")
     p:Dropdown(T["Addon Buttons Panel Position"], C.abuttons, "position", D.addonbuttons_position, U["addonbuttons"])
     p:Checkbox(T["Show Addon Buttons On Login"], C.abuttons, "showdefault", U["addonbuttons"])
-    p:Number(T["Number Of Buttons Per Row/Column"], C.abuttons, "rowsize", U["addonbuttons"])
-    p:Number(T["Button Spacing"], C.abuttons, "spacing", U["addonbuttons"])
+    p:Number(T["Number Of Buttons Per Row/Column"], C.abuttons, "rowsize", U["addonbuttons"], COUNT)
+    p:Number(T["Button Spacing"], C.abuttons, "spacing", U["addonbuttons"], SPACING)
     p:Checkbox(T["Hide When Entering Combat"], C.abuttons, "hideincombat", U["addonbuttons"])
-  end)
+  end, { module = "addonbuttons" })
 
   gui:AddPage("buffs.icons", T["Buffs"], T["Buff/Debuff Icons"], function(p)
     p:Checkbox(T["Enable Buff Display"], C.buffs, "buffs", U["buff"])
@@ -1298,14 +1601,14 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Checkbox(T["Enable Weapon Buff Display"], C.buffs, "weapons", U["buff"])
     p:Checkbox(T["Seperate Weapon Buffs"], C.buffs, "separateweapons", U["buff"])
     p:Number(T["Buff Size"], C.buffs, "size", U["buff"])
-    p:Number(T["Buff Spacing"], C.buffs, "spacing", U["buff"])
-    p:Number(T["Number Of Weapon Buffs Per Row"], C.buffs, "wepbuffrowsize", U["buff"])
-    p:Number(T["Number Of Buffs Per Row"], C.buffs, "buffrowsize", U["buff"])
-    p:Number(T["Number Of Debuffs Per Row"], C.buffs, "debuffrowsize", U["buff"])
+    p:Number(T["Buff Spacing"], C.buffs, "spacing", U["buff"], SPACING)
+    p:Number(T["Number Of Weapon Buffs Per Row"], C.buffs, "wepbuffrowsize", U["buff"], COUNT)
+    p:Number(T["Number Of Buffs Per Row"], C.buffs, "buffrowsize", U["buff"], COUNT)
+    p:Number(T["Number Of Debuffs Per Row"], C.buffs, "debuffrowsize", U["buff"], COUNT)
     p:Dropdown(T["Duration Timers"], C.buffs, "timers", D.cooldown_timers, UpdateCooldowns)
     p:Checkbox(T["Show Duration Inside Buff"], C.buffs, "textinside", U["buff"])
     p:Number(T["Stack Count Font Size"], C.buffs, "fontsize", U["buff"])
-  end)
+  end, { module = "buff" })
 
   gui:AddPage("buffs.totems", T["Buffs"], T["Totem Bar"], function(p)
     p:Dropdown(T["Totem Direction"], C.totems, "direction", D.orientation, U["totems"])
@@ -1313,69 +1616,42 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Checkbox(T["Only Show Active Totems"], C.totems, "onlyactive", U["totems"])
     p:Number(T["Expiry Warning (Seconds)"], C.totems, "expirywarn", U["totems"])
     p:Checkbox(T["Announce Killed Totems"], C.totems, "killalert", U["totems"])
-    p:Number(T["Icon Size"], C.totems, "iconsize", U["totems"])
+    p:Number(T["Icon Size"], C.totems, "iconsize", U["totems"], ICONSIZE)
     p:Dropdown(T["Spacing"], C.totems, "spacing", D.spacing, U["totems"])
     p:Checkbox(T["Show Background"], C.totems, "showbg", U["totems"])
     p:Dropdown(T["Duration Timers"], C.totems, "timers", D.cooldown_timers, UpdateCooldowns)
-  end)
+  end, { module = "totems" })
 
-  gui:AddPage("buffs.pbuff", T["Buffs"], T["Player Buff Bar"], function(p)
-    p:Checkbox(T["Enable Bar"], C.buffbar.pbuff, "enable")
-    p:Checkbox(T["Use Unit Fonts"], C.buffbar.pbuff, "use_unitfonts")
-    p:Dropdown(T["Sort Order"], C.buffbar.pbuff, "sort", D.buffbarsort)
-    p:Color(T["Background Color"], C.buffbar.pbuff, "color")
-    p:Color(T["Border Color"], C.buffbar.pbuff, "bordercolor")
-    p:Color(T["Text Color"], C.buffbar.pbuff, "textcolor")
-    p:Checkbox(T["Automatic Background Color"], C.buffbar.pbuff, "dtypebg")
-    p:Checkbox(T["Automatic Border Color"], C.buffbar.pbuff, "dtypeborder")
-    p:Checkbox(T["Automatic Text Color"], C.buffbar.pbuff, "dtypetext")
-    p:Checkbox(T["Color Buff Stacks"], C.buffbar.pbuff, "colorstacks")
-    p:Number(T["Buffbar Width"], C.buffbar.pbuff, "width")
-    p:Number(T["Buffbar Height"], C.buffbar.pbuff, "height")
-    p:Dropdown(T["Filter Mode"], C.buffbar.pbuff, "filter", D.buffbarfilter)
-    p:Number(T["Time Threshold"], C.buffbar.pbuff, "threshold")
-    p:List(T["Whitelist"], C.buffbar.pbuff, "whitelist")
-    p:List(T["Blacklist"], C.buffbar.pbuff, "blacklist")
-  end)
+  local buffbars = {
+    { "pbuff",   T["Player Buff Bar"] },
+    { "pdebuff", T["Player Debuff Bar"] },
+    { "tdebuff", T["Target Debuff Bar"] },
+  }
 
-  gui:AddPage("buffs.pdebuff", T["Buffs"], T["Player Debuff Bar"], function(p)
-    p:Checkbox(T["Enable Bar"], C.buffbar.pdebuff, "enable")
-    p:Checkbox(T["Use Unit Fonts"], C.buffbar.pdebuff, "use_unitfonts")
-    p:Dropdown(T["Sort Order"], C.buffbar.pdebuff, "sort", D.buffbarsort)
-    p:Color(T["Background Color"], C.buffbar.pdebuff, "color")
-    p:Color(T["Border Color"], C.buffbar.pdebuff, "bordercolor")
-    p:Color(T["Text Color"], C.buffbar.pdebuff, "textcolor")
-    p:Checkbox(T["Automatic Background Color"], C.buffbar.pdebuff, "dtypebg")
-    p:Checkbox(T["Automatic Border Color"], C.buffbar.pdebuff, "dtypeborder")
-    p:Checkbox(T["Automatic Text Color"], C.buffbar.pdebuff, "dtypetext")
-    p:Checkbox(T["Color Debuff Stacks"], C.buffbar.pdebuff, "colorstacks")
-    p:Number(T["Buffbar Width"], C.buffbar.pdebuff, "width")
-    p:Number(T["Buffbar Height"], C.buffbar.pdebuff, "height")
-    p:Dropdown(T["Filter Mode"], C.buffbar.pdebuff, "filter", D.buffbarfilter)
-    p:Number(T["Time Threshold"], C.buffbar.pdebuff, "threshold")
-    p:List(T["Whitelist"], C.buffbar.pdebuff, "whitelist")
-    p:List(T["Blacklist"], C.buffbar.pdebuff, "blacklist")
-  end)
-
-  gui:AddPage("buffs.tdebuff", T["Buffs"], T["Target Debuff Bar"], function(p)
-    p:Checkbox(T["Enable Bar"], C.buffbar.tdebuff, "enable")
-    p:Checkbox(T["Use Unit Fonts"], C.buffbar.tdebuff, "use_unitfonts")
-    p:Dropdown(T["Sort Order"], C.buffbar.tdebuff, "sort", D.buffbarsort)
-    p:Color(T["Background Color"], C.buffbar.tdebuff, "color")
-    p:Color(T["Border Color"], C.buffbar.tdebuff, "bordercolor")
-    p:Color(T["Text Color"], C.buffbar.tdebuff, "textcolor")
-    p:Checkbox(T["Automatic Background Color"], C.buffbar.tdebuff, "dtypebg")
-    p:Checkbox(T["Automatic Border Color"], C.buffbar.tdebuff, "dtypeborder")
-    p:Checkbox(T["Automatic Text Color"], C.buffbar.tdebuff, "dtypetext")
-    p:Checkbox(T["Color Debuff Stacks"], C.buffbar.tdebuff, "colorstacks")
-    p:Number(T["Buffbar Width"], C.buffbar.tdebuff, "width")
-    p:Number(T["Buffbar Height"], C.buffbar.tdebuff, "height")
-    p:Checkbox(T["Show Only Own Debuffs"], C.buffbar.tdebuff, "selfdebuff")
-    p:Dropdown(T["Filter Mode"], C.buffbar.tdebuff, "filter", D.buffbarfilter)
-    p:Number(T["Time Threshold"], C.buffbar.tdebuff, "threshold")
-    p:List(T["Whitelist"], C.buffbar.tdebuff, "whitelist")
-    p:List(T["Blacklist"], C.buffbar.tdebuff, "blacklist")
-  end)
+  gui:AddVariantPage("buffs.bars", T["Buffs"], T["Buff Bars"], buffbars, function(bar)
+    return C.buffbar[bar]
+  end, function(p, bar)
+    local c = C.buffbar[bar]
+    p:Checkbox(T["Enable Bar"], c, "enable")
+    p:Checkbox(T["Use Unit Fonts"], c, "use_unitfonts", nil, { requires = "enable" })
+    p:Dropdown(T["Sort Order"], c, "sort", D.buffbarsort, nil, { requires = "enable" })
+    p:Color(T["Background Color"], c, "color", nil, { requires = "enable" })
+    p:Color(T["Border Color"], c, "bordercolor", nil, { requires = "enable" })
+    p:Color(T["Text Color"], c, "textcolor", nil, { requires = "enable" })
+    p:Checkbox(T["Automatic Background Color"], c, "dtypebg", nil, { requires = "enable" })
+    p:Checkbox(T["Automatic Border Color"], c, "dtypeborder", nil, { requires = "enable" })
+    p:Checkbox(T["Automatic Text Color"], c, "dtypetext", nil, { requires = "enable" })
+    p:Checkbox(bar == "pbuff" and T["Color Buff Stacks"] or T["Color Debuff Stacks"], c, "colorstacks", nil, { requires = "enable" })
+    p:Number(T["Buffbar Width"], c, "width", nil, { requires = "enable" })
+    p:Number(T["Buffbar Height"], c, "height", nil, { requires = "enable" })
+    if bar == "tdebuff" then
+      p:Checkbox(T["Show Only Own Debuffs"], c, "selfdebuff", nil, { requires = "enable" })
+    end
+    p:Dropdown(T["Filter Mode"], c, "filter", D.buffbarfilter, nil, { requires = "enable" })
+    p:Number(T["Time Threshold"], c, "threshold", nil, { requires = "enable" })
+    p:List(T["Whitelist"], c, "whitelist", nil, { requires = "enable" })
+    p:List(T["Blacklist"], c, "blacklist", nil, { requires = "enable" })
+  end, { module = "buffwatch" })
 
   gui:AddPage("actionbar.general", T["Actionbar"], T["General"], function(p)
     p:Checkbox(T["Trigger Actions On Key Down"], C.bars, "keydown", U["bars"])
@@ -1399,13 +1675,13 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Checkbox(T["Always Allow Drag Via Shift Key"], C.bars, "shiftdrag", U["bars"])
 
     p:Header(T["Font Options"])
-    p:Dropdown(T["Font"], C.bars, "font", D.fonts, U["bars"])
-    p:Number(T["Font Padding"], C.bars, "font_offset", U["bars"])
-    p:Number(T["Macro Text Size"], C.bars, "macro_size", U["bars"])
+    p:Dropdown(T["Font"], C.bars, "font", D.fonts, U["bars"], { preview = "font" })
+    p:Number(T["Font Padding"], C.bars, "font_offset", U["bars"], OFFSET)
+    p:Number(T["Macro Text Size"], C.bars, "macro_size", U["bars"], FONTSIZE)
     p:Color(T["Macro Text Color"], C.bars, "macro_color", U["bars"])
-    p:Number(T["Item Count Text Size"], C.bars, "count_size", U["bars"])
+    p:Number(T["Item Count Text Size"], C.bars, "count_size", U["bars"], FONTSIZE)
     p:Color(T["Item Count Text Color"], C.bars, "count_color", U["bars"])
-    p:Number(T["Keybind Text Size"], C.bars, "bind_size", U["bars"])
+    p:Number(T["Keybind Text Size"], C.bars, "bind_size", U["bars"], FONTSIZE)
     p:Color(T["Keybind Text Color"], C.bars, "bind_color", U["bars"])
 
     p:Header(T["Auto Paging"])
@@ -1415,7 +1691,7 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Checkbox(T["Switch Pages On Druid Stealth"], C.bars, "druidstealth", U["bars"])
     p:Checkbox(T["Switch Pages On Priest Shadowform"], C.bars, "priestshadow", U["bars"])
     p:Checkbox(T["Range Based Hunter Paging"], C.bars, "hunterbar")
-  end)
+  end, { module = "actionbar" })
 
   gui:AddPage("actionbar.gryphons", T["Actionbar"], T["Gryphons"], function(p)
     p:Dropdown(T["Texture"], C.bars.gryphons, "texture", D.gryphons, U["gryphons"])
@@ -1423,9 +1699,9 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Dropdown(T["Left Anchor"], C.bars.gryphons, "anchor_left", D.xpanchors, U["gryphons"])
     p:Dropdown(T["Right Anchor"], C.bars.gryphons, "anchor_right", D.xpanchors, U["gryphons"])
     p:Number(T["Size"], C.bars.gryphons, "size", U["gryphons"])
-    p:Number(T["Horizontal Offset"], C.bars.gryphons, "offset_h", U["gryphons"])
-    p:Number(T["Vertical Offset"], C.bars.gryphons, "offset_v", U["gryphons"])
-  end)
+    p:Number(T["Horizontal Offset"], C.bars.gryphons, "offset_h", U["gryphons"], OFFSET)
+    p:Number(T["Vertical Offset"], C.bars.gryphons, "offset_v", U["gryphons"], OFFSET)
+  end, { module = "gryphons" })
 
   -- Shared Actionbar Settings
   local barnames = {
@@ -1448,8 +1724,15 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     {12, T["Pet Actionbar"]},
   }
 
-  for _, data in pairs(barnames) do
-    local id, caption = data[1], data[2]
+  local actionbars = {}
+  for _, data in ipairs(barnames) do
+    table.insert(actionbars, { "bar" .. data[1], data[2] })
+  end
+
+  gui:AddVariantPage("actionbar.bars", T["Actionbar"], T["Bars"], actionbars, function(bar)
+    return C.bars[bar]
+  end, function(p, bar)
+    local id = tonumber(bar:sub(4))
     local formfactors = function()
       return BarLayoutOptions(tonumber(C.bars["bar"..id].buttons) or id < 11 and NUM_ACTIONBAR_BUTTONS or id > 11 and NUM_SHAPESHIFT_SLOTS or NUM_PET_ACTION_SLOTS)
     end
@@ -1469,13 +1752,12 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
       return { "Up:" .. T["Up"], "Down:" .. T["Down"], "Left:" .. T["Left"], "Right:" .. T["Right"] }
     end
 
-    gui:AddPage("actionbar.bar" .. id, T["Actionbar"], caption, function(p)
       p:Checkbox(T["Enable"], C.bars["bar"..id], "enable", U["bars"])
 
       if id ~= 11 and id ~= 12 then
-        p:Dropdown(T["Buttons"], C.bars["bar"..id], "buttons", D.actionbarbuttons, U["bars"])
+        p:Dropdown(T["Buttons"], C.bars["bar"..id], "buttons", D.actionbarbuttons, U["bars"], { requires = "enable" })
         if id ~= 1 then
-          p:Checkbox(T["Pageable"], C.bars["bar"..id], "pageable", U["bars"])
+          p:Checkbox(T["Pageable"], C.bars["bar"..id], "pageable", U["bars"], { requires = "enable" })
         end
       end
 
@@ -1483,8 +1765,8 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
         p:Checkbox(T["Auto-Castable Action Indicator"], C.bars, "showcastable", U["bars"])
       end
 
-      p:Number(T["Icon Size"], C.bars["bar"..id], "icon_size", U["bars"])
-      p:Dropdown(T["Spacing"], C.bars["bar"..id], "spacing", D.actionbarbuttons, U["bars"])
+      p:Number(T["Icon Size"], C.bars["bar"..id], "icon_size", U["bars"], { requires = "enable" })
+      p:Dropdown(T["Spacing"], C.bars["bar"..id], "spacing", D.actionbarbuttons, U["bars"], { requires = "enable" })
       -- a new layout keeps an uneven orientation that fits it; the page
       -- shows the change, as it refreshes its rows after each one
       local layout_ufunc = function()
@@ -1502,28 +1784,27 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
         end
         if U["bars"] then U["bars"]() end
       end
-      p:Dropdown(T["Layout"], C.bars["bar"..id], "formfactor", formfactors, layout_ufunc)
-      p:Dropdown(T["Layout Uneven Orientation"], C.bars["bar"..id], "uneven", uneven_options, U["bars"])
+      p:Dropdown(T["Layout"], C.bars["bar"..id], "formfactor", formfactors, layout_ufunc, { requires = "enable" })
+      p:Dropdown(T["Layout Uneven Orientation"], C.bars["bar"..id], "uneven", uneven_options, U["bars"], { requires = "enable" })
       p:Dropdown(T["Fill Order"], C.bars["bar"..id], "fillmode", function()
         return {"auto:" .. T["Auto"], "row:" .. T["Row-first (1,2,3 / 4,5,6)"], "col:" .. T["Column-first (1,3,5 / 2,4,6)"]}
-      end, U["bars"])
-      p:Checkbox(T["Bar Background"], C.bars["bar"..id], "background", U["bars"])
-      p:Checkbox(T["Show Hotkey Text"], C.bars["bar"..id], "showkeybind", U["bars"])
+      end, U["bars"], { requires = "enable" })
+      p:Checkbox(T["Bar Background"], C.bars["bar"..id], "background", U["bars"], { requires = "enable" })
+      p:Checkbox(T["Show Hotkey Text"], C.bars["bar"..id], "showkeybind", U["bars"], { requires = "enable" })
 
       if id ~= 11 and id ~= 12 then
-        p:Checkbox(T["Show Macro Text"], C.bars["bar"..id], "showmacro", U["bars"])
-        p:Checkbox(T["Show Item Count Text"], C.bars["bar"..id], "showcount", U["bars"])
+        p:Checkbox(T["Show Macro Text"], C.bars["bar"..id], "showmacro", U["bars"], { requires = "enable" })
+        p:Checkbox(T["Show Item Count Text"], C.bars["bar"..id], "showcount", U["bars"], { requires = "enable" })
       end
 
       if id ~= 11 then
-        p:Checkbox(T["Show Empty Buttons"], C.bars["bar"..id], "showempty", U["bars"])
+        p:Checkbox(T["Show Empty Buttons"], C.bars["bar"..id], "showempty", U["bars"], { requires = "enable" })
       end
 
-      p:Checkbox(T["Enable Autohide"], C.bars["bar"..id], "autohide", U["bars"])
-      p:Number(T["Autohide Timeout"], C.bars["bar"..id], "hide_time", U["bars"])
-      p:Checkbox(T["Show In Combat"], C.bars["bar"..id], "hide_combat", U["bars"])
-    end)
-  end
+      p:Checkbox(T["Enable Autohide"], C.bars["bar"..id], "autohide", U["bars"], { requires = "enable" })
+      p:Number(T["Autohide Timeout"], C.bars["bar"..id], "hide_time", U["bars"], { requires = "autohide" })
+      p:Checkbox(T["Show In Combat"], C.bars["bar"..id], "hide_combat", U["bars"], { requires = "enable" })
+  end, { module = "actionbar" })
 
   gui:AddPage("panel", T["Panel"], nil, function(p)
     p:Checkbox(T["Use Unit Fonts"], C.panel, "use_unitfonts")
@@ -1546,7 +1827,7 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Checkbox(T["Enable Autohide For Right Chat Panel"], C.panel, "hide_rightchat")
     p:Checkbox(T["Enable Autohide For Minimap Panel"], C.panel, "hide_minimap")
     p:Checkbox(T["Enable Autohide For Microbar Panel"], C.panel, "hide_microbar")
-  end)
+  end, { module = "panel" })
 
   gui:AddPage("xpbar.xp", XPBAR_LABEL, T["Experience Bar"], function(p)
     p:Checkbox(T["Always Show"], C.panel.xp, "xp_always", U["xpbar"])
@@ -1561,14 +1842,14 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
 
     p:Header(T["Text"])
     p:Checkbox(T["Show Text"], C.panel.xp, "xp_text", U["xpbar"])
-    p:Number(T["Vertical Text Offset"], C.panel.xp, "xp_text_off_y", U["xpbar"])
+    p:Number(T["Vertical Text Offset"], C.panel.xp, "xp_text_off_y", U["xpbar"], OFFSET)
     p:Checkbox(T["Only Show On Mouse Over"], C.panel.xp, "xp_text_mouse", U["xpbar"])
 
     p:Header(T["Colors"])
     p:Color(T["Experience Color"], C.panel.xp, "xp_color", U["xpbar"])
     p:Color(T["Rested Color"], C.panel.xp, "rest_color", U["xpbar"])
-    p:Dropdown(T["Bar Texture"], C.panel.xp, "texture", D.uf_bartexture, U["xpbar"])
-  end)
+    p:Dropdown(T["Bar Texture"], C.panel.xp, "texture", D.uf_bartexture, U["xpbar"], { preview = "texture" })
+  end, { module = "xpbar" })
 
   gui:AddPage("xpbar.rep", XPBAR_LABEL, T["Reputation Bar"], function(p)
     p:Checkbox(T["Always Show"], C.panel.xp, "rep_always", U["xpbar"])
@@ -1582,19 +1863,19 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
 
     p:Header(T["Text"])
     p:Checkbox(T["Show Text"], C.panel.xp, "rep_text", U["xpbar"])
-    p:Number(T["Vertical Text Offset"], C.panel.xp, "rep_text_off_y", U["xpbar"])
+    p:Number(T["Vertical Text Offset"], C.panel.xp, "rep_text_off_y", U["xpbar"], OFFSET)
     p:Checkbox(T["Only Show On Mouse Over"], C.panel.xp, "rep_text_mouse", U["xpbar"])
-  end)
+  end, { module = "xpbar" })
 
   gui:AddPage("tooltip", T["Tooltip"], nil, function(p)
     p:Header(T["General"])
     p:Dropdown(T["Tooltip Position"], C.tooltip, "position", D.tooltip_position)
-    p:Dropdown(T["Tooltip Text Font"], C.tooltip, "font_tooltip", D.fonts)
-    p:Number(T["Tooltip Text Font Size"], C.tooltip, "font_tooltip_size")
+    p:Dropdown(T["Tooltip Text Font"], C.tooltip, "font_tooltip", D.fonts, nil, { preview = "font" })
+    p:Number(T["Tooltip Text Font Size"], C.tooltip, "font_tooltip_size", nil, FONTSIZE)
     p:Dropdown(T["Cursor Tooltip Align"], C.tooltip, "cursoralign", D.tooltip_align)
     p:Number(T["Cursor Tooltip Offset"], C.tooltip, "cursoroffset")
     p:Number(T["Custom Transparency"], C.tooltip, "alpha")
-    p:Dropdown(T["Status Bar Texture"], C.tooltip.statusbar, "texture", D.uf_bartexture)
+    p:Dropdown(T["Status Bar Texture"], C.tooltip.statusbar, "texture", D.uf_bartexture, nil, { preview = "texture" })
 
     p:Header(ITEMS)
     p:Checkbox(T["Always Show Item Comparison"], C.tooltip.compare, "showalways")
@@ -1614,7 +1895,7 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Checkbox(T["Show Unit Buffs"], C.tooltip, "showbuffs")
     p:Dropdown(T["Unit Buff Timers"], C.tooltip, "aura_timers", D.cooldown_timers, UpdateCooldowns)
     p:Checkbox(T["Show Unit IDs"], C.tooltip, "unitid")
-  end)
+  end, { module = "tooltip" })
 
   gui:AddPage("castbar.general", T["Castbar"], T["General"], function(p)
     p:Checkbox(T["Use Unit Fonts"], C.castbar, "use_unitfonts")
@@ -1622,61 +1903,40 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Color(T["Channeling Color"], C.appearance.castbar, "channelcolor")
     p:Color(T["Uninterruptible Color"], C.appearance.castbar, "shieldcolor")
     p:Color(T["Five Second Rule Color"], C.appearance.castbar, "fsrcolor")
-    p:Dropdown(T["Castbar Texture"], C.appearance.castbar, "texture", D.uf_bartexture)
+    p:Dropdown(T["Castbar Texture"], C.appearance.castbar, "texture", D.uf_bartexture, nil, { preview = "texture" })
     p:Checkbox(T["Disable Blizzard Castbar"], C.castbar.player, "hide_blizz")
-  end)
+  end, { module = "castbar" })
 
-  gui:AddPage("castbar.player", T["Castbar"], T["Player"], function(p)
-    p:Checkbox(T["Disable Player Castbar"], C.castbar.player, "hide_pfui")
-    p:Number(T["Castbar Width"], C.castbar.player, "width")
-    p:Number(T["Castbar Height"], C.castbar.player, "height")
-    p:Checkbox(T["Show Spell Icon"], C.castbar.player, "showicon")
-    p:Checkbox(T["Show Spell Name"], C.castbar.player, "showname")
-    p:Dropdown(T["Spell Name Alignment"], C.castbar.player, "namealign", D.castbaralign)
-    p:Number(T["Spell Name X Offset"], C.castbar.player, "txtleftoffx")
-    p:Number(T["Spell Name Y Offset"], C.castbar.player, "txtleftoffy")
-    p:Checkbox(T["Show Timer"], C.castbar.player, "showtimer")
-    p:Dropdown(T["Timer Alignment"], C.castbar.player, "timealign", D.castbaralign)
-    p:Number(T["Timer X Offset"], C.castbar.player, "txtrightoffx")
-    p:Number(T["Timer Y Offset"], C.castbar.player, "txtrightoffy")
-    p:Checkbox(T["Show Lag"], C.castbar.player, "showlag")
-    p:Checkbox(T["Show Rank"], C.castbar.player, "showrank")
-    p:Checkbox(T["Merge Tradeskill Casts"], C.castbar.player, "mergetradeskill")
-  end)
+  local castbars = {
+    { "player", T["Player"], T["Disable Player Castbar"] },
+    { "target", TARGET,      T["Disable Target Castbar"] },
+    { "focus",  T["Focus"],  T["Disable Focus Castbar"] },
+  }
 
-  gui:AddPage("castbar.target", T["Castbar"], TARGET, function(p)
-    p:Checkbox(T["Disable Target Castbar"], C.castbar.target, "hide_pfui")
-    p:Number(T["Castbar Width"], C.castbar.target, "width")
-    p:Number(T["Castbar Height"], C.castbar.target, "height")
-    p:Checkbox(T["Show Spell Icon"], C.castbar.target, "showicon")
-    p:Checkbox(T["Show Spell Name"], C.castbar.target, "showname")
-    p:Dropdown(T["Spell Name Alignment"], C.castbar.target, "namealign", D.castbaralign)
-    p:Number(T["Spell Name X Offset"], C.castbar.target, "txtleftoffx")
-    p:Number(T["Spell Name Y Offset"], C.castbar.target, "txtleftoffy")
-    p:Checkbox(T["Show Timer"], C.castbar.target, "showtimer")
-    p:Dropdown(T["Timer Alignment"], C.castbar.target, "timealign", D.castbaralign)
-    p:Number(T["Timer X Offset"], C.castbar.target, "txtrightoffx")
-    p:Number(T["Timer Y Offset"], C.castbar.target, "txtrightoffy")
-    p:Checkbox(T["Show Lag"], C.castbar.target, "showlag")
-    p:Checkbox(T["Show Rank"], C.castbar.target, "showrank")
-  end)
-
-  gui:AddPage("castbar.focus", T["Castbar"], T["Focus"], function(p)
-    p:Checkbox(T["Disable Focus Castbar"], C.castbar.focus, "hide_pfui")
-    p:Number(T["Castbar Width"], C.castbar.focus, "width")
-    p:Number(T["Castbar Height"], C.castbar.focus, "height")
-    p:Checkbox(T["Show Spell Icon"], C.castbar.focus, "showicon")
-    p:Checkbox(T["Show Spell Name"], C.castbar.focus, "showname")
-    p:Dropdown(T["Spell Name Alignment"], C.castbar.focus, "namealign", D.castbaralign)
-    p:Number(T["Spell Name X Offset"], C.castbar.focus, "txtleftoffx")
-    p:Number(T["Spell Name Y Offset"], C.castbar.focus, "txtleftoffy")
-    p:Checkbox(T["Show Timer"], C.castbar.focus, "showtimer")
-    p:Dropdown(T["Timer Alignment"], C.castbar.focus, "timealign", D.castbaralign)
-    p:Number(T["Timer X Offset"], C.castbar.focus, "txtrightoffx")
-    p:Number(T["Timer Y Offset"], C.castbar.focus, "txtrightoffy")
-    p:Checkbox(T["Show Lag"], C.castbar.focus, "showlag")
-    p:Checkbox(T["Show Rank"], C.castbar.focus, "showrank")
-  end)
+  gui:AddVariantPage("castbar.bars", T["Castbar"], T["Bars"], castbars, function(unit)
+    return C.castbar[unit]
+  end, function(p, unit)
+    local c = C.castbar[unit]
+    for _, entry in ipairs(castbars) do
+      if entry[1] == unit then p:Checkbox(entry[3], c, "hide_pfui") end
+    end
+    p:Number(T["Castbar Width"], c, "width", nil, { requires = "!hide_pfui" })
+    p:Number(T["Castbar Height"], c, "height", nil, { requires = "!hide_pfui" })
+    p:Checkbox(T["Show Spell Icon"], c, "showicon", nil, { requires = "!hide_pfui" })
+    p:Checkbox(T["Show Spell Name"], c, "showname", nil, { requires = "!hide_pfui" })
+    p:Dropdown(T["Spell Name Alignment"], c, "namealign", D.castbaralign, nil, { requires = "!hide_pfui" })
+    p:Number(T["Spell Name X Offset"], c, "txtleftoffx", nil, Opts(OFFSET, { requires = "!hide_pfui" }))
+    p:Number(T["Spell Name Y Offset"], c, "txtleftoffy", nil, Opts(OFFSET, { requires = "!hide_pfui" }))
+    p:Checkbox(T["Show Timer"], c, "showtimer", nil, { requires = "!hide_pfui" })
+    p:Dropdown(T["Timer Alignment"], c, "timealign", D.castbaralign, nil, { requires = "!hide_pfui" })
+    p:Number(T["Timer X Offset"], c, "txtrightoffx", nil, Opts(OFFSET, { requires = "!hide_pfui" }))
+    p:Number(T["Timer Y Offset"], c, "txtrightoffy", nil, Opts(OFFSET, { requires = "!hide_pfui" }))
+    p:Checkbox(T["Show Lag"], c, "showlag", nil, { requires = "!hide_pfui" })
+    p:Checkbox(T["Show Rank"], c, "showrank", nil, { requires = "!hide_pfui" })
+    if unit == "player" then
+      p:Checkbox(T["Merge Tradeskill Casts"], c, "mergetradeskill", nil, { requires = "!hide_pfui" })
+    end
+  end, { module = "castbar" })
 
   gui:AddPage("chat", CHAT_LABEL, nil, function(p)
     -- a nop updater skips the reload prompt; the nop settings below
@@ -1727,7 +1987,32 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Checkbox(T["Enable Party Chat Bubbles"], CVars, "chatBubblesParty", nop)
     p:Checkbox(T["Enable Chat Bubble Borders"], C.chat.bubbles, "borders")
     p:Number(T["Chat Bubble Transparency"], C.chat.bubbles, "alpha")
-  end)
+  end, { module = "chat" })
+
+  -- The nameplates page draws sample plates (nameplates.lua) above its
+  -- settings. The module loads after this file, and not at all while it is
+  -- switched off, so the preview looks it up as it goes.
+  local platePreview = {}
+
+  function platePreview.GetHeight()
+    return 120
+  end
+
+  function platePreview.Show(box)
+    if not pfUI.nameplates then return end
+    pfUI.nameplates:ShowPreview(box)
+    platePreview.parts = pfUI.nameplates.previewParts
+  end
+
+  function platePreview.Hide()
+    if pfUI.nameplates then pfUI.nameplates:HidePreview() end
+  end
+
+  function platePreview.Refresh()
+    if not pfUI.nameplates then return end
+    pfUI.nameplates:RefreshPreview()
+    platePreview.parts = pfUI.nameplates.previewParts
+  end
 
   gui:AddPage("nameplates", T["Nameplates"], nil, function(p)
     p:Checkbox(T["Show On Hostile Units"], C.nameplates, "showhostile", U["nameplates"])
@@ -1757,9 +2042,9 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
 
     p:Header(T["Raid Icon"])
     p:Dropdown(T["Raid Icon Position"], C.nameplates, "raidiconpos", D.positions, U["nameplates"])
-    p:Number(T["Raid Icon X-Offset"], C.nameplates, "raidiconoffx", U["nameplates"])
-    p:Number(T["Raid Icon Y-Offset"], C.nameplates, "raidiconoffy", U["nameplates"])
-    p:Number(T["Raid Icon Size"], C.nameplates, "raidiconsize", U["nameplates"])
+    p:Number(T["Raid Icon X-Offset"], C.nameplates, "raidiconoffx", U["nameplates"], OFFSET)
+    p:Number(T["Raid Icon Y-Offset"], C.nameplates, "raidiconoffy", U["nameplates"], OFFSET)
+    p:Number(T["Raid Icon Size"], C.nameplates, "raidiconsize", U["nameplates"], ICONSIZE)
 
     p:Header(T["Castbar"])
     p:Checkbox(T["Enable Castbars"], C.nameplates, "showcastbar", U["nameplates"])
@@ -1774,7 +2059,7 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Checkbox(T["Only Show Your Debuffs"], C.nameplates, "owndebuffs", U["nameplates"])
     p:Dropdown(T["Debuff Position"], C.nameplates.debuffs, "position", D.debuffposition, U["nameplates"])
     p:Number(T["Debuff Icon Offset"], C.nameplates, "debuffoffset", U["nameplates"])
-    p:Number(T["Debuff Icon Size"], C.nameplates, "debuffsize", U["nameplates"])
+    p:Number(T["Debuff Icon Size"], C.nameplates, "debuffsize", U["nameplates"], ICONSIZE)
     p:Checkbox(T["Show Debuff Stacks"], C.nameplates.debuffs, "showstacks", U["nameplates"])
     p:Dropdown(T["Debuff Timers"], C.nameplates, "debuff_timers", D.cooldown_timers, UpdateCooldowns)
 
@@ -1793,7 +2078,7 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Header(T["Healthbar"])
     p:Number(T["Healthbar Vertical Offset"], C.nameplates.health, "offset", U["nameplates"])
     p:Number(T["Healthbar Height"], C.nameplates, "heighthealth", U["nameplates"])
-    p:Dropdown(T["Healthbar Texture"], C.nameplates, "healthtexture", D.uf_bartexture, U["nameplates"])
+    p:Dropdown(T["Healthbar Texture"], C.nameplates, "healthtexture", D.uf_bartexture, U["nameplates"], { preview = "texture" })
     p:Checkbox(T["Show Health Points"], C.nameplates, "showhp", U["nameplates"])
     p:Dropdown(T["Health Text Position"], C.nameplates, "hptextpos", D.textalign, U["nameplates"])
     p:Dropdown(T["Name Text Position"], C.nameplates, "nametextpos", D.textalign, U["nameplates"])
@@ -1823,7 +2108,7 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Color(T["Unit Is Attacking No One Color"], C.nameplates, "combatstun", U["nameplates"])
     p:Color(T["Unit Is Casting Color"], C.nameplates, "combatcasting", U["nameplates"])
     p:List(T["Off-Tank Names"], C.nameplates, "combatofftanks", U["nameplates"])
-  end)
+  end, { module = "nameplates", preview = platePreview })
 
   gui:AddPage("thirdparty.integrations", T["Thirdparty"], T["Integrations"], function(p)
     p:Checkbox(T["Show Meters By Default"], C.thirdparty, "showmeter")
@@ -1847,7 +2132,6 @@ function pfUI.AddConfigPages(gui, U, CVars, UVars)
     p:Checkbox("BetterCharacterStats", C.thirdparty.bcs, "enable")
     p:Checkbox("Crafty", C.thirdparty.crafty, "enable")
     p:Checkbox("CleverMacro", C.thirdparty.clevermacro, "enable")
-    p:Checkbox("SuperCleveRoidMacros", C.thirdparty.supercleveroidmacros, "enable")
     p:Checkbox("FlightMap", C.thirdparty.flightmap, "enable")
     p:Checkbox("TheoryCraft", C.thirdparty.theorycraft, "enable")
     p:Checkbox("SuperMacro", C.thirdparty.supermacro, "enable")

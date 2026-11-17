@@ -1,26 +1,50 @@
 -- load pfUI environment
 setfenv(1, pfUI:GetEnvironment())
 
+-- The defaults that UpdateConfig was given, by the config table they belong
+-- to. A table that reads and writes something else the way a config table
+-- does (the GUI's cvar store) can bring its own (SetConfigDefaults).
+local defaults = setmetatable({}, { __mode = "k" })
+
+-- a saved value is kept unless it is missing or its table-ness differs from the
+-- default (settings from another pfUI can hold a string where a table goes)
+local function Mismatched(saved, default)
+  return not saved or (type(saved) == "table") ~= (type(default) == "table")
+end
+
 function pfUI:UpdateConfig(group, subgroup, entry, value)
-  -- check for missing config groups
-  if not pfUI_config[group] then
+  -- check for missing or malformed config groups
+  if type(pfUI_config[group]) ~= "table" then
     pfUI_config[group] = {}
+  end
+  local tbl = pfUI_config[group]
+
+  -- check for missing or malformed config subgroups
+  if subgroup then
+    if type(tbl[subgroup]) ~= "table" then
+      tbl[subgroup] = {}
+    end
+    tbl = tbl[subgroup]
   end
 
   -- update config
-  if not subgroup and entry and value and not pfUI_config[group][entry] then
-    pfUI_config[group][entry] = value
-  end
+  if entry and value then
+    if Mismatched(tbl[entry], value) then
+      tbl[entry] = value
+    end
 
-  -- check for missing config subgroups
-  if subgroup and not pfUI_config[group][subgroup] then
-    pfUI_config[group][subgroup] = {}
+    defaults[tbl] = defaults[tbl] or {}
+    defaults[tbl][entry] = value
   end
+end
 
-  -- update config in subgroup
-  if subgroup and entry and value and not pfUI_config[group][subgroup][entry] then
-    pfUI_config[group][subgroup][entry] = value
-  end
+-- the default of a setting, or nil when it has none
+function pfUI:GetConfigDefault(tbl, key)
+  return defaults[tbl] and defaults[tbl][key]
+end
+
+function pfUI:SetConfigDefaults(tbl, values)
+  defaults[tbl] = values
 end
 
 function pfUI:LoadConfig()
@@ -40,9 +64,8 @@ function pfUI:LoadConfig()
   pfUI:UpdateConfig("global",     nil,           "font_combat",      "Interface\\AddOns\\pfUI\\fonts\\Continuum.ttf")
 
   pfUI:UpdateConfig("global",     nil,           "force_region",     "1")
-  pfUI:UpdateConfig("global",     nil,           "errors",           "1")
-  pfUI:UpdateConfig("global",     nil,           "errors_limit",     "1")
-  pfUI:UpdateConfig("global",     nil,           "errors_hide",      "0")
+  pfUI:UpdateConfig("global",     nil,           "luaerrors",        "default")
+  pfUI:UpdateConfig("global",     nil,           "uierrors",         "single")
   pfUI:UpdateConfig("global",     nil,           "notify",           "0")
   pfUI:UpdateConfig("global",     nil,           "hidebuff",         "0")
   pfUI:UpdateConfig("global",     nil,           "hidewbuff",        "0")
@@ -361,6 +384,9 @@ function pfUI:LoadConfig()
   pfUI:UpdateConfig("unitframes", "group",       "glowcombat",       "0")
   pfUI:UpdateConfig("unitframes", "group",       "hide_in_raid",     "0")
   pfUI:UpdateConfig("unitframes", "group",       "txthpright",       "healthmiss")
+  pfUI:UpdateConfig("unitframes", "group",       "castbar",          "1")
+  pfUI:UpdateConfig("unitframes", "group",       "castbarheight",    "3")
+  pfUI:UpdateConfig("unitframes", "group",       "castbartext",      "1")
 
   pfUI:UpdateConfig("unitframes", "grouptarget", "portrait",         "off")
   pfUI:UpdateConfig("unitframes", "grouptarget", "width",            "120")
@@ -422,6 +448,9 @@ function pfUI:LoadConfig()
   pfUI:UpdateConfig("unitframes", "raid",        "txthpleft",        "name")
   pfUI:UpdateConfig("unitframes", "raid",        "txthpright",       "healthmiss")
   pfUI:UpdateConfig("unitframes", "raid",        "overhealperc",     "10")
+  pfUI:UpdateConfig("unitframes", "raid",        "castbar",          "1")
+  pfUI:UpdateConfig("unitframes", "raid",        "castbarheight",    "3")
+  pfUI:UpdateConfig("unitframes", "raid",        "castbartext",      "0")
   pfUI:UpdateConfig("unitframes", "raid",        "raidlayout",       "8x5")
   pfUI:UpdateConfig("unitframes", "raid",        "raidpadding",      "3")
   pfUI:UpdateConfig("unitframes", "raid",        "raidfill",         "VERTICAL")
@@ -1001,7 +1030,6 @@ function pfUI:LoadConfig()
   pfUI:UpdateConfig("thirdparty", "bcs",         "enable",           "1")
   pfUI:UpdateConfig("thirdparty", "crafty",      "enable",           "1")
   pfUI:UpdateConfig("thirdparty", "clevermacro", "enable",           "1")
-  pfUI:UpdateConfig("thirdparty", "supercleveroidmacros", "enable",  "1")
   pfUI:UpdateConfig("thirdparty", "flightmap",   "enable",           "1")
   pfUI:UpdateConfig("thirdparty", "sheepwatch",  "enable",           "1")
   pfUI:UpdateConfig("thirdparty", "totemtimers", "enable",           "1")

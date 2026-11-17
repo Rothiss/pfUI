@@ -908,22 +908,10 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
     local events = pfUI.bars and pfUI.bars:GetScript("OnEvent")
     if not events then return end
 
-    -- disable pfUI macro scanning
-    pfUI.bars.skip_macro = true
-
     -- send clevermacro events to pfUI actionbars
     hooksecurefunc("ActionButton_OnEvent", function(event)
       events(this, event)
     end)
-  end)
-
-  -- SuperCleveRoidMacros
-  HookAddon("SuperCleveRoidMacros", function()
-    if C.thirdparty.supercleveroidmacros.enable == "0" then return end
-    if not pfUI.bars then return end
-
-    -- disable pfUI macro scanning
-    pfUI.bars.skip_macro = true
   end)
 
   HookAddon("AtlasLoot", function()
@@ -948,11 +936,15 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
     craftyskin:Hide()
     craftyskin:RegisterEvent("TRADE_SKILL_SHOW")
     craftyskin:RegisterEvent("CRAFT_SHOW")
-    craftyskin.Skin = function(self, frame)
+    craftyskin.Skin = function(_, frame)
       -- skip on non-crafty frames
       if not frame or not frame.SearchBox or not frame.MaterialsButton or not frame.LinkButton then
         return
       end
+
+      -- the trade skill and craft windows each carry their own crafty frame
+      if frame.pfCraftySkinned then return end
+      frame.pfCraftySkinned = true
 
       StripTextures(frame)
       CreateBackdrop(frame)
@@ -973,12 +965,9 @@ pfUI:RegisterModule("thirdparty-vanilla", function()
           end
         end
       end
-
-      self.skinned = true
     end
 
     craftyskin:SetScript("OnEvent", function()
-      if this.skinned then return end
       craftyskin:Show()
     end)
 

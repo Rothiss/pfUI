@@ -10,6 +10,128 @@ pfUI.uf.frames = {}
 -- Scans run back to back and consume the buffer before the next refill.
 local auraSlots = {}
 
+-- ============================================================================
+-- Frame state: health and power, dead, connected, combat, marks and auras, as a
+-- frame shows them. Every read of these goes through here, so a preview frame
+-- in the config window can carry a `sample` that answers in place of its
+-- unit: health and power as fractions of the unit's own, the flags, and its
+-- own buff and debuff lists.
+-- ============================================================================
+local SAMPLE_DEBUFF_SLOT = 100
+
+local function FrameStats(frame)
+  local hp, hpmax, power, powermax, powerType = pfUI.api.GetUnitStats(frame.label .. frame.id)
+  local sample = frame.sample
+  if sample then
+    hp, power = floor(hpmax * sample.health), floor(powermax * sample.power)
+  end
+  return hp, hpmax, power, powermax, powerType
+end
+
+local function FrameIsDead(frame)
+  local sample = frame.sample
+  if sample then return sample.dead end
+  return UnitIsDead(frame.label .. frame.id)
+end
+
+local function FrameIsConnected(frame)
+  local sample = frame.sample
+  if sample then return not sample.offline end
+  return UnitIsConnected(frame.label .. frame.id)
+end
+
+local function FrameInCombat(frame)
+  local sample = frame.sample
+  if sample then return sample.combat end
+  return UnitAffectingCombat(frame.label .. frame.id)
+end
+
+local function FrameHasAggro(frame)
+  local sample = frame.sample
+  if sample then return sample.combat end
+  return pfUI.api.UnitHasAggro(frame.label .. frame.id) > 0
+end
+
+-- the marks on the unit: group leader, master looter, PvP flag, a pending
+-- resurrection and its raid target icon
+local function FrameIsLeader(frame)
+  local sample = frame.sample
+  if sample then return sample.leader end
+  return UnitIsPartyLeader(frame.label .. frame.id) and IsInGroup()
+end
+
+local function FrameIsLooter(frame)
+  local sample = frame.sample
+  if sample then return sample.looter end
+  local _, group, raid = GetLootMethod()
+  local name = group and UnitName(group == 0 and "player" or "party"..group) or raid and UnitName("raid"..raid) or nil
+  return name and name == UnitName(frame.label .. frame.id)
+end
+
+local function FrameIsPVP(frame)
+  local sample = frame.sample
+  if sample then return sample.pvp end
+  return UnitIsPVP(frame.label .. frame.id)
+end
+
+local function FrameHasResurrection(frame)
+  local sample = frame.sample
+  if sample then return sample.ress end
+  return libpredict:UnitHasResurrection(frame.label .. frame.id)
+end
+
+local function FrameRaidIcon(frame)
+  local sample = frame.sample
+  if sample then return sample.raidicon end
+  local unitstr = frame.label .. frame.id
+  return UnitName(unitstr) and GetRaidTargetIndex(unitstr)
+end
+
+-- ScanAuraSlots for the frame. A sample's slots are its list indices, the
+-- debuffs' offset past the buffs'.
+local function ScanFrameAuras(frame, filter, buf, max)
+  local sample = frame.sample
+  if not sample then return ScanAuraSlots(frame.label .. frame.id, filter, buf, max) end
+
+  local harmful = strfind(filter, "HARMFUL")
+  local list = harmful and sample.debuffs or sample.buffs
+  local base = harmful and SAMPLE_DEBUFF_SLOT or 0
+  local mine = strfind(filter, "PLAYER")
+  -- the limits come from the config, as strings
+  max = tonumber(max)
+  local n = 0
+  for i, aura in ipairs(list) do
+    if (not mine or aura.mine) and (not max or n < max) then
+      n = n + 1
+      buf[n] = base + i
+    end
+  end
+  local i = n + 1
+  while buf[i] do
+    buf[i] = nil
+    i = i + 1
+  end
+  buf.n = n
+  return n
+end
+
+-- C_UnitAuras.UnitAuraBySlot for the frame:
+-- name, icon, count, dispelType, duration, expirationTime
+local function FrameAura(frame, slot)
+  local sample = frame.sample
+  if not sample then return C_UnitAuras.UnitAuraBySlot(frame.label .. frame.id, slot) end
+  if not slot then return end
+
+  local aura
+  if slot > SAMPLE_DEBUFF_SLOT then
+    aura = sample.debuffs[slot - SAMPLE_DEBUFF_SLOT]
+  else
+    aura = sample.buffs[slot]
+  end
+  if not aura then return end
+  return aura.name, aura.icon, aura.count, aura.dispelType, aura.duration, aura.expirationTime
+end
+
 -- Aura block corner -> { icon anchor point, x direction, y direction, below frame }
 local auraCorners = {
   TOPLEFT     = { "BOTTOMLEFT",   1,  1 },
@@ -84,12 +206,12 @@ end
 -- Re-reads the stacks and timer of each shown icon of an aura block from the
 -- slot RefreshUnit filled it from, then restarts the timers. For auras that
 -- refreshed or restacked in place, which leaves every aura in its slot.
-local function RetimeAuras(icons, unitstr)
+local function RetimeAuras(unit, icons)
   if not icons then return end
 
   local i = 1
   while icons[i] and icons[i]:IsShown() do
-    local _, _, count, _, duration, expirationTime = C_UnitAuras.UnitAuraBySlot(unitstr, icons[i].slot)
+    local _, _, count, _, duration, expirationTime = FrameAura(unit, icons[i].slot)
     if count then
       icons[i].stacks:SetText(count > 1 and count or "")
       icons[i].auraStart, icons[i].auraDuration = GetAuraTimer(duration, expirationTime)
@@ -368,12 +490,36 @@ pfUI.events:RegisterCallback("aggro:changed", function(_, old, new)
   end
 end, "unitframes")
 
+-- An aura icon takes a click only for the right-click that cancels one of the
+-- player's own auras. Every other click goes through to what is under it: the
+-- unit frame (target, menu, click-casting) or the world (camera drag). The
+-- icons keep their tooltips either way.
+local function PassAuraClicks(auras, player)
+  if not auras then return end
+  for i = 1, 32 do
+    local icon = auras[i]
+    if not icon then return end
+    if player then
+      icon:SetPassThroughButtons("LeftButton", "MiddleButton", "Button4", "Button5")
+    else
+      icon:SetPassThroughButtons("LeftButton", "RightButton", "MiddleButton", "Button4", "Button5")
+    end
+  end
+end
+
+local function UpdateAuraClicks(f)
+  local player = f.label == "player"
+  PassAuraClicks(f.buffs, player)
+  PassAuraClicks(f.debuffs, player)
+end
+
 function pfUI.uf:UpdateVisibility()
   local self = self or this
 
   -- cache result of strsub to avoid repeating calls
   if not self.cache_raid then
-    local name = self:GetName()
+    -- a preview frame has no name
+    local name = self:GetName() or ""
     if strsub(name,0,9) == "pfRaidPet" then
       -- pet grid slot (pfRaidPet1..40); used to mirror party pets below
       self.cache_raid = 0
@@ -447,6 +593,7 @@ function pfUI.uf:UpdateVisibility()
   if unitstr ~= self.unitstr then
     self.unitstr = unitstr
     self:SetAttribute("unit", unitstr)
+    UpdateAuraClicks(self)
   end
   -- anything but "show"/"hide" means "show if the unit exists"
   local visibility = "exists"
@@ -457,7 +604,11 @@ function pfUI.uf:UpdateVisibility()
   local hide_group = C["unitframes"]["group"]["hide_in_raid"] == "1"
     and (IsInRaid() or (C.unitframes.raidforgroup == "1" and IsInGroup()))
 
-  if pfUI.unlock and pfUI.unlock:IsShown() then
+  if self.preview then
+    -- a preview shows until its config window parks it (previewHidden)
+    visibility = self.previewHidden and "hide" or "show"
+    self.visible = not self.previewHidden or nil
+  elseif pfUI.unlock and pfUI.unlock:IsShown() then
     -- display during unlock mode
     visibility = "show"
     self.visible = true
@@ -546,6 +697,119 @@ function pfUI.uf:UpdateVisibility()
   end
 end
 
+-- A thin bar along the bottom of a party or raid frame's health bar shows the
+-- member's cast or channel. Its timer fills it natively, so Lua runs only on
+-- the cast events, which follow the frame's unit (SetUnit, called from
+-- RegisterUnitEvents). The player's own casts fire as "player" alone, so that
+-- token rides along for the frame that shows the player.
+--
+-- The label reads "Spell » Target". UnitSpellTargetName knows a member's
+-- target from the start of a cast it saw, but the player's own only after the
+-- server confirms it, so the player's frame takes it from SENT meanwhile.
+local CAST_EVENTS = {
+  "UNIT_SPELLCAST_SENT",
+  "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_DELAYED",
+  "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED",
+  "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_CHANNEL_STOP", "UNIT_SPELLCAST_CHANNEL_UPDATE",
+}
+
+local GroupCastbarMixin = {}
+
+function GroupCastbarMixin:Clear()
+  if self.expiry then self.expiry:Cancel() end
+  self.expiry, self.isChannel = nil, nil
+  self:Hide()
+end
+
+function GroupCastbarMixin:UpdateText(castGUID)
+  local unit = self.unit
+  local name, _, _, _, _, _, _, _, spellID = C_Spell.UnitCastingInfo(unit)
+  if not name then
+    name, _, _, _, _, _, _, spellID = C_Spell.UnitChannelInfo(unit)
+  end
+  local target = UnitSpellTargetName(unit)
+  if not target and castGUID and castGUID == self.sentGUID then
+    target = self.sentTarget
+  end
+
+  -- the icon sized to the text (0 = line height)
+  local icon = spellID and C_Spell.GetSpellTexture(spellID)
+  local label = name or ""
+  if icon then label = CreateSimpleTextureMarkup(icon, 0) .. " " .. label end
+  if target and target ~= "" and target ~= UnitName(unit) then
+    label = label .. " » " .. target
+  end
+  self.text:SetText(label)
+end
+
+-- castGUID comes with the cast events and names the player's SENT target
+function GroupCastbarMixin:Refresh(castGUID)
+  local unit = self.unit
+  local duration = unit and UnitCastingDuration(unit)
+  local isChannel
+  if unit and not duration then
+    duration = UnitChannelDuration(unit)
+    isChannel = duration and true
+  end
+  if not duration then return self:Clear() end
+
+  if self.showtext then self:UpdateText(castGUID) end
+  self.isChannel = isChannel
+  local castbar = C.appearance.castbar
+  self:SetStatusBarColor(GetStringColor(isChannel and castbar.channelcolor or castbar.castbarcolor))
+  self:SetTimerDuration(duration, Enum.StatusBarInterpolation.Immediate,
+    isChannel and Enum.StatusBarTimerDirection.RemainingTime or Enum.StatusBarTimerDirection.ElapsedTime)
+
+  -- a member out of range can miss its STOP, so the bar also clears at its end
+  if self.expiry then self.expiry:Cancel() end
+  self.expiry = C_Timer.NewTimer(duration:GetRemainingDuration(), self.onExpire)
+  self:Show()
+end
+
+function GroupCastbarMixin:SetUnit(unit)
+  self.unit = unit
+  for i = 1, table.getn(CAST_EVENTS) do
+    if unit then
+      self:RegisterUnitEvent(CAST_EVENTS[i], unit, "player")
+    else
+      self:UnregisterEvent(CAST_EVENTS[i])
+    end
+  end
+  self:Refresh()
+end
+
+function GroupCastbarMixin:OnEvent(event, unit, castGUID, sentCastGUID)
+  if unit ~= self.unit and not (unit == "player" and UnitIsUnit(self.unit, "player")) then return end
+
+  if event == "UNIT_SPELLCAST_SENT" then
+    -- SENT puts the target before the castGUID: unit, target, castGUID
+    self.sentTarget, self.sentGUID = castGUID, sentCastGUID
+  elseif event == "UNIT_SPELLCAST_STOP" then
+    -- a channel's STOP can trail the cast that followed it, and the other way round
+    if not self.isChannel then self:Clear() end
+  elseif event == "UNIT_SPELLCAST_CHANNEL_STOP" then
+    if self.isChannel then self:Clear() end
+  elseif event == "UNIT_SPELLCAST_FAILED" or event == "UNIT_SPELLCAST_INTERRUPTED" then
+    self:Clear()
+  else
+    self:Refresh(castGUID)
+  end
+end
+
+local function CreateGroupCastbar(f)
+  local bar = Mixin(CreateFrame("StatusBar", nil, f.hp), GroupCastbarMixin)
+  bar.bg = bar:CreateTexture(nil, "BACKGROUND")
+  bar.bg:SetAllPoints()
+  bar.bg:SetColorTexture(0, 0, 0, .6)
+  bar.text = bar:CreateFontString(nil, "OVERLAY")
+  bar.text:SetNonSpaceWrap(false)
+  bar.text:SetJustifyH("CENTER")
+  bar.onExpire = function() bar:Clear() end
+  bar:SetScript("OnEvent", bar.OnEvent)
+  bar:Hide()
+  return bar
+end
+
 function pfUI.uf:UpdateFrameSize()
   local rawborder, default_border = GetBorderSize("unitframes")
   local spacing = self.config.pspace * GetPerfectPixel()
@@ -601,10 +865,13 @@ function pfUI.uf:UpdateConfig()
   f.alpha_outrange = tonumber(f.config.alpha_outrange)
   f.alpha_offline = tonumber(f.config.alpha_offline)
 
-  f:SetFrameStrata("MEDIUM")
+  -- A preview in the config window takes the window's strata, and its
+  -- portrait and glow count their levels from the frame's own.
+  local base = f.preview and f:GetFrameLevel() or 0
+  f:SetFrameStrata(f.strata)
 
-  f.glow:SetFrameStrata("BACKGROUND")
-  f.glow:SetFrameLevel(0)
+  f.glow:SetFrameStrata(f.backstrata)
+  f.glow:SetFrameLevel(base)
   f.glow:SetBackdrop(glow2)
   f.glow:SetPoint("TOPLEFT", f, "TOPLEFT", -6 - default_border,6 + default_border)
   f.glow:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 6 + default_border,-6 - default_border)
@@ -619,7 +886,8 @@ function pfUI.uf:UpdateConfig()
   f.hp:SetPoint("TOP", 0, 0)
 
   f.hp:SetSize(f.config.width, f.config.height)
-  if tonumber(f.config.height) < 0 then f.hp:Hide() end
+  -- a height under 0 means no bar; a later one shows it again
+  f.hp:SetShown(tonumber(f.config.height) >= 0)
   pfUI.api.CreateBackdrop(f.hp, default_border)
 
   -- one level above the backdrop for the bar's background, one more for its fill
@@ -644,7 +912,7 @@ function pfUI.uf:UpdateConfig()
   f.power:ClearAllPoints()
   f.power:SetPoint(f.config.panchor, f.hp, relative_point, f.config.poffx, -2 * default_border - spacing + f.config.poffy * GetPerfectPixel())
   f.power:SetSize((f.config.pwidth ~= "-1" and f.config.pwidth or f.config.width), f.config.pheight)
-  if tonumber(f.config.pheight) < 0 then f.power:Hide() end
+  f.power:SetShown(tonumber(f.config.pheight) >= 0)
 
   pfUI.api.CreateBackdrop(f.power, default_border)
   f.power.bar:SetFrameLevel(f.power.backdrop:GetFrameLevel() + 2)
@@ -726,7 +994,7 @@ function pfUI.uf:UpdateConfig()
     if f.portrait.backdrop then f.portrait.backdrop:Hide() end
 
     -- place portrait below fonts
-    f.portrait.model:SetFrameLevel(3)
+    f.portrait.model:SetFrameLevel(base + 3)
 
     f.portrait:Show()
   elseif f.config.portrait == "left" then
@@ -740,9 +1008,9 @@ function pfUI.uf:UpdateConfig()
     f.portrait:SetAlpha(f:GetAlpha())
 
     -- make sure incHeal is above
-    f.portrait:SetFrameStrata("BACKGROUND")
-    f.portrait.model:SetFrameStrata("BACKGROUND")
-    f.portrait.model:SetFrameLevel(1)
+    f.portrait:SetFrameStrata(f.backstrata)
+    f.portrait.model:SetFrameStrata(f.backstrata)
+    f.portrait.model:SetFrameLevel(base + 1)
 
     pfUI.api.CreateBackdrop(f.portrait, default_border)
     f.portrait.backdrop:Show()
@@ -758,9 +1026,9 @@ function pfUI.uf:UpdateConfig()
     f.portrait:SetAlpha(f:GetAlpha())
 
     -- make sure incHeal is above
-    f.portrait:SetFrameStrata("BACKGROUND")
-    f.portrait.model:SetFrameStrata("BACKGROUND")
-    f.portrait.model:SetFrameLevel(1)
+    f.portrait:SetFrameStrata(f.backstrata)
+    f.portrait.model:SetFrameStrata(f.backstrata)
+    f.portrait.model:SetFrameLevel(base + 1)
 
     pfUI.api.CreateBackdrop(f.portrait, default_border)
     f.portrait.backdrop:Show()
@@ -873,7 +1141,27 @@ function pfUI.uf:UpdateConfig()
     f.incHeal:SetPoint("BOTTOMLEFT", f.hp.bar:GetStatusBarTexture(), "TOPLEFT")
   end
 
-  f.ressIcon:SetFrameLevel(16)
+  -- party and raid cast bar; the eventunit reset above makes RegisterUnitEvents
+  -- hand it the unit, or none while the option is off
+  if f.config.castbar == "1" then
+    f.castbar = f.castbar or CreateGroupCastbar(f)
+    f.castbar:SetFrameLevel(f.hp.bar:GetFrameLevel() + 2)
+    f.castbar:SetStatusBarTexture(pfUI.media[C.appearance.castbar.texture])
+    f.castbar:ClearAllPoints()
+    f.castbar:SetPoint("BOTTOMLEFT", f.hp.bar, "BOTTOMLEFT")
+    f.castbar:SetPoint("BOTTOMRIGHT", f.hp.bar, "BOTTOMRIGHT")
+    f.castbar:SetHeight(tonumber(f.config.castbarheight) * GetPerfectPixel())
+
+    -- the label sits in the health bar just above the cast bar
+    f.castbar.showtext = f.config.castbartext == "1" or nil
+    f.castbar.text:SetShown(f.castbar.showtext)
+    f.castbar.text:SetFont(fontname, math.max(fontsize - 2, 8), fontstyle)
+    f.castbar.text:ClearAllPoints()
+    f.castbar.text:SetPoint("BOTTOMLEFT", f.castbar, "TOPLEFT", 2, 1)
+    f.castbar.text:SetPoint("BOTTOMRIGHT", f.castbar, "TOPRIGHT", -2, 1)
+  end
+
+  f.ressIcon:SetFrameLevel(base + 16)
   f.ressIcon:SetSize(32, 32)
   f.ressIcon:SetPoint("CENTER", f, "CENTER", 0, 4)
   f.ressIcon.texture:SetTexture(pfUI.media["img:ress"])
@@ -955,11 +1243,11 @@ function pfUI.uf:UpdateConfig()
       f.buffs[i].stacks:SetShadowOffset(0.8, -0.8)
       f.buffs[i].stacks:SetTextColor(1,1,.5)
 
-      f.buffs[i]:SetFrameLevel(12)
+      f.buffs[i]:SetFrameLevel(base + 12)
       f.buffs[i]:RegisterForClicks("RightButtonUp")
 
       f.buffs[i].cd = f.buffs[i].cd or CreateCooldown(f.buffs[i], "aura", f.config, "aura_timers", f.buffs[i]:GetName() .. "Cooldown")
-      f.buffs[i].cd:SetFrameLevel(14)
+      f.buffs[i].cd:SetFrameLevel(base + 14)
 
       f.buffs[i].id = i
       f.buffs[i]:Hide()
@@ -1007,12 +1295,12 @@ function pfUI.uf:UpdateConfig()
       f.debuffs[i].stacks:SetShadowOffset(0.8, -0.8)
       f.debuffs[i].stacks:SetTextColor(1,1,.5)
 
-      f.debuffs[i]:SetFrameLevel(12)
+      f.debuffs[i]:SetFrameLevel(base + 12)
       f.debuffs[i]:RegisterForClicks("RightButtonUp")
       f.debuffs[i]:SetNormalTexture(nil)
       
       f.debuffs[i].cd = f.debuffs[i].cd or CreateCooldown(f.debuffs[i], "aura", f.config, "aura_timers", f.debuffs[i]:GetName() .. "Cooldown")
-      f.debuffs[i].cd:SetFrameLevel(14)
+      f.debuffs[i].cd:SetFrameLevel(base + 14)
 
       f.debuffs[i].id = i
       f.debuffs[i]:Hide()
@@ -1024,6 +1312,8 @@ function pfUI.uf:UpdateConfig()
       f.debuffs[i]:SetScript("OnClick", DebuffOnClick)
     end
   end
+
+  UpdateAuraClicks(f)
 
   if f.config.visible == "1" then
     pfUI.uf:RefreshUnit(f, "all")
@@ -1271,7 +1561,7 @@ end
 function pfUI.uf:RefreshIncomingHeal(frame)
   local unit = frame.label .. frame.id
   local heal = libpredict:UnitGetIncomingHeals(unit)
-  local health, maxHealth = UnitHealth(unit), UnitHealthMax(unit)
+  local health, maxHealth = FrameStats(frame)
 
   if heal - health - maxHealth == frame.predictstate then return end
   frame.predictstate = heal - health - maxHealth
@@ -1396,6 +1686,8 @@ function pfUI.uf:RegisterUnitEvents(unit)
   else
     self:UnregisterEvent("UNIT_IN_RANGE_UPDATE")
   end
+
+  if self.castbar then self.castbar:SetUnit(self.config.castbar == "1" and unit or nil) end
 end
 
 -- Point this frame's UNIT_TARGET subscription at every link of its chained
@@ -1507,8 +1799,14 @@ function pfUI.uf:EnableScripts()
   visibilityframes[f] = true
 end
 
-function pfUI.uf:CreateUnitFrame(unit, id, config, tick)
+-- A frame made with `preview`, the frame to show it in, previews its unit in
+-- the config window: it has no name, shows unless its `previewHidden` is
+-- set, takes no clicks and stays out of pfUI.uf.frames and Clique. It is made in that frame, as a
+-- frame moved there later would leave its parts on the wrong levels.
+function pfUI.uf:CreateUnitFrame(unit, id, config, tick, preview)
   local fname = (( unit == "Party" ) and "Group" or (unit or "")) .. (id or "")
+  -- the names of a preview's aura buttons stay apart from the real frame's
+  if preview then fname = "Preview" .. fname end
   local unit = strlower(unit or "")
   local id = strlower(id or "")
 
@@ -1529,7 +1827,11 @@ function pfUI.uf:CreateUnitFrame(unit, id, config, tick)
     unit, id = "target", ""
   end
 
-  local f = CreateFrame("Button", "pf" .. fname, UIParent)
+  local f = CreateFrame("Button", not preview and "pf" .. fname or nil, preview or UIParent)
+  if preview then f:SetFrameLevel(preview:GetFrameLevel() + 2) end
+  f.preview = preview and true
+  f.strata = preview and "DIALOG" or "MEDIUM"
+  f.backstrata = preview and "DIALOG" or "BACKGROUND"
 
   -- add unitframe functions
   f.UpdateFrameSize  = pfUI.uf.UpdateFrameSize
@@ -1588,7 +1890,7 @@ function pfUI.uf:CreateUnitFrame(unit, id, config, tick)
   f.combat.tex:SetAllPoints()
 
   f.texts = CreateFrame("Frame", nil, f)
-  f.texts:SetFrameLevel(16)
+  f.texts:SetFrameLevel((preview and f:GetFrameLevel() or 0) + 16)
   f.texts:SetAllPoints()
 
   f.hpLeftText = f.texts:CreateFontString("Status", "OVERLAY", "GameFontNormalSmall")
@@ -1684,6 +1986,11 @@ function pfUI.uf:CreateUnitFrame(unit, id, config, tick)
 
   f:SetAttribute("unit", f.label .. f.id)
 
+  if preview then
+    f:EnableMouse(false)
+    return f
+  end
+
   -- register frame for clique
   _G.ClickCastFrames = ClickCastFrames or {}
   ClickCastFrames[f] = true
@@ -1705,7 +2012,7 @@ function pfUI.uf:RefreshUnitState(unit)
   local alpha = unit.alpha_visible
   local unlock = pfUI.unlock and pfUI.unlock:IsShown() or nil
 
-  if not UnitIsConnected(unit.label .. unit.id) and not unlock then
+  if not FrameIsConnected(unit) and not unlock then
     -- offline
     alpha = unit.alpha_offline
     unit.hp.bar:SetMinMaxValues(0, 100)
@@ -1744,10 +2051,9 @@ end
 
 -- the combat square and glow, where aggro shows over combat
 function pfUI.uf:RefreshCombat(unit)
-  local unitstr = unit.label .. unit.id
   local config = unit.config
-  local aggro = unit.aggro and pfUI.api.UnitHasAggro(unitstr) > 0
-  local combat = UnitAffectingCombat(unitstr)
+  local aggro = unit.aggro and FrameHasAggro(unit)
+  local combat = FrameInCombat(unit)
 
   if config.squareaggro == "1" and aggro then
     unit.combat.tex:SetColorTexture(1,.2,0)
@@ -1775,26 +2081,19 @@ function pfUI.uf:RefreshIndicators(unit)
   local unitstr = unit.label .. unit.id
 
   if unit.leaderIcon then -- Leader Icon
-    unit.leaderIcon:SetShown(unit.config.leadericon == "1" and UnitIsPartyLeader(unitstr) and IsInGroup())
+    unit.leaderIcon:SetShown(unit.config.leadericon == "1" and FrameIsLeader(unit))
   end
 
   if unit.lootIcon then -- Loot Icon
-    if unit.config.looticon == "0" then
-      unit.lootIcon:Hide()
-    else
-      -- no third return value here.. but leaving this as a hint
-      local method, group, raid = GetLootMethod()
-      local name = group and UnitName(group == 0 and "player" or "party"..group) or raid and UnitName("raid"..raid) or nil
-      unit.lootIcon:SetShown(name and name == UnitName(unitstr))
-    end
+    unit.lootIcon:SetShown(unit.config.looticon ~= "0" and FrameIsLooter(unit))
   end
 
   if unit.pvpIcon then -- PvP Icon
-    unit.pvpIcon:SetShown(unit.config.showPVP == "1" and UnitIsPVP(unitstr))
+    unit.pvpIcon:SetShown(unit.config.showPVP == "1" and FrameIsPVP(unit))
   end
 
   if unit.ressIcon then -- Resurrection Icon
-    unit.ressIcon:SetShown(libpredict:UnitHasResurrection(unitstr))
+    unit.ressIcon:SetShown(FrameHasResurrection(unit))
   end
 
   if unit.restIcon and unit:GetName() == "pfPlayer" then -- Rest Icon
@@ -1826,7 +2125,7 @@ function pfUI.uf:RefreshIndicators(unit)
   end
 
   if unit.raidIcon then -- Raid Icon
-    local raidIcon = UnitName(unitstr) and GetRaidTargetIndex(unitstr)
+    local raidIcon = FrameRaidIcon(unit)
     if unit.config.raidicon == "1" and raidIcon then
       SetRaidTargetIconTexture(unit.raidIcon.texture, raidIcon)
       unit.raidIcon:Show()
@@ -1912,15 +2211,20 @@ function pfUI.uf:RefreshUnit(unit, component)
   -- save current values
   unit.namecache = UnitName(unitstr)
 
+  -- a full refresh can mean someone else behind the same token
+  if component == "all" and unit.castbar and unit.castbar.unit then
+    unit.castbar:Refresh()
+  end
+
   -- buffs
   if unit.buffs and ( component == "all" or component == "aura" ) then
     -- one GetAuraSlots enumeration per refresh, then a positional read per
     -- slot id: allocates nothing and never re-walks the aura array per icon
-    ScanAuraSlots(unitstr, "HELPFUL", auraSlots, unit.config.bufflimit)
+    ScanFrameAuras(unit, "HELPFUL", auraSlots, unit.config.bufflimit)
     for i=1, unit.config.bufflimit do
       if not unit.buffs[i] then break end
 
-      local name, icon, count, _, duration, expirationTime, _, _, _, spellId = C_UnitAuras.UnitAuraBySlot(unitstr, auraSlots[i])
+      local name, icon, count, _, duration, expirationTime = FrameAura(unit, auraSlots[i])
 
       if name then
         unit.buffs[i].slot = auraSlots[i]
@@ -1941,7 +2245,7 @@ function pfUI.uf:RefreshUnit(unit, component)
 
     -- own buffs lead the list; count them only when they're drawn larger
     if unit.buffs.ownsize ~= unit.buffs.size then
-      unit.buffs.own = ScanAuraSlots(unitstr, "HELPFUL|PLAYER", auraSlots, unit.config.bufflimit)
+      unit.buffs.own = ScanFrameAuras(unit, "HELPFUL|PLAYER", auraSlots, unit.config.bufflimit)
     end
   end
 
@@ -1955,13 +2259,13 @@ function pfUI.uf:RefreshUnit(unit, component)
     -- effects on you). One GetAuraSlots enumeration per refresh; the i-th slot
     -- is the i-th aura of the filtered list, so `i` stays the tooltip index.
     local filter = (unit.label ~= "player" and selfdebuff == "1") and "HARMFUL|PLAYER" or "HARMFUL"
-    ScanAuraSlots(unitstr, filter, auraSlots, unit.config.debufflimit)
+    ScanFrameAuras(unit, filter, auraSlots, unit.config.debufflimit)
 
     for i=1, unit.config.debufflimit do
       if not unit.debuffs[i] then break end
 
       -- positional read by slot id allocates nothing
-      local name, icon, count, dispelType, duration, expirationTime = C_UnitAuras.UnitAuraBySlot(unitstr, auraSlots[i])
+      local name, icon, count, dispelType, duration, expirationTime = FrameAura(unit, auraSlots[i])
       if name then
         texture, stacks, dtype = icon, count, dispelType
       else
@@ -1991,7 +2295,7 @@ function pfUI.uf:RefreshUnit(unit, component)
 
     -- own debuffs lead the list; count them only when they're drawn larger
     if unit.debuffs.ownsize ~= unit.debuffs.size then
-      unit.debuffs.own = ScanAuraSlots(unitstr, "HARMFUL|PLAYER", auraSlots, unit.config.debufflimit)
+      unit.debuffs.own = ScanFrameAuras(unit, "HARMFUL|PLAYER", auraSlots, unit.config.debufflimit)
     end
   end
 
@@ -2002,8 +2306,8 @@ function pfUI.uf:RefreshUnit(unit, component)
     StartAuraTimers(unit.debuffs)
     pfUI.events:TriggerEvent("unitframe:auras", unit)
   elseif component == "auratime" then
-    RetimeAuras(unit.buffs, unitstr)
-    RetimeAuras(unit.debuffs, unitstr)
+    RetimeAuras(unit, unit.buffs)
+    RetimeAuras(unit, unit.debuffs)
   end
 
   -- indicators
@@ -2051,9 +2355,9 @@ function pfUI.uf:RefreshUnit(unit, component)
       local present = pfUI.uf.dispelPresent or {}
       pfUI.uf.dispelPresent = present
       for k in pairs(present) do present[k] = nil end
-      local n = ScanAuraSlots(unitstr, "HARMFUL", auraSlots)
+      local n = ScanFrameAuras(unit, "HARMFUL", auraSlots)
       for i=1,n do
-        local name, _, _, dispelType = C_UnitAuras.UnitAuraBySlot(unitstr, auraSlots[i])
+        local name, _, _, dispelType = FrameAura(unit, auraSlots[i])
         if name and dispelType and dispelType ~= "" then present[dispelType] = true end
       end
 
@@ -2146,9 +2450,9 @@ function pfUI.uf:RefreshUnit(unit, component)
 
     local pos = 1
     if table.getn(unit.indicators) > 0 then
-      local n = ScanAuraSlots(unitstr, "HELPFUL", auraSlots)
+      local n = ScanFrameAuras(unit, "HELPFUL", auraSlots)
       for i=1,n do
-        local name, icon, count, _, duration, expirationTime = C_UnitAuras.UnitAuraBySlot(unitstr, auraSlots[i])
+        local name, icon, count, _, duration, expirationTime = FrameAura(unit, auraSlots[i])
         if not name then break end
         local timeleft = expirationTime > 0 and (expirationTime - GetTime()) or nil
 
@@ -2168,9 +2472,9 @@ function pfUI.uf:RefreshUnit(unit, component)
     end
 
     if table.getn(unit.indicator_custom) > 0 then
-      local n = ScanAuraSlots(unitstr, "HELPFUL", auraSlots)
+      local n = ScanFrameAuras(unit, "HELPFUL", auraSlots)
       for i=1,n do
-        local name, icon, count, _, duration, expirationTime = C_UnitAuras.UnitAuraBySlot(unitstr, auraSlots[i])
+        local name, icon, count, _, duration, expirationTime = FrameAura(unit, auraSlots[i])
         if not name then break end
         local timeleft = expirationTime > 0 and (expirationTime - GetTime()) or nil
         local lowerName = name:lower()
@@ -2184,9 +2488,9 @@ function pfUI.uf:RefreshUnit(unit, component)
       end
 
       local debuffFilter = unit.config.selfdebuff == "1" and "HARMFUL|PLAYER" or "HARMFUL"
-      n = ScanAuraSlots(unitstr, debuffFilter, auraSlots)
+      n = ScanFrameAuras(unit, debuffFilter, auraSlots)
       for i=1,n do -- scan for custom debuffs
-        local name, icon, count, _, duration, expirationTime = C_UnitAuras.UnitAuraBySlot(unitstr, auraSlots[i])
+        local name, icon, count, _, duration, expirationTime = FrameAura(unit, auraSlots[i])
         if name then
           local timeleft = expirationTime > 0 and (expirationTime - GetTime()) or nil
           for _, filter in pairs(unit.indicator_custom) do
@@ -2208,7 +2512,7 @@ function pfUI.uf:RefreshUnit(unit, component)
   if unit.portrait and ( component == "all" or component == "portrait" ) then
     if C.unitframes.portraitstyle ~= "3d" then
       ShowPortraitTexture(unit.portrait, unitstr)
-    elseif not UnitIsVisible(unitstr) or not UnitIsConnected(unitstr) then
+    elseif not UnitIsVisible(unitstr) or not FrameIsConnected(unit) then
       if unit.config.portrait == "bar" then
         unit.portrait.tex:Hide()
         unit.portrait.model:Hide()
@@ -2253,7 +2557,7 @@ function pfUI.uf:RefreshUnit(unit, component)
   -- base frame
   if component == "all" or component == "base" then
     -- Unit HP/MP with Nampower Integration
-    local hp, hpmax, power, powermax, powerType = pfUI.api.GetUnitStats(unitstr)
+    local hp, hpmax, power, powermax, powerType = FrameStats(unit)
     
     -- Store original values for color calculations (before invert_healthbar modifies hp)
     local hp_orig, hpmax_orig = hp, hpmax
@@ -2704,11 +3008,11 @@ function pfUI.uf:GetStatusValue(unit, pos)
   end
 
   -- Get stats with Nampower Integration
-  local hp, hpmax, mp, mpmax, powerType = pfUI.api.GetUnitStats(unitstr)
+  local hp, hpmax, mp, mpmax, powerType = FrameStats(unit)
   local rhp, rhpmax = hp, hpmax
 
   -- Use libhealth for mob health estimation (overrides Nampower/Standard)
-  if pfUI.libhealth and pfUI.libhealth.enabled then
+  if pfUI.libhealth and pfUI.libhealth.enabled and not unit.sample then
     rhp, rhpmax = pfUI.libhealth:GetUnitHealth(unitstr)
   end
 
@@ -2757,7 +3061,7 @@ function pfUI.uf:GetStatusValue(unit, pos)
     return unit:GetColor("health") .. ceil(hp / hpmax * 100) .. "%"
   elseif config == "healthmiss" then
     local health = ceil(rhp - rhpmax)
-    if UnitIsDead(unitstr) then
+    if FrameIsDead(unit) then
       return unit:GetColor("health") .. DEAD
     elseif health == 0 then
       return unit:GetColor("health") .. "0"
@@ -2772,7 +3076,7 @@ function pfUI.uf:GetStatusValue(unit, pos)
     end
   elseif config == "namehealth" then
     local health = ceil(rhp - rhpmax)
-    if UnitIsDead(unitstr) then
+    if FrameIsDead(unit) then
       return unit:GetColor("health") .. DEAD
     elseif health == 0 then
       return unit:GetColor("unit") .. pfUI.uf:GetNameString(unitstr)
@@ -2781,7 +3085,7 @@ function pfUI.uf:GetStatusValue(unit, pos)
     end
   elseif config == "namehealthbreak" then
     local health = ceil(rhp - rhpmax)
-    if UnitIsDead(unitstr) then
+    if FrameIsDead(unit) then
       return unit:GetColor("unit") .. pfUI.uf:GetNameString(unitstr) .. "\n" .. unit:GetColor("health") .. DEAD
     elseif health == 0 then
       return unit:GetColor("unit") .. pfUI.uf:GetNameString(unitstr)
@@ -2790,7 +3094,7 @@ function pfUI.uf:GetStatusValue(unit, pos)
     end
   elseif config == "shortnamehealth" then
     local health = ceil(rhp - rhpmax)
-    if UnitIsDead(unitstr) then
+    if FrameIsDead(unit) then
       return unit:GetColor("health") .. DEAD
     elseif health == 0 then
       return unit:GetColor("unit") .. strsub(UnitName(unitstr), 0, 3)
@@ -2806,7 +3110,7 @@ function pfUI.uf:GetStatusValue(unit, pos)
   elseif config == "powermax" then
     return unit:GetColor("power") .. pfUI.api.Abbreviate(mpmax)
   elseif config == "powerperc" then
-    local perc = UnitPowerMax(unitstr) > 0 and ceil(mp / mpmax * 100) or 0
+    local perc = mpmax > 0 and ceil(mp / mpmax * 100) or 0
     return unit:GetColor("power") .. perc .. "%"
   elseif config == "powermiss" then
     local power = ceil(mp - mpmax)
@@ -2826,6 +3130,65 @@ function pfUI.uf:GetStatusValue(unit, pos)
     return unit:GetColor("power") .. pfUI.api.Abbreviate(mp) .. "/" .. pfUI.api.Abbreviate(mpmax)
   else
     return ""
+  end
+end
+
+-- [ Raid grid ]
+-- The grid a raid or raid pet `config` lays its frames on: `raidlayout`
+-- columns x rows, filled by `raidfill`, cells the size of `frame` and
+-- `raidpadding` apart. With `raidgrowleft` it mirrors across the columns
+-- `count` frames can fill, so a smaller raid stays next to the anchor instead
+-- of the far edge of the layout.
+function pfUI.uf:GetRaidGrid(config, frame, count)
+  local _, default_border = GetBorderSize("unitframes")
+  local _, _, x, y = string.find(config.raidlayout, "(.+)x(.+)")
+  local grid = {
+    fill = config.raidfill, x = tonumber(x), y = tonumber(y),
+    pad = tonumber(config.raidpadding) * GetPerfectPixel(),
+    w = frame:GetWidth() + 2*default_border,
+    h = frame:GetHeight() + 2*default_border,
+  }
+  if config.raidgrowleft == "1" then
+    grid.mirror = min(grid.x, grid.fill == "VERTICAL" and ceil(count / grid.y) or count)
+  end
+  return grid
+end
+
+-- the column and row of the 1-based `slot` on `grid`
+function pfUI.uf:GetRaidGridCell(grid, slot)
+  slot = slot - 1
+  local col, row
+  if grid.fill == "VERTICAL" then
+    col, row = floor(slot / grid.y) + 1, mod(slot, grid.y) + 1
+  else
+    col, row = mod(slot, grid.x) + 1, floor(slot / grid.x) + 1
+  end
+  if grid.mirror then col = grid.mirror - col + 1 end
+  return col, row
+end
+
+-- Puts `frame` on its `slot` of `grid`, counted from `anchor`'s bottom left.
+-- A step from one cell to the next is a whole number of screen pixels, so
+-- the gaps stay even at any scale.
+function pfUI.uf:PlaceInRaidGrid(frame, grid, slot, anchor)
+  local col, row = pfUI.uf:GetRaidGridCell(grid, slot)
+  local scale = frame:GetEffectiveScale()
+  local stepx = PixelUtil.GetNearestPixelSize(grid.pad + grid.w, scale)
+  local stepy = PixelUtil.GetNearestPixelSize(grid.pad + grid.h, scale)
+  frame:ClearAllPoints()
+  frame:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", (col-1)*stepx, (row-1)*stepy)
+end
+
+-- [ Group units ]
+-- A party frame's target and pet frames, beside it. These are their places
+-- until unlock mode moves them.
+function pfUI.uf:AttachGroupUnits(frame, target, pet)
+  local _, default_border = GetBorderSize("unitframes")
+  if target then
+    target:SetPoint("TOPLEFT", frame, "TOPRIGHT", 3*default_border, 0)
+  end
+  if pet then
+    pet:SetPoint("BOTTOMLEFT", frame, "BOTTOMRIGHT", 3*default_border, -default_border)
   end
 end
 
@@ -2860,7 +3223,7 @@ function pfUI.uf.GetColor(self, preset)
     r, g, b = color.r, color.g, color.b
 
   elseif preset == "health" and config["healthcolor"] == "1" then
-    local hp, hpmax = UnitHealth(unitstr), UnitHealthMax(unitstr)
+    local hp, hpmax = FrameStats(self)
     if hpmax and hpmax > 0 then
       r, g, b = GetColorGradient(hp / hpmax)
     else

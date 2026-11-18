@@ -434,12 +434,14 @@ end
 -- UnitHasAggro drops the attackers that are gone.
 local attacking = {}
 
--- note what `unit` attacks now, and tell the old and the new victim
+-- note what `unit` attacks now, and tell the old and the new victim. The
+-- target is reached through the GUID: not every token takes a "target"
+-- suffix (UNIT_TARGET fires for "npc", and "npctarget" is no unit).
 local function NoteAttacker(unit)
   local attacker = UnitGUID(unit)
   if not attacker then return end
-  local victim = unit .. "target"
-  victim = UnitCanAttack(unit, victim) and UnitIsFriend(victim, "player") and UnitGUID(victim) or nil
+  local victim = attacker .. "target"
+  victim = UnitCanAttack(attacker, victim) and UnitIsFriend(victim, "player") and UnitGUID(victim) or nil
   local old = attacking[attacker]
   if victim == old then return end
   attacking[attacker] = victim
@@ -468,7 +470,8 @@ end
 pfUI.events:RegisterFrameEventAndCallback("UNIT_TARGET", function(_, unit)
   NoteAttacker(unit)
   -- the new target may have come into view mid-fight
-  NoteAttacker(unit .. "target")
+  local guid = UnitGUID(unit)
+  if guid then NoteAttacker(guid .. "target") end
 end)
 pfUI.events:RegisterFrameEventAndCallback("PLAYER_TARGET_CHANGED", function() NoteAttacker("target") end)
 pfUI.events:RegisterFrameEventAndCallback("PLAYER_FOCUS_CHANGED", function() NoteAttacker("focus") end)
@@ -865,9 +868,10 @@ function pfUI.uf:UpdateConfig()
   f.alpha_outrange = tonumber(f.config.alpha_outrange)
   f.alpha_offline = tonumber(f.config.alpha_offline)
 
-  -- A preview in the config window takes the window's strata, and its
-  -- portrait and glow count their levels from the frame's own.
-  local base = f.preview and f:GetFrameLevel() or 0
+  -- Everything layered on the frame counts its level from the frame's own: a
+  -- preview sits in the config window and a raid frame in its cluster, and
+  -- SetParent lifts the bars to the parent's level along with the frame.
+  local base = f:GetFrameLevel()
   f:SetFrameStrata(f.strata)
 
   f.glow:SetFrameStrata(f.backstrata)
@@ -1161,7 +1165,8 @@ function pfUI.uf:UpdateConfig()
     f.castbar.text:SetPoint("BOTTOMRIGHT", f.castbar, "TOPRIGHT", -2, 1)
   end
 
-  f.ressIcon:SetFrameLevel(base + 16)
+  -- over the bars and aura icons, under the texts: the name stays readable
+  f.ressIcon:SetFrameLevel(base + 15)
   f.ressIcon:SetSize(32, 32)
   f.ressIcon:SetPoint("CENTER", f, "CENTER", 0, 4)
   f.ressIcon.texture:SetTexture(pfUI.media["img:ress"])
@@ -1890,7 +1895,7 @@ function pfUI.uf:CreateUnitFrame(unit, id, config, tick, preview)
   f.combat.tex:SetAllPoints()
 
   f.texts = CreateFrame("Frame", nil, f)
-  f.texts:SetFrameLevel((preview and f:GetFrameLevel() or 0) + 16)
+  f.texts:SetFrameLevel(f:GetFrameLevel() + 16)
   f.texts:SetAllPoints()
 
   f.hpLeftText = f.texts:CreateFontString("Status", "OVERLAY", "GameFontNormalSmall")

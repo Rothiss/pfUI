@@ -115,8 +115,9 @@ local function ScanFrameAuras(frame, filter, buf, max)
   return n
 end
 
--- C_UnitAuras.UnitAuraBySlot for the frame:
--- name, icon, count, dispelType, duration, expirationTime
+-- C_UnitAuras.UnitAuraBySlot for the frame: name, icon, count, dispelType,
+-- duration, expirationTime, and the rest of its values for a real unit, the
+-- 16th being the auraInstanceID. A sample stops at the sixth.
 local function FrameAura(frame, slot)
   local sample = frame.sample
   if not sample then return C_UnitAuras.UnitAuraBySlot(frame.label .. frame.id, slot) end
@@ -292,7 +293,14 @@ local function BuffOnEnter()
 
   local unit = parent.label .. parent.id
   GameTooltip:SetOwner(this, "ANCHOR_BOTTOMRIGHT")
-  GameTooltip:SetUnitAura(unit, this.id, "HELPFUL")
+  -- by index for an out-of-range member, whose auras have no instance ID, and
+  -- for every aura until pfUI requires the ClassicAPI release whose
+  -- UnitAuraBySlot returns it
+  if this.auraInstanceID then
+    GameTooltip:SetUnitAuraByAuraInstanceID(unit, this.auraInstanceID)
+  else
+    GameTooltip:SetUnitAura(unit, this.id, "HELPFUL")
+  end
 
   if IsShiftKeyDown() then
     local aura = C_UnitAuras.GetAuraDataByIndex(unit, this.id, "HELPFUL")
@@ -323,9 +331,14 @@ local function DebuffOnEnter()
   local unitstr = this:GetParent().label .. this:GetParent().id
   GameTooltip:SetOwner(this, "ANCHOR_BOTTOMRIGHT")
 
-  -- C_UnitAuras lists the player's own auras first, so the selfdebuff
-  -- (HARMFUL|PLAYER) list is a prefix of the HARMFUL list: same index.
-  GameTooltip:SetUnitAura(unitstr, this.id, "HARMFUL")
+  -- by index as for the buffs. C_UnitAuras lists the player's own auras
+  -- first, so the selfdebuff (HARMFUL|PLAYER) list is a prefix of the HARMFUL
+  -- list: same index.
+  if this.auraInstanceID then
+    GameTooltip:SetUnitAuraByAuraInstanceID(unitstr, this.auraInstanceID)
+  else
+    GameTooltip:SetUnitAura(unitstr, this.id, "HARMFUL")
+  end
 end
 
 local function DebuffOnLeave()
@@ -340,16 +353,10 @@ local function DebuffOnClick()
 end
 
 -- Every enabled unit frame. Group, target and pet events re-check a frame's
--- visibility in OnEvent, and UNIT_TARGET does for a chained unit (another
--- unit's target). No event reports a unit going out of sight, though, and a
--- pet (the frames with a tick) or a chained unit can, so a timer re-checks
--- those frames, hidden ones included.
+-- visibility in OnEvent, UNIT_TARGET does for a chained unit (another unit's
+-- target), and UNIT_VISIBILITY_CHANGED does when its unit, or a link of its
+-- chain, comes into sight or leaves it (RegisterSightEvents).
 local visibilityframes = {}
-C_Timer.NewTicker(.2, function()
-  for frame in pairs(visibilityframes) do
-    if frame.tick or frame.chain then frame:UpdateVisibility() end
-  end
-end)
 
 -- Re-check every unit frame, for the changes no event reports: unlock mode
 -- and /pftest, which also lift the range and offline fade.
@@ -363,17 +370,18 @@ end
 -- the events that can bring a frame's unit into or out of existence
 local VISIBILITY_EVENTS = {
   PLAYER_ENTERING_WORLD = true,
-  PARTY_MEMBERS_CHANGED = true,
-  RAID_ROSTER_UPDATE = true,
+  GROUP_ROSTER_UPDATE = true,
   PLAYER_TARGET_CHANGED = true,
   UNIT_PET = true,
   UNIT_TARGET = true, -- a link of a chained frame's unit retargeted
+  UNIT_VISIBILITY_CHANGED = true, -- the unit or a link came into sight or left
 }
 
--- The units of a chain that unit events name by token, whatever nampower does
--- with its GUID events: the focus, and the focus's target, whose unit events
--- ClassicAPI fires as "focustarget" from the unit's own fields.
-local CHAIN_TOKENS = { focus = true, focustarget = true }
+-- The units of a chain that unit events name by token: the focus, and the
+-- targets of your target, your focus and your pet, whose unit events
+-- ClassicAPI fires as "targettarget", "focustarget" and "pettarget" from the
+-- unit's own fields. A frame for any other chained unit follows its GUID.
+local CHAIN_TOKENS = { focus = true, targettarget = true, focustarget = true, pettarget = true }
 
 -- The events a frame hears hidden or not: the visibility events that concern
 -- the unit it was created for (raid.lua remaps a raid frame's label, so this is
@@ -383,8 +391,7 @@ local function GetIdleEvents(label, fname)
   local events = { PLAYER_ENTERING_WORLD = true, PLAYER_LOGOUT = true }
   if label:find("^party") or label:find("^raid")
   or fname == "Group0" or fname == "PartyPet0" or fname == "Party0Target" then
-    events.PARTY_MEMBERS_CHANGED = true
-    events.RAID_ROSTER_UPDATE = true
+    events.GROUP_ROSTER_UPDATE = true
   end
   if label:find("^target") then events.PLAYER_TARGET_CHANGED = true end
   if label:find("pet") then events.UNIT_PET = true end
@@ -396,9 +403,8 @@ end
 local SHOWN_EVENTS = {
   "PLAYER_AURAS_CHANGED", -- label=player && frame=buff
   "PLAYER_EQUIPMENT_CHANGED", -- label=player && frame=buff (ClassicAPI: weapon-enchant buffs)
-  "PARTY_MEMBERS_CHANGED", -- frame=leaderIcon
+  "GROUP_ROSTER_UPDATE", -- frame=leaderIcon
   "PARTY_LEADER_CHANGED", -- frame=leaderIcon
-  "RAID_ROSTER_UPDATE", -- frame=raidIcon
   "PLAYER_UPDATE_RESTING", -- frame=restIcon
   "PARTY_LOOT_METHOD_CHANGED", -- frame=lootIcon
   "RAID_TARGET_UPDATE", -- frame=raidIcon
@@ -408,8 +414,6 @@ local function RegisterShownEvents(frame)
   for i = 1, table.getn(SHOWN_EVENTS) do
     frame:RegisterEvent(SHOWN_EVENTS[i])
   end
-  -- label=pet; the player's own pet only, not every pet in view
-  frame:RegisterUnitEvent("UNIT_HAPPINESS", "pet")
 end
 
 -- ============================================================================
@@ -430,9 +434,34 @@ end
 -- sees every attacker, not only the ones some token reaches. The server
 -- clears a unit's target when it dies or stops attacking. A unit that comes
 -- into view mid-fight fires nothing until it retargets, so it is noted when a
--- token first reaches it; one that leaves view fires nothing either, so
--- UnitHasAggro drops the attackers that are gone.
+-- token first reaches it. One that leaves view is let go at once: the
+-- attackers' GUIDs are registered for UNIT_VISIBILITY_CHANGED.
 local attacking = {}
+
+-- Point the attackers' UNIT_VISIBILITY_CHANGED at the GUIDs `attacking` holds
+-- now, at most once a frame however many attackers come and go.
+local sight = CreateFrame("Frame")
+local sightguids = {}
+local sightqueued
+local function RegisterSight()
+  sightqueued = nil
+  local n = 0
+  for attacker in pairs(attacking) do
+    n = n + 1
+    sightguids[n] = attacker
+  end
+  for i = table.getn(sightguids), n + 1, -1 do sightguids[i] = nil end
+  if n > 0 then
+    sight:RegisterGUIDEvent("UNIT_VISIBILITY_CHANGED", unpack(sightguids))
+  else
+    sight:UnregisterGUIDEvent("UNIT_VISIBILITY_CHANGED")
+  end
+end
+local function QueueSight()
+  if sightqueued then return end
+  sightqueued = true
+  RunNextFrame(RegisterSight)
+end
 
 -- note what `unit` attacks now, and tell the old and the new victim. The
 -- target is reached through the GUID: not every token takes a "target"
@@ -445,8 +474,19 @@ local function NoteAttacker(unit)
   local old = attacking[attacker]
   if victim == old then return end
   attacking[attacker] = victim
+  if not old or not victim then QueueSight() end
   pfUI.events:TriggerEvent("aggro:changed", old, victim)
 end
+
+-- an attacker that left view attacks no one in it; one that comes back is
+-- noted again when a token reaches it
+sight:SetScript("OnEvent", function()
+  local old = not arg2 and attacking[arg1]
+  if not old then return end
+  attacking[arg1] = nil
+  QueueSight()
+  pfUI.events:TriggerEvent("aggro:changed", old, nil)
+end)
 
 -- the number of hostile units attacking the friendly `unit`
 function pfUI.api.UnitHasAggro(unit)
@@ -455,13 +495,8 @@ function pfUI.api.UnitHasAggro(unit)
 
   local count = 0
   for attacker, victim in pairs(attacking) do
-    if victim == guid then
-      if UnitGUID(attacker .. "target") == guid then
-        count = count + 1
-      else
-        -- out of view, where nothing fires
-        attacking[attacker] = nil
-      end
+    if victim == guid and UnitGUID(attacker .. "target") == guid then
+      count = count + 1
     end
   end
   return count
@@ -479,7 +514,10 @@ pfUI.events:RegisterFrameEventAndCallback("UPDATE_MOUSEOVER_UNIT", function() No
 pfUI.events:RegisterFrameEventAndCallback("NAME_PLATE_UNIT_ADDED", function(_, unit) NoteAttacker(unit) end)
 
 -- a loading screen leaves every attacker behind
-pfUI.events:RegisterFrameEventAndCallback("PLAYER_ENTERING_WORLD", function() attacking = {} end)
+pfUI.events:RegisterFrameEventAndCallback("PLAYER_ENTERING_WORLD", function()
+  attacking = {}
+  QueueSight()
+end)
 
 -- a frame showing the old or the new victim redraws its aggro
 pfUI.events:RegisterCallback("aggro:changed", function(_, old, new)
@@ -640,25 +678,26 @@ function pfUI.uf:UpdateVisibility()
   -- VISIBILITY_EVENTS that bring it back are registered plainly.
   --
   -- A chained unit -- another unit's target, "targettarget" or "party1target"
-  -- -- has no token that unit events name, so the frame follows it by GUID,
-  -- which nampower fires every unit event with too, unless its GUID events
-  -- are off or filtered. The focus's target is named (CHAIN_TOKENS), so that
-  -- frame follows its token instead. It follows the unit only while
-  -- the client has it: a link's target can be out of sight, and its coming
-  -- back is then a new unit too. The unit changes with no event of its own
-  -- whenever a link of the chain retargets; UNIT_TARGET on every link reports
-  -- that (RegisterChainEvents), and the GUID compare turns it into the full
-  -- refresh a new unit needs.
+  -- -- is named by unit events only when it is one of CHAIN_TOKENS; that frame
+  -- follows its token. Any other chained unit has no token, so its frame
+  -- follows the unit's GUID (ClassicAPI's RegisterGUIDEvent). Either follows
+  -- the unit only while the client has it: a link's target can be out of sight,
+  -- and its coming back is then a new unit too. The unit changes with no event
+  -- of its own whenever a link of the chain retargets; UNIT_TARGET on every
+  -- link reports that (RegisterChainEvents), and the GUID compare turns it
+  -- into the full refresh a new unit needs.
   self.chain = visibility ~= "hide" and unitstr:match("^(.+)target$") or nil
   if self.chain then
     local guid = UnitName(unitstr) and UnitGUID(unitstr)
     if guid ~= self.unitguid then pfUI.uf:QueueUpdate(self, "full") end
     self.unitguid = guid
-    self:RegisterUnitEvents(guid and CHAIN_TOKENS[unitstr] and unitstr or guid)
+    local token = guid and CHAIN_TOKENS[unitstr] and unitstr or nil
+    self:RegisterUnitEvents(token or guid, not token)
   else
     -- A pet frame's token gets the pet's unit events, but a new pet behind it
-    -- (summoned, or remapped by raid.lua) comes with none of its own; the
-    -- visibility timer's GUID compare turns it into the full refresh.
+    -- (summoned, or remapped by raid.lua) comes with none of its own; UNIT_PET
+    -- or raid.lua runs this, and the GUID compare turns it into the full
+    -- refresh.
     if self.tick then
       local guid = UnitGUID(unitstr)
       if guid ~= self.unitguid then pfUI.uf:QueueUpdate(self, "full") end
@@ -667,6 +706,7 @@ function pfUI.uf:UpdateVisibility()
     self:RegisterUnitEvents(visibility ~= "hide" and unitstr or nil)
   end
   self:RegisterChainEvents(self.chain)
+  self:RegisterSightEvents(visibility ~= "hide" and unitstr or nil)
 
   -- vanilla visibility
   if visibility == "hide" then
@@ -1071,7 +1111,7 @@ function pfUI.uf:UpdateConfig()
 
   -- range fade: UnitInRange's answer comes as an event, a UnitXP threshold
   -- has none and is polled. With the 40y check off a frame fades by sight,
-  -- which UNIT_DISTANCE_CHECK_UPDATE reports.
+  -- which UNIT_VISIBILITY_CHANGED reports.
   local fade = f.config.faderange == "1" and C.unitframes.rangecheck == "1"
   local unitxp = C.unitframes.rangecheck_mode == "unitxp" and _G.UnitXP
   f.rangeevent = fade and not unitxp or nil
@@ -1330,7 +1370,7 @@ function pfUI.uf:UpdateConfig()
     -- that dropped the unit filters along with the registrations, so the
     -- caches have to go too or the next UpdateVisibility believes they are
     -- still set
-    f.eventunit, f.chainkey = nil, nil
+    f.eventunit, f.chainkey, f.sightkey = nil, nil, nil
     f:Hide()
   end
 end
@@ -1348,7 +1388,6 @@ function pfUI.uf.OnHide()
       this:UnregisterEvent(SHOWN_EVENTS[i])
     end
   end
-  this:UnregisterEvent("UNIT_HAPPINESS")
 end
 
 function pfUI.uf.OnEvent()
@@ -1356,9 +1395,9 @@ function pfUI.uf.OnEvent()
   if event == "PLAYER_LOGOUT" then
     this:UnregisterAllEvents()
     this:SetScript("OnEvent", nil)
-    -- the visibility timer keeps ticking, so leaving this frame on its list
-    -- would have UpdateVisibility re-register the unit events we just
-    -- dropped -- straight back into the crash 132 this branch prevents
+    -- UpdateAllVisibility walks this list, so leaving this frame on it would
+    -- have UpdateVisibility re-register the unit events we just dropped --
+    -- straight back into the crash 132 this branch prevents
     visibilityframes[this] = nil
     return
   end
@@ -1366,9 +1405,8 @@ function pfUI.uf.OnEvent()
   -- update indicators
   if event == "PARTY_LEADER_CHANGED" or
      event == "PARTY_LOOT_METHOD_CHANGED" or
-     event == "PARTY_MEMBERS_CHANGED" or
+     event == "GROUP_ROSTER_UPDATE" or
      event == "RAID_TARGET_UPDATE" or
-     event == "RAID_ROSTER_UPDATE" or
      event == "PLAYER_UPDATE_RESTING"
   then
     pfUI.uf:QueueUpdate(this, "indicators")
@@ -1400,8 +1438,9 @@ function pfUI.uf.OnEvent()
         this.raidIcon:Hide()
       end
     end
-  elseif ( this.label == "raid" or this.label == "party" or this.label == "player" ) and event == "PARTY_MEMBERS_CHANGED" then
-    -- Smart update: check if THIS frame's unit actually changed
+  elseif ( this.label == "raid" or this.label == "party" or this.label == "player" ) and event == "GROUP_ROSTER_UPDATE" then
+    -- Smart update: check if THIS frame's unit actually changed. raid.lua's
+    -- UpdateRoster runs the same check after it reassigns the raid frames' ids.
     if pfUI.uf.guidTracker and this.id then
       local unit = this.label == "player" and "player" or (this.label .. this.id)
       local newGuid = UnitGUID(unit)
@@ -1413,30 +1452,19 @@ function pfUI.uf.OnEvent()
     else
       pfUI.uf:QueueUpdate(this, "full")
     end
-  elseif ( this.label == "raid" or this.label == "party" ) and event == "RAID_ROSTER_UPDATE" then
-    -- Note: Smart GUID-based updates are handled in raid.lua UpdateRoster
-    -- after frame IDs are reassigned. We don't set update_full here anymore
-    -- for raid frames to avoid the freeze.
-    if this.label == "party" then
-      -- Party frames still need the old logic (no smart tracking yet)
-      pfUI.uf:QueueUpdate(this, "full")
-    end
-    -- Raid frames: update_full is set by raid.lua GUID tracker
   elseif this.label == "pet" and event == "UNIT_PET" then
     pfUI.uf:QueueUpdate(this, "full")
   elseif this.label == "player" and (event == "PLAYER_AURAS_CHANGED" or event == "PLAYER_EQUIPMENT_CHANGED") then
     pfUI.uf:QueueUpdate(this, "aura")
-  elseif this.label == "pet" and event == "UNIT_HAPPINESS" then
-    pfUI.uf:QueueUpdate(this, "full")
   elseif event == "UNIT_IN_RANGE_UPDATE" then
     -- registered for the frame's unit alone, and fired in the filter's lower
     -- case spelling, which a GUID's compare below would miss
     pfUI.uf:RefreshUnitState(this)
   -- UNIT_XXX Events. RegisterUnitEvents means arg1 can only be the unit this
   -- frame follows -- its token, or a chained unit's GUID; the compare is kept
-  -- for the case the filter sits out, which is when arg1 is not a string. These
-  -- events fire once per token that resolves to the unit AND once with the raw
-  -- GUID, so filtering on one of the two never wakes the frame twice.
+  -- for the case the filter sits out, which is when arg1 is not a string.
+  -- nampower's raw-GUID events reach neither kind of registration, so no
+  -- event wakes a frame twice.
   elseif arg1 and arg1 == this.eventunit then
     if event == "UNIT_PORTRAIT_UPDATE" or event == "UNIT_MODEL_CHANGED" then
       pfUI.uf:QueueUpdate(this, "portrait")
@@ -1452,9 +1480,15 @@ function pfUI.uf.OnEvent()
       end
     elseif event == "UNIT_POWER_UPDATE" or event == "UNIT_MAXPOWER" then
       -- every power of the unit reports, a cat druid's mana regen too; redraw
-      -- for the one the bar shows, and for mana under a druid mana bar
+      -- for the one the bar shows, for mana under a druid mana bar, and for
+      -- the player's pet's happiness, which the icon and the pet colours show
       local _, shown = UnitPowerType(arg1)
-      if arg2 == shown or (arg2 == "MANA" and this.druidmana) then
+      if arg2 == "HAPPINESS" then
+        if this.label == "pet" then
+          pfUI.uf:QueueUpdate(this, "indicators")
+          pfUI.uf:QueueUpdate(this, "base")
+        end
+      elseif arg2 == shown or (arg2 == "MANA" and this.druidmana) then
         pfUI.uf:QueueUpdate(this, "base")
       end
     elseif event == "UNIT_FACTION" then
@@ -1463,7 +1497,7 @@ function pfUI.uf.OnEvent()
       pfUI.uf:QueueUpdate(this, "base")
     elseif event == "UNIT_FLAGS" then
       pfUI.uf:QueueUpdate(this, "combat")
-    elseif event == "UNIT_DISTANCE_CHECK_UPDATE" then
+    elseif event == "UNIT_VISIBILITY_CHANGED" then
       -- the portrait trades the question mark for the model, the frame fades
       -- by sight, and an attacker that left with the member is let go
       pfUI.uf:QueueUpdate(this, "portrait")
@@ -1617,9 +1651,9 @@ end)
 -- routes through its "UNIT_XXX Events" branch. These are not registered here:
 -- UpdateVisibility owns them, because it owns the frame's unit (below).
 --
--- UNIT_PET and UNIT_HAPPINESS are deliberately absent. Their branches key on
--- the frame's label, and UNIT_PET's arg1 is the pet's OWNER ("player" for a
--- "pet" frame), so filtering them by the frame's own unit would drop them.
+-- UNIT_PET is deliberately absent. Its branch keys on the frame's label, and
+-- its arg1 is the pet's OWNER ("player" for a "pet" frame), so filtering it by
+-- the frame's own unit would drop it.
 local UNIT_EVENTS = {
   "UNIT_DISPLAYPOWER",
   "UNIT_HEALTH", "UNIT_MAXHEALTH",
@@ -1633,11 +1667,12 @@ local UNIT_EVENTS = {
 -- durations and says what changed; its generic power events name the power, so
 -- a frame skips the ones it does not draw. Both fire for tokens only, and not
 -- as "focustarget", so a chained unit keeps 1.12's events instead. A group
--- member's connection and sight come with them, and a chained unit has
--- neither event.
+-- member's connection comes with them, and a chained unit has no such event.
+-- Sight is RegisterSightEvents': UNIT_VISIBILITY_CHANGED fires for a member's
+-- token too, so UNIT_DISTANCE_CHECK_UPDATE would only report it twice.
 local TOKEN_EVENTS = {
   "UNIT_AURA_DELTA", "UNIT_POWER_UPDATE", "UNIT_MAXPOWER",
-  "UNIT_CONNECTION", "UNIT_DISTANCE_CHECK_UPDATE",
+  "UNIT_CONNECTION",
 }
 local GUID_EVENTS = {
   "UNIT_AURA",
@@ -1647,82 +1682,141 @@ local GUID_EVENTS = {
   "UNIT_FOCUS",
 }
 
--- Point this frame's unit-event subscriptions at `unit` (a token, or a chained
--- unit's GUID), or drop them when the frame has no unit. Cheap to call
--- repeatedly: it no-ops unless the unit actually changed, which matters
--- because every refresh runs UpdateVisibility.
-function pfUI.uf:RegisterUnitEvents(unit)
-  if self.eventunit == unit then return end
-  self.eventunit = unit
+-- Subscribe the frame to `event` for `unit`: a token (RegisterUnitEvent), or
+-- with `byguid` a GUID (RegisterGUIDEvent), dropping the other kind; or drop
+-- both for no unit.
+local function SetUnitEvent(frame, event, unit, byguid)
+  if not unit then
+    frame:UnregisterEvent(event)
+    frame:UnregisterGUIDEvent(event)
+  elseif byguid then
+    frame:UnregisterEvent(event)
+    frame:RegisterGUIDEvent(event, unit)
+  else
+    frame:UnregisterGUIDEvent(event)
+    frame:RegisterUnitEvent(event, unit)
+  end
+end
+
+-- Point this frame's unit-event subscriptions at `unit` -- a token, or with
+-- `byguid` the GUID of a chained unit that no token names -- or drop them when
+-- the frame has no unit. Cheap to call repeatedly: it no-ops unless the unit
+-- actually changed, which matters because every refresh runs UpdateVisibility.
+function pfUI.uf:RegisterUnitEvents(unit, byguid)
+  byguid = unit and byguid or nil
+  if self.eventunit == unit and self.eventbyguid == byguid then return end
+  self.eventunit, self.eventbyguid = unit, byguid
 
   for i = 1, table.getn(UNIT_EVENTS) do
-    if unit then
-      self:RegisterUnitEvent(UNIT_EVENTS[i], unit)
-    else
-      self:UnregisterEvent(UNIT_EVENTS[i])
-    end
+    SetUnitEvent(self, UNIT_EVENTS[i], unit, byguid)
   end
 
   local events, other = TOKEN_EVENTS, GUID_EVENTS
   if self.chain then events, other = other, events end
   for i = 1, table.getn(other) do
-    self:UnregisterEvent(other[i])
+    SetUnitEvent(self, other[i], nil)
   end
   for i = 1, table.getn(events) do
-    if unit then
-      self:RegisterUnitEvent(events[i], unit)
-    else
-      self:UnregisterEvent(events[i])
-    end
+    SetUnitEvent(self, events[i], unit, byguid)
   end
 
   -- UNIT_COMBAT rides along only while the frame draws combat feedback text,
   -- and UNIT_IN_RANGE_UPDATE only while it fades by UnitInRange, since
-  -- ClassicAPI checks each unit registered for it every frame; it takes a GUID
-  -- too. UpdateConfig clears eventunit when it toggles either, so the next
-  -- UpdateVisibility re-runs this.
-  if unit and self.combatfeedback then
-    self:RegisterUnitEvent("UNIT_COMBAT", unit)
-  else
-    self:UnregisterEvent("UNIT_COMBAT")
-  end
-  if unit and self.rangeevent then
-    self:RegisterUnitEvent("UNIT_IN_RANGE_UPDATE", unit)
-  else
-    self:UnregisterEvent("UNIT_IN_RANGE_UPDATE")
-  end
+  -- ClassicAPI checks each unit registered for it every frame. UpdateConfig
+  -- clears eventunit when it toggles either, so the next UpdateVisibility
+  -- re-runs this.
+  SetUnitEvent(self, "UNIT_COMBAT", self.combatfeedback and unit, byguid)
+  SetUnitEvent(self, "UNIT_IN_RANGE_UPDATE", self.rangeevent and unit, byguid)
 
-  if self.castbar then self.castbar:SetUnit(self.config.castbar == "1" and unit or nil) end
+  -- the group cast bar follows a token
+  if self.castbar then
+    self.castbar:SetUnit(self.config.castbar == "1" and not byguid and unit or nil)
+  end
 end
 
 -- Point this frame's UNIT_TARGET subscription at every link of its chained
 -- unit, whose `owner` is the unit it is the target of -- for
 -- "targettargettarget" the links are "targettarget" and "target" -- or drop it
--- when `owner` is nil. By GUID, since the inner links are no token that events
--- name, save the ones in CHAIN_TOKENS. Cheap to call repeatedly: it
--- re-registers only when a link changed.
-local chainlinks = {}
+-- when `owner` is nil. By token for a link that is no chain ("target",
+-- "party1", "pet") or one of CHAIN_TOKENS, by GUID for any other link the
+-- client has. Cheap to call repeatedly: it re-registers only when the links
+-- changed.
+local chainlinks, chainguids = {}, {}
 function pfUI.uf:RegisterChainEvents(owner)
-  local n, key = 0, nil
+  local n, g, key = 0, 0, nil
   while owner do
-    local guid = UnitGUID(owner)
-    if guid then
-      local link = CHAIN_TOKENS[owner] and owner or guid
+    local inner = owner:match("^(.+)target$")
+    local link
+    if CHAIN_TOKENS[owner] or not inner then
+      link = owner
       n = n + 1
       chainlinks[n] = link
-      key = key and key .. link or link
+    else
+      link = UnitGUID(owner)
+      if link then
+        g = g + 1
+        chainguids[g] = link
+      end
     end
-    owner = owner:match("^(.+)target$")
+    if link then key = key and key .. "," .. link or link end
+    owner = inner
   end
 
   if key == self.chainkey then return end
   self.chainkey = key
 
-  if key then
-    for i = table.getn(chainlinks), n + 1, -1 do chainlinks[i] = nil end
+  for i = table.getn(chainlinks), n + 1, -1 do chainlinks[i] = nil end
+  for i = table.getn(chainguids), g + 1, -1 do chainguids[i] = nil end
+  if n > 0 then
     self:RegisterUnitEvent("UNIT_TARGET", unpack(chainlinks))
   else
     self:UnregisterEvent("UNIT_TARGET")
+  end
+  if g > 0 then
+    self:RegisterGUIDEvent("UNIT_TARGET", unpack(chainguids))
+  else
+    self:UnregisterGUIDEvent("UNIT_TARGET")
+  end
+end
+
+-- Point this frame's UNIT_VISIBILITY_CHANGED subscription at the units whose
+-- coming into sight or leaving it changes what the frame shows, or drop it for
+-- nil: a unit that is no chain by its token, which names it out of sight too
+-- ("party1", "partypet2"); a chained unit and every link of its chain by GUID,
+-- since a chain token stops naming a unit that left, and the inner links can
+-- leave sight while the unit stays. Cheap to call repeatedly: it re-registers
+-- only when the units changed.
+local sightguids = {}
+function pfUI.uf:RegisterSightEvents(unitstr)
+  local n, key = 0, nil
+  if unitstr and unitstr:match("^(.+)target$") then
+    local unit = unitstr
+    while unit do
+      local guid = UnitGUID(unit)
+      if guid then
+        n = n + 1
+        sightguids[n] = guid
+        key = key and key .. "," .. guid or guid
+      end
+      unit = unit:match("^(.+)target$")
+    end
+  else
+    key = unitstr
+  end
+
+  if key == self.sightkey then return end
+  self.sightkey = key
+
+  for i = table.getn(sightguids), n + 1, -1 do sightguids[i] = nil end
+  if n > 0 then
+    self:UnregisterEvent("UNIT_VISIBILITY_CHANGED")
+    self:RegisterGUIDEvent("UNIT_VISIBILITY_CHANGED", unpack(sightguids))
+  elseif key then
+    self:UnregisterGUIDEvent("UNIT_VISIBILITY_CHANGED")
+    self:RegisterUnitEvent("UNIT_VISIBILITY_CHANGED", key)
+  else
+    self:UnregisterEvent("UNIT_VISIBILITY_CHANGED")
+    self:UnregisterGUIDEvent("UNIT_VISIBILITY_CHANGED")
   end
 end
 
@@ -1846,6 +1940,7 @@ function pfUI.uf:CreateUnitFrame(unit, id, config, tick, preview)
   f.EnableEvents     = pfUI.uf.EnableEvents
   f.RegisterUnitEvents = pfUI.uf.RegisterUnitEvents
   f.RegisterChainEvents = pfUI.uf.RegisterChainEvents
+  f.RegisterSightEvents = pfUI.uf.RegisterSightEvents
   f.EnableClickCast  = pfUI.uf.EnableClickCast
   f.GetColor         = pfUI.uf.GetColor
 
@@ -1985,7 +2080,7 @@ function pfUI.uf:CreateUnitFrame(unit, id, config, tick, preview)
     -- that dropped the unit filters along with the registrations, so the
     -- caches have to go too or the next UpdateVisibility believes they are
     -- still set
-    f.eventunit, f.chainkey = nil, nil
+    f.eventunit, f.chainkey, f.sightkey = nil, nil, nil
     f:Hide()
   end
 
@@ -2229,10 +2324,11 @@ function pfUI.uf:RefreshUnit(unit, component)
     for i=1, unit.config.bufflimit do
       if not unit.buffs[i] then break end
 
-      local name, icon, count, _, duration, expirationTime = FrameAura(unit, auraSlots[i])
+      local name, icon, count, _, duration, expirationTime, _, _, _, _, _, _, _, _, _, auraInstanceID = FrameAura(unit, auraSlots[i])
 
       if name then
         unit.buffs[i].slot = auraSlots[i]
+        unit.buffs[i].auraInstanceID = auraInstanceID
         unit.buffs[i].texture:SetTexture(icon)
         unit.buffs[i]:Show()
 
@@ -2270,12 +2366,13 @@ function pfUI.uf:RefreshUnit(unit, component)
       if not unit.debuffs[i] then break end
 
       -- positional read by slot id allocates nothing
-      local name, icon, count, dispelType, duration, expirationTime = FrameAura(unit, auraSlots[i])
+      local name, icon, count, dispelType, duration, expirationTime, _, _, _, _, _, _, _, _, _, auraInstanceID = FrameAura(unit, auraSlots[i])
       if name then
         texture, stacks, dtype = icon, count, dispelType
       else
         texture, stacks, dtype = nil, 0, nil
       end
+      unit.debuffs[i].auraInstanceID = auraInstanceID
 
       unit.debuffs[i].texture:SetTexture(texture)
 

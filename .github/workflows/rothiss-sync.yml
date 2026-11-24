@@ -1,8 +1,8 @@
-name: Sync Fork
+name: Rothiss Sync
 
 on:
   schedule:
-    - cron: '0 3 * * *' # Runs daily at 03:00 UTC
+    - cron: '0 * * * *' # Runs hourly
   workflow_dispatch: # Allows you to manually trigger it via the Actions tab
 
 permissions:
@@ -29,6 +29,10 @@ jobs:
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "DISCORD_WEBHOOK_URL secret not set; skipping Discord notification."
+            exit 0
+          fi
           RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           if [ "${{ job.status }}" = "success" ]; then
             TITLE="✅ pfUI fork synced"

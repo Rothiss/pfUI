@@ -204,16 +204,61 @@ end
 -- Returns nil before login; date(fmt, nil) silently falls back to local time.
 pfUI.api.GetServerEpoch = C_DateAndTime.GetServerTimeLocal
 
+-- [ ArmExpiry ]
+-- Calls obj.onExpire() once `seconds` have passed, unless obj.expires was
+-- cleared (disarmed) or the object armed again first. Its onExpire and every
+-- other stop path set obj.expires = nil.
+--
+-- The timers are C_Timer.After, which makes no cancel handle, through one
+-- function made per object. An object keeps one timer pending: armed for a
+-- later end, it lets the pending timer fire and wait out the rest from there.
+-- Only an end that moves earlier needs a new timer, and the late one then
+-- finds it was replaced and does nothing.
+-- 'obj'        [table]         a table with an onExpire function
+-- 'seconds'    [number]        the time until it expires
+local function CheckExpiry(obj)
+  local now = GetTime()
+  -- a timer that another replaced
+  if not obj.firesAt or now < obj.firesAt - .1 then return end
+  obj.firesAt = nil
+  if not obj.expires then return end
+  if now >= obj.expires - .1 then
+    obj.onExpire()
+  else
+    obj.firesAt = obj.expires
+    C_Timer.After(obj.expires - now, obj.checkExpiry)
+  end
+end
+
+function pfUI.api.ArmExpiry(obj, seconds)
+  obj.expires = GetTime() + seconds
+  if obj.firesAt and obj.firesAt <= obj.expires then return end
+  obj.checkExpiry = obj.checkExpiry or function() CheckExpiry(obj) end
+  obj.firesAt = obj.expires
+  C_Timer.After(seconds, obj.checkExpiry)
+end
+
 -- [ GetSlashCommands ]
 -- Lists all registeres slash commands
 -- 'text'       [string]        optional, a specific command to find
 -- return:      [list]          a list of all matching slash commands
+-- The commands are read through SlashCmdList, which names every command the
+-- chat box can run (SLASH_<NAME>1, SLASH_<NAME>2, ...): walking all of _G took
+-- about 19 ms per call, and pfUI makes one for each of its commands at load.
 function pfUI.api.GetSlashCommands(text)
   local cmds
-  for k, v in pairs(_G) do
-    if strfind(k, "^SLASH_") and (not text or v == text) then
-      cmds = cmds or {}
-      cmds[k] = v
+  for name in pairs(SlashCmdList) do
+    local i = 1
+    local key = "SLASH_" .. name .. i
+    local cmd = _G[key]
+    while cmd do
+      if not text or cmd == text then
+        cmds = cmds or {}
+        cmds[key] = cmd
+      end
+      i = i + 1
+      key = "SLASH_" .. name .. i
+      cmd = _G[key]
     end
   end
 
@@ -865,6 +910,23 @@ local color_object_cache = setmetatable({}, {
 })
 function pfUI.api.GetStringColorObject(colorstr)
   return color_object_cache[colorstr]
+end
+
+-- [ GetDispelColor ]
+-- The colour of a dispel type ("Magic", "Curse", ..., "" or nil for none),
+-- made once per type: C_UnitAuras.GetAuraDispelTypeColor builds a new
+-- ColorMixin on every call, and the aura icons ask for one per debuff on
+-- every refresh. The object is shared, so treat it as read-only.
+-- returns a ColorMixin
+local dispel_color_cache = setmetatable({}, {
+  __index = function(t, k)
+    local color = C_UnitAuras.GetAuraDispelTypeColor(k)
+    rawset(t, k, color)
+    return color
+  end
+})
+function pfUI.api.GetDispelColor(dispelType)
+  return dispel_color_cache[dispelType or ""]
 end
 
 -- [ rgbhex ]
